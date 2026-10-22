@@ -1,13 +1,126 @@
 #!/usr/bin/env python3
-"""C2 scope marker. C3 must implement locked artifact/hash/coverage verification."""
+"""Offline pin, native route ledger and named-definition golden conformance gate."""
 import argparse
+import hashlib
+import json
+import pathlib
+import re
 import sys
+import urllib.parse
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--locked", action="store_true")
-parser.add_argument("--connection-only", action="store_true")
-args = parser.parse_args()
-if args.locked or not args.connection_only:
-    print("BLOCKED: published C1 contract pin, goldens and coverage are not installed. C3 owns locked conformance.", file=sys.stderr)
-    sys.exit(2)
-print("C2 connection-only scope: provisional health/bootstrap DTOs, not locked contract conformance. Host tests validate local scenarios.")
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def validate(value, schema, definitions, location="value"):
+    """The draft-07 vocabulary used by these goldens, not a general schema validator."""
+    allowed = {"$ref", "$schema", "$id", "title", "description", "definitions", "type", "properties", "required", "additionalProperties", "items", "anyOf", "allOf", "const", "enum", "minimum", "maximum", "not", "minItems", "maxItems"}
+    if set(schema) - allowed:
+        raise ValueError(f"{location}: unsupported schema assertions {set(schema) - allowed}; extend the checker before updating the pin")
+    if "not" in schema:
+        try:
+            validate(value, schema["not"], definitions, location)
+        except ValueError:
+            pass
+        else:
+            raise ValueError(f"{location}: prohibited value")
+    if "$ref" in schema:
+        name = urllib.parse.unquote(schema["$ref"].removeprefix("#/definitions/"))
+        validate(value, definitions[name], definitions, location)
+    if "anyOf" in schema:
+        for candidate in schema["anyOf"]:
+            try:
+                validate(value, candidate, definitions, location)
+                break
+            except ValueError:
+                pass
+        else:
+            raise ValueError(f"{location}: no anyOf alternative matches")
+    for candidate in schema.get("allOf", []):
+        validate(value, candidate, definitions, location)
+    types = schema.get("type", [])
+    types = [types] if isinstance(types, str) else types
+    matches = {"null": value is None, "object": isinstance(value, dict), "array": isinstance(value, list),
+               "string": isinstance(value, str), "boolean": isinstance(value, bool),
+               "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+               "integer": isinstance(value, int) and not isinstance(value, bool)}
+    if types and not any(matches[t] for t in types):
+        raise ValueError(f"{location}: expected {types}")
+    if "const" in schema and (type(value) is not type(schema["const"]) or value != schema["const"]):
+        raise ValueError(f"{location}: const mismatch")
+    if "enum" in schema and value not in schema["enum"]:
+        raise ValueError(f"{location}: enum mismatch")
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        if set(schema.get("required", [])) - value.keys():
+            raise ValueError(f"{location}: missing required properties")
+        extra = set(value) - props.keys()
+        if schema.get("additionalProperties") is False and extra:
+            raise ValueError(f"{location}: unexpected properties {extra}")
+        for key, item in value.items():
+            target = props.get(key, schema.get("additionalProperties", {}))
+            if isinstance(target, dict):
+                validate(item, target, definitions, f"{location}.{key}")
+    if isinstance(value, list):
+        if len(value) < schema.get("minItems", 0) or len(value) > schema.get("maxItems", float("inf")):
+            raise ValueError(f"{location}: array size out of bounds")
+        for index, item in enumerate(value):
+            validate(item, schema.get("items", {}), definitions, f"{location}[{index}]")
+    if isinstance(value, (float, int)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            raise ValueError(f"{location}: below minimum")
+        if "maximum" in schema and value > schema["maximum"]:
+            raise ValueError(f"{location}: above maximum")
+
+
+def check(root=ROOT):
+    lock = json.loads((root / "Contracts/console-api.lock.json").read_text())
+    assert lock["apiVersion"] == 1 and re.fullmatch("[a-f0-9]{40}", lock["commit"]), "Invalid contract pin"
+    documents = {}
+    for artifact in lock["artifacts"]:
+        path = root / artifact["resource"]
+        blob = path.read_bytes()
+        assert hashlib.sha256(blob).hexdigest() == artifact["sha256"], f"Contract drift: SHA-256 mismatch for {path.name}; restore the pin or intentionally run Tools/update-contract"
+        documents[path.name] = json.loads(blob)
+    assert len(documents) == 4, "Contract must pin all four artifacts"
+    routes = documents["console-api.v1.routes.json"]["routes"]
+    ledger = json.loads((root / "Contracts/routes-ledger.json").read_text())["routes"]
+    assert len(routes) == len(ledger), "Route coverage drift: regenerate and review the ledger"
+    source = (root / "Packages/MonoAgentKit/Sources/MonoAgentKit/APIRoutes.swift").read_text()
+    covered = 0
+    for route, entry in zip(routes, ledger):
+        assert all(entry.get(k) == v for k, v in route.items()), f"Route policy drift: {route['method']} {route['path']}"
+        assert set(entry) - set(route) <= {"operation", "coverage", "reason"}, "Unexpected ledger metadata"
+        if entry["coverage"] == "covered":
+            assert re.search(r"public func " + entry["operation"] + r"\(", source), f"Missing native method: {entry['operation']}"
+            covered += 1
+        else:
+            assert entry["coverage"] == "notApplicableToNative" and "/push/" in route["path"] and entry.get("reason"), "Unapproved route exclusion"
+    definitions = documents["console-api.v1.schema.json"]["definitions"]
+    fixtures = documents["console-api.v1.fixtures.json"]["fixtures"]
+    test = (root / "Packages/MonoAgentKit/Tests/MonoAgentKitTests/ContractTests.swift").read_text()
+    events = set()
+    for fixture in fixtures:
+        assert f'case "{fixture["type"]}"' in test, f"Missing Swift fixture mapping: {fixture['type']}"
+        validate(fixture["value"], definitions[fixture["type"]], definitions, fixture["name"])
+        if "frame" in fixture:
+            events.add(fixture["value"]["type"])
+    assert len(events) == 12, "Event fixture coverage drift"
+    vectors = documents["message-delta-vectors.v1.json"]
+    assert len(vectors) == 11, "Delta vector coverage drift"
+    print(f"Locked API v1: 4 hashes; {len(routes)} routes ({covered} covered, {len(routes)-covered} browser-push exclusions); {len(fixtures)} named-definition fixtures; 12 events; 11 delta vectors")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--locked", action="store_true")
+    parser.add_argument("--connection-only", action="store_true", help="Compatibility alias; now runs the full locked gate")
+    parser.parse_args()
+    try:
+        check()
+    except (AssertionError, ValueError, KeyError, OSError) as error:
+        print(f"Contract check FAILED: {error}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

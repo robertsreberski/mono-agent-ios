@@ -12,7 +12,9 @@ let package = Package(
   targets: [
     .target(name: "MonoAgentKit"),
     .target(name: "MonoAgentTestSupport", dependencies: ["MonoAgentKit"]),
-    .testTarget(name: "MonoAgentKitTests", dependencies: ["MonoAgentKit", "MonoAgentTestSupport"]),
+    .testTarget(
+      name: "MonoAgentKitTests", dependencies: ["MonoAgentKit", "MonoAgentTestSupport"],
+      resources: [.copy("Resources/Contracts")]),
   ],
   swiftLanguageModes: [.v6]
 )

@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Intentionally import a console contract from an immutable source revision (no npm release)."""
+import argparse
+import hashlib
+import json
+import pathlib
+import re
+import subprocess
+import urllib.request
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+ARTIFACTS = ["console-api.v1.schema.json", "console-api.v1.routes.json", "console-api.v1.fixtures.json", "message-delta-vectors.v1.json"]
+RESOURCE = "Packages/MonoAgentKit/Tests/MonoAgentKitTests/Resources/Contracts"
+
+
+def fetch(commit, name, checkout=None):
+    path = "packages/web/schema/" + name
+    if checkout:
+        return subprocess.check_output(["git", "-C", checkout, "--no-pager", "show", f"{commit}:{path}"], timeout=30)
+    with urllib.request.urlopen(f"https://raw.githubusercontent.com/robertsreberski/mono-agent/{commit}/{path}", timeout=30) as response:
+        return response.read()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--commit", required=True)
+    parser.add_argument("--from", dest="checkout")
+    args = parser.parse_args()
+    if not re.fullmatch(r"[a-f0-9]{40}", args.commit):
+        parser.error("--commit must be a full immutable SHA")
+    blobs = {name: fetch(args.commit, name, args.checkout) for name in ARTIFACTS}
+    documents = {name: json.loads(blob) for name, blob in blobs.items()}
+    if documents["console-api.v1.routes.json"]["version"] != 1 or documents["console-api.v1.fixtures.json"]["version"] != 1:
+        parser.error("Only console API v1 is supported; review a new major before importing")
+    destination = ROOT / RESOURCE
+    destination.mkdir(parents=True, exist_ok=True)
+    lock = {"repository": "https://github.com/robertsreberski/mono-agent", "commit": args.commit, "apiVersion": 1,
+            "artifacts": [{"path": "packages/web/schema/" + name, "resource": RESOURCE + "/" + name,
+                           "sha256": hashlib.sha256(blob).hexdigest()} for name, blob in blobs.items()]}
+    for name, blob in blobs.items():
+        (destination / name).write_bytes(blob)
+    (ROOT / "Contracts/console-api.lock.json").write_text(json.dumps(lock, indent=2) + "\n")
+    print("Imported four artifacts. Review DTOs and regenerate the route ledger before checking the lock.")
+
+
+if __name__ == "__main__":
+    main()

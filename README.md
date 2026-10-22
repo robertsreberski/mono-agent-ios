@@ -75,8 +75,9 @@ Remove a console to delete its profile data. Delete the app to remove **all** lo
 reinstall starts empty. Transcript/cache/draft persistence arrives in a later change.
 
 Only **one window** is supported. Multiple scenes need a separate selected-thread stream
-and state design. No offline send queue, SSE, auth UI, transcript or embedded web content
-is implemented in this foundation.
+and state design. No offline send queue, auth UI, transcript or embedded web content
+is implemented in this foundation. Kit provides the typed API/SSE/upload primitives for
+future Store and feature integration; the connection probe already uses that client.
 
 ## Tests and synthetic screenshots
 
@@ -134,5 +135,6 @@ are independent checks. Real-device permission, network and Personal Team checks
 separate from simulator evidence. UI-changing PRs must supply iPhone and iPad screenshots;
 the later full-feature screenshot checkpoint remains after the composer feature.
 
-C2 uses provisional connection DTOs. `./Tools/check-contract --locked` honestly reports
-blocked until the contract-client change imports published goldens; see [Contracts](Contracts/README.md).
+`./Tools/check-contract --locked` verifies the source-pinned API v1 artifacts, route ledger
+and golden coverage. See [Contracts](Contracts/README.md) and the
+[Kit API inventory](Packages/MonoAgentKit/README.md). No npm release is required for this pin.

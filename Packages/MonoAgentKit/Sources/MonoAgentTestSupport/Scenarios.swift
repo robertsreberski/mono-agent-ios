@@ -17,10 +17,11 @@
     }
 
     public static let endpoint = try! ConsoleEndpoint("https://console.example.ts.net")
-    public static let health = HTTPResponse(data: Data(#"{"status":"ok","version":1}"#.utf8))
+    public static let health = HTTPResponse(
+      data: Data(#"{"status":"ok","version":1,"push":"ok"}"#.utf8))
     public static let bootstrap = HTTPResponse(
       data: Data(
-        #"{"version":1,"console":{"hostName":"console.example.ts.net","displayName":"Flockbox","theme":"evergreen"}}"#
+        #"{"version":1,"console":{"hostName":"console.example.ts.net","displayName":"Flockbox","theme":"evergreen"},"push":{"applicationServerKey":"fictional-public-key","keyFingerprint":"example","serviceWorkerVersion":2},"agents":[{"sourceId":"agent-example","label":"Example agent","status":"online","pinned":false,"supportsAttachments":true,"runSettings":{"config":{},"override":null,"effective":{"modelSource":"config","effortSource":"config"}},"updatedAt":"2030-01-02T12:00:00.000Z"}],"threads":[{"id":"thread-example","sourceId":"agent-example","title":"Morgan's sample project","archivedAt":null,"projectId":null,"tagIds":[],"createdAt":"2030-01-02T12:00:00.000Z","updatedAt":"2030-01-02T12:00:00.000Z","revision":1,"messageCount":3,"runState":{"status":"idle"},"canSend":true,"canUpload":true,"runModel":null,"runEffort":null}],"threadsSourceId":"agent-example","threadsNextCursor":null,"tags":[{"id":"tag-example","sourceId":"agent-example","name":"Examples","color":"blue","createdAt":"2030-01-02T12:00:00.000Z","updatedAt":"2030-01-02T12:00:00.000Z","revision":1}],"projects":[{"id":"project-example","sourceId":"agent-example","name":"Sample project","context":"Fictional examples only.","archivedAt":null,"createdAt":"2030-01-02T12:00:00.000Z","updatedAt":"2030-01-02T12:00:00.000Z","revision":1,"conversationCount":1,"runningCount":0,"monthCostUnknown":true,"monthKnownUsd":0.02}],"projectsSourceId":"agent-example","limits":{"maxFileBytes":20971520,"maxFilesPerTurn":10,"maxTurnBytes":67108864,"accept":["text/plain"]}}"#
           .utf8
       ))
   }

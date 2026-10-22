@@ -1,0 +1,1058 @@
+{
+  "version": 1,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/healthz",
+      "requestType": "NoBody",
+      "responseType": "ApiHealth",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "health",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/mcp-app-proxy",
+      "requestType": "NoBody",
+      "responseType": "Html",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "responseContentType": "text/html",
+      "operation": "mcpAppProxy",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bootstrap",
+      "requestType": "NoBody",
+      "responseType": "ApiBootstrap",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiBootstrapQuery",
+      "operation": "bootstrap",
+      "coverage": "covered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/agents/:id",
+      "requestType": "ApiPatchAgent",
+      "responseType": "ApiAgent",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "patchAgent",
+      "coverage": "covered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/agents/:id/run-defaults",
+      "requestType": "ApiPutRunDefaults",
+      "responseType": "ApiAgent",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "putRunDefaults",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/agents/:id/run-defaults",
+      "requestType": "NoBody",
+      "responseType": "ApiAgent",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "deleteRunDefaults",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/provider-usage/refresh",
+      "requestType": "ApiEmpty",
+      "responseType": "ApiProviderUsage",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "queryType": "ApiProviderQuery",
+      "operation": "refreshProviderUsage",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/provider-usage",
+      "requestType": "NoBody",
+      "responseType": "ApiProviderUsage",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "queryType": "ApiProviderQuery",
+      "operation": "providerUsage",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/restart",
+      "requestType": "ApiEmpty",
+      "responseType": "ApiRestart",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "restartAgent",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/restart",
+      "requestType": "NoBody",
+      "responseType": "ApiLatestRestart",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "latestRestart",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/restart/:operationId",
+      "requestType": "NoBody",
+      "responseType": "ApiRestart",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "restartOperation",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/provider-auth",
+      "requestType": "NoBody",
+      "responseType": "ApiProviderAuth",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "providerAuth",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/provider-auth/sessions",
+      "requestType": "ApiAuthStart",
+      "responseType": "ApiAuthSession",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "startAuth",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/provider-auth/sessions/:sessionId",
+      "requestType": "NoBody",
+      "responseType": "ApiAuthSession",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "authSession",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/provider-auth/sessions/:sessionId/input",
+      "requestType": "ApiAuthInput",
+      "responseType": "ApiAuthSession",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "authInput",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/agents/:id/provider-auth/sessions/:sessionId",
+      "requestType": "NoBody",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "cancelAuth",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/provider-auth/checks",
+      "requestType": "ApiAuthCheckStart",
+      "responseType": "ApiAuthCheck",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "startAuthCheck",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/provider-auth/checks/:checkId",
+      "requestType": "NoBody",
+      "responseType": "ApiAuthCheck",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "authCheck",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/agents/:id/provider-auth/checks/:checkId",
+      "requestType": "NoBody",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "cancelAuthCheck",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/skills",
+      "requestType": "NoBody",
+      "responseType": "ApiSkills",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "skills",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/cron",
+      "requestType": "NoBody",
+      "responseType": "ApiCronOverview",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "cronOverview",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/cron/config-view",
+      "requestType": "NoBody",
+      "responseType": "ApiCronConfig",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "cronConfig",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/cron/jobs/:jobId/runs",
+      "requestType": "NoBody",
+      "responseType": "ApiCronRuns",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiCronRunsQuery",
+      "operation": "cronRuns",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/models",
+      "requestType": "NoBody",
+      "responseType": "ApiModels",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiModelsQuery",
+      "operation": "models",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/agents/:id/cron/jobs/:jobId/runs/:runId",
+      "requestType": "NoBody",
+      "responseType": "ApiCronRun",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "cronRun",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/cron/jobs/:jobId/runs/:runId/reply-threads",
+      "requestType": "ApiCronReply",
+      "responseType": "ApiCronReceipt",
+      "successStatus": [
+        200,
+        201
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "createCronReply",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/cron/jobs/:jobId/run",
+      "requestType": "ApiCronAction",
+      "responseType": "ApiCronRunResult",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "resultStatuses": [
+        200,
+        428
+      ],
+      "operation": "runCron",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/agents/:id/cron/jobs/:jobId/effective-enabled",
+      "requestType": "ApiCronEnable",
+      "responseType": "ApiCronEnableResult",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "resultStatuses": [
+        200,
+        428
+      ],
+      "operation": "enableCron",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads",
+      "requestType": "ApiCreateThread",
+      "responseType": "ApiThread",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "createThread",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tags",
+      "requestType": "NoBody",
+      "responseType": "ApiTags",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiSourceQuery",
+      "operation": "tags",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tags",
+      "requestType": "ApiCreateTag",
+      "responseType": "ApiTag",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "createTag",
+      "coverage": "covered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tags/:id",
+      "requestType": "ApiPatchTag",
+      "responseType": "ApiTag",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "patchTag",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/tags/:id",
+      "requestType": "NoBody",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "deleteTag",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects",
+      "requestType": "NoBody",
+      "responseType": "ApiProjects",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiSourceQuery",
+      "operation": "projects",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects",
+      "requestType": "ApiCreateProject",
+      "responseType": "ApiProject",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "createProject",
+      "coverage": "covered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/projects/:id",
+      "requestType": "ApiPatchProject",
+      "responseType": "ApiProject",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "patchProject",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/:id",
+      "requestType": "NoBody",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "deleteProject",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads",
+      "requestType": "NoBody",
+      "responseType": "ApiThreadPage",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiThreadsQuery",
+      "operation": "threads",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/search",
+      "requestType": "NoBody",
+      "responseType": "ApiSearch",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiSearchQuery",
+      "operation": "searchThreads",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/active",
+      "requestType": "NoBody",
+      "responseType": "ApiActiveThreads",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "activeThreads",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:threadId/messages/:messageId/tool-calls/:toolCallId",
+      "requestType": "NoBody",
+      "responseType": "ApiToolCall",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "toolCall",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:threadId/messages/:messageId/parts/:partId/restart",
+      "requestType": "ApiEmpty",
+      "responseType": "ApiRestart",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "restartProposal",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:threadId/messages/:messageId",
+      "requestType": "NoBody",
+      "responseType": "ApiMessage",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiFullQuery",
+      "operation": "message",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id/usage",
+      "requestType": "NoBody",
+      "responseType": "ApiThreadUsage",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "threadUsage",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id",
+      "requestType": "NoBody",
+      "responseType": "ApiThreadDetail",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiFullQuery",
+      "operation": "thread",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id/messages",
+      "requestType": "NoBody",
+      "responseType": "ApiMessagePage",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiMessagesQuery",
+      "operation": "messages",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:threadId/messages/:messageId/reply-attachments/:partId/access",
+      "requestType": "NoBody",
+      "responseType": "ApiAttachmentAccess",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "attachmentAccess",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:threadId/messages/:messageId/reply-attachments/:partId/content",
+      "requestType": "NoBody",
+      "responseType": "Binary",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiCapabilityQuery",
+      "responseContentType": "*/*",
+      "operation": "attachmentContent",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:threadId/messages/:messageId/mcp-apps/:partId/access",
+      "requestType": "NoBody",
+      "responseType": "ApiMcpAppAccess",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "mcpAppAccess",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:threadId/messages/:messageId/mcp-apps/:partId",
+      "requestType": "NoBody",
+      "responseType": "ApiMcpAppResource",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiCapabilityQuery",
+      "operation": "mcpAppResource",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:threadId/messages/:messageId/mcp-apps/:partId/requests",
+      "requestType": "ApiMcpAppRequest",
+      "responseType": "ApiMcpAppResult",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "queryType": "ApiCapabilityQuery",
+      "operation": "mcpAppRequest",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id/jobs/:jobId",
+      "requestType": "NoBody",
+      "responseType": "ApiJob",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "job",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id/wake-schedule",
+      "requestType": "NoBody",
+      "responseType": "ApiWakeSchedule",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "wakeSchedule",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:id/wake-schedule",
+      "requestType": "ApiCreateWake",
+      "responseType": "ApiWakeSchedule",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "createWake",
+      "coverage": "covered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/threads/:id/wake-schedule",
+      "requestType": "ApiPutWake",
+      "responseType": "ApiWakeSchedule",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "putWake",
+      "coverage": "covered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/threads/:id/wake-schedule",
+      "requestType": "ApiPatchWake",
+      "responseType": "ApiWakeSchedule",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "patchWake",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/threads/:id/wake-schedule",
+      "requestType": "ApiDeleteWake",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "deleteWake",
+      "coverage": "covered"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/threads/:id",
+      "requestType": "ApiPatchThread",
+      "responseType": "ApiThread",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "patchThread",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/threads/:id",
+      "requestType": "NoBody",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiDeleteThreadQuery",
+      "operation": "deleteThread",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:id/compact",
+      "requestType": "ApiEmpty",
+      "responseType": "ApiCompaction",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "compact",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:id/turns",
+      "requestType": "ApiStartTurn",
+      "responseType": "ApiStartedTurn",
+      "successStatus": [
+        202
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "startTurn",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:id/submissions",
+      "requestType": "ApiStartSubmission",
+      "responseType": "ApiSubmissionReceipt",
+      "successStatus": [
+        202
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "resultStatuses": [
+        202,
+        409
+      ],
+      "operation": "startSubmission",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id/submissions/:submissionId",
+      "requestType": "NoBody",
+      "responseType": "ApiSubmissionReceipt",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "submissionReceipt",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:id/live-input",
+      "requestType": "ApiLiveInput",
+      "responseType": "ApiLiveInputReceipt",
+      "successStatus": [
+        202
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "liveInput",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:id/cancel",
+      "requestType": "ApiCancel",
+      "responseType": "ApiCancelled",
+      "successStatus": [
+        202
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "cancelTurn",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id/ask",
+      "requestType": "NoBody",
+      "responseType": "ApiAsk",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "ask",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/threads/:id/ask/:interactionId",
+      "requestType": "NoBody",
+      "responseType": "ApiAsk",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "askById",
+      "coverage": "covered"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/threads/:id/ask",
+      "requestType": "ApiAnswerAsk",
+      "responseType": "ApiAskResult",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "answerAsk",
+      "coverage": "covered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/push/subscriptions",
+      "requestType": "ApiPushSubscriptionInput",
+      "responseType": "ApiPushSubscription",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "putPushSubscription",
+      "coverage": "notApplicableToNative",
+      "reason": "Browser Web Push subscriptions require a service worker; native notifications are outside this client."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/push/subscriptions/:id",
+      "requestType": "NoBody",
+      "responseType": "ApiPushSubscription",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "claimed",
+      "operation": "pushSubscription",
+      "coverage": "notApplicableToNative",
+      "reason": "Browser Web Push subscriptions require a service worker; native notifications are outside this client."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/push/subscriptions/:id",
+      "requestType": "NoBody",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "deletePushSubscription",
+      "coverage": "notApplicableToNative",
+      "reason": "Browser Web Push subscriptions require a service worker; native notifications are outside this client."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/push/subscriptions/:id/test",
+      "requestType": "NoBody",
+      "responseType": "ApiPushSubscription",
+      "successStatus": [
+        202
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "testPushSubscription",
+      "coverage": "notApplicableToNative",
+      "reason": "Browser Web Push subscriptions require a service worker; native notifications are outside this client."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/push/events/:eventId/ack",
+      "requestType": "ApiPushAck",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": true,
+      "originPolicy": "exact",
+      "operation": "ackPush",
+      "coverage": "notApplicableToNative",
+      "reason": "Browser Web Push subscriptions require a service worker; native notifications are outside this client."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/uploads",
+      "requestType": "ApiCreateUpload",
+      "responseType": "ApiUpload",
+      "successStatus": [
+        201
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "createUpload",
+      "coverage": "covered"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/uploads/:id/content",
+      "requestType": "Binary",
+      "responseType": "ApiUpload",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "uploadContent",
+      "coverage": "covered"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/uploads/:id",
+      "requestType": "NoBody",
+      "responseType": "NoBody",
+      "successStatus": [
+        204
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "operation": "deleteUpload",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/uploads/:id/content",
+      "requestType": "NoBody",
+      "responseType": "Binary",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "responseContentType": "*/*",
+      "operation": "stagedContent",
+      "coverage": "covered"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/events",
+      "requestType": "NoBody",
+      "responseType": "ApiEvent",
+      "successStatus": [
+        200
+      ],
+      "requiresClaimedOrigin": false,
+      "originPolicy": "host",
+      "queryType": "ApiEventsQuery",
+      "responseContentType": "text/event-stream",
+      "operation": "eventsRequest",
+      "coverage": "covered"
+    }
+  ]
+}

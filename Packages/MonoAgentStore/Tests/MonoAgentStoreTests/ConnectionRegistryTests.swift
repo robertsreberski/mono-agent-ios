@@ -151,11 +151,9 @@ private actor OrderedProbeTransport: HTTPTransport {
   }
 
   func succeed(_ index: Int, identity: ConsoleIdentity) throws {
-    struct Fixture: Encodable {
-      let version = 1
-      let console: ConsoleIdentity
-    }
-    let data = try JSONEncoder().encode(Fixture(console: identity))
+    var bootstrap = try JSONDecoder().decode(BootstrapResponse.self, from: Scenario.bootstrap.data)
+    bootstrap.console = identity
+    let data = try JSONEncoder().encode(bootstrap)
     waiters.removeValue(forKey: index)?.resume(returning: HTTPResponse(data: data))
   }
 

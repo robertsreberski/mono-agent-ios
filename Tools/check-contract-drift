@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Report upstream main drift without updating the lock or resources."""
+import hashlib
+import json
+import pathlib
+import sys
+import urllib.request
+
+root = pathlib.Path(__file__).resolve().parents[1]
+lock = json.loads((root / "Contracts/console-api.lock.json").read_text())
+with urllib.request.urlopen("https://api.github.com/repos/robertsreberski/mono-agent/commits/main", timeout=30) as response:
+    head = json.load(response)["sha"]
+changed = []
+for artifact in lock["artifacts"]:
+    with urllib.request.urlopen(f"https://raw.githubusercontent.com/robertsreberski/mono-agent/{head}/{artifact['path']}", timeout=30) as response:
+        digest = hashlib.sha256(response.read()).hexdigest()
+    if digest != artifact["sha256"]:
+        changed.append(artifact["path"])
+print(f"Pinned {lock['commit']}; upstream {head}")
+if changed:
+    print("Contract drift (intentional update/review required):\n" + "\n".join(changed))
+    sys.exit(1)
+print("No artifact drift; lock unchanged.")

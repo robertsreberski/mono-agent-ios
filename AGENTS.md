@@ -4,8 +4,8 @@
 
 - `App/Composition`: dependency construction and single-scene lifecycle. `App/Connection`:
   saved-console UI. `App/Navigation`: ID-based compact stack / regular split-view routes.
-- `Packages/MonoAgentKit`: endpoint policy, request builder, transport and connection DTOs.
-  The future API client extends these seams; do not add a second bootstrap/URL client.
+- `Packages/MonoAgentKit`: complete typed API v1 client, SSE, deltas, uploads and capability
+  access. Extend ConsoleAPI/RequestBuilder; do not add a second bootstrap/URL client.
 - `Packages/MonoAgentKit/Sources/MonoAgentTestSupport`: fictional per-instance scripts and
   stable scenario catalog. TestSupport declarations are DEBUG-only; Release must contain no
   fixture symbols or strings (verified with nm and strings).
@@ -50,7 +50,7 @@ xcrun swift --version
 xcrun swift format lint --strict --recursive App AppTests AppUITests Packages
 ./Tools/check-repository
 python3 -m unittest discover -s Tools/tests
-./Tools/check-contract --connection-only
+./Tools/check-contract --locked
 swift test --package-path Packages/MonoAgentKit
 swift test --package-path Packages/MonoAgentStore
 xcodebuild -project MonoAgent.xcodeproj -scheme MonoAgent \
@@ -64,8 +64,9 @@ xcodebuild -project MonoAgent.xcodeproj -scheme MonoAgent -configuration Release
 
 Apply formatting with `xcrun swift format format --in-place --recursive App AppTests AppUITests Packages`.
 Kit/Store declare macOS 14 minimum for host tests; Design is iOS-only.
-Locked contract checking is intentionally **blocked**, not passed, until published
-artifacts are installed by the API-client change: `./Tools/check-contract --locked`.
+The locked contract is source-pinned in `Contracts/console-api.lock.json`. Imported goldens
+belong only to the Kit test target. Intentional updates use `Tools/update-contract` and
+`Tools/generate-routes`; see the Kit README. No Last-Event-ID or automatic mutation retries.
 
 With simulator components and a runtime installed:
 
