@@ -87,7 +87,7 @@ class ToolingTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 runpy.run_path(str(ROOT / "Tools/select-simulators"), run_name="__main__")
 
-    def export(self, omit_last=False, extra=None, fail_family=None):
+    def export(self, omit_last=False, extra=None, fail_family=None, family=None):
         # Copy only the executable into an isolated root; no real Artifacts or simulator use.
         (ROOT / ".build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as directory:
@@ -126,21 +126,26 @@ class ToolingTests(unittest.TestCase):
                     stdout = "pixelWidth: 1000\npixelHeight: 2000\n"
                 return subprocess.CompletedProcess(command, 0, stdout=stdout)
 
-            with patch.object(sys, "argv", ["screenshots", "--iphone", "phone", "--ipad", "pad"]), patch("subprocess.run", side_effect=fake_run), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            argv = ["screenshots", "--iphone", "phone", "--ipad", "pad"] + (["--family", family] if family else [])
+            index_name = f"index-{family}" if family else "index"
+            with patch.object(sys, "argv", argv), patch("subprocess.run", side_effect=fake_run), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 try:
                     runpy.run_path(str(root / "Tools/screenshots"), run_name="__main__")
                 finally:
                     self.calls = calls
-                    index_path = root / "Artifacts/Screenshots/index.json"
+                    index_path = root / f"Artifacts/Screenshots/{index_name}.json"
                     self.partial_index = json.loads(index_path.read_text()) if index_path.exists() else None
-            index = json.loads((root / "Artifacts/Screenshots/index.json").read_text())
-            self.assertEqual(len(index), 2 * len(MATRIX))
+            index = json.loads((root / f"Artifacts/Screenshots/{index_name}.json").read_text())
+            count = 1 if family else 2
+            self.assertEqual(len(index), count * len(MATRIX))
             self.assertTrue(all(item["label"] == "synthetic fixture" for item in index))
-            self.assertEqual(sum(command[0] == "xcodebuild" for command in calls), 2)
-            self.assertEqual(sum(command[:3] == ("sips", "-Z", "2000") for command in calls), 2 * len(MATRIX))
+            self.assertEqual(sum(command[0] == "xcodebuild" for command in calls), count)
+            self.assertEqual(sum(command[:3] == ("sips", "-Z", "2000") for command in calls), count * len(MATRIX))
             files = {item["file"] for item in index}
-            self.assertIn("iPhone__connection-failed__light__ax3.png", files)
-            self.assertIn("iPad__design-catalog-reduce-transparency__dark.png", files)
+            if family != "iPad":
+                self.assertIn("iPhone__connection-failed__light__ax3.png", files)
+            if family != "iPhone":
+                self.assertIn("iPad__design-catalog-reduce-transparency__dark.png", files)
             return index
 
     def test_matrix_keeps_connection_screens_and_covers_the_catalog(self):
@@ -153,6 +158,12 @@ class ToolingTests(unittest.TestCase):
                 self.assertIn((f"design-catalog-{theme}", appearance, None), keys)
         self.assertTrue(any(entry["textSize"] != "standard" and entry["scenario"].startswith("design-catalog") for entry in MATRIX))
         self.assertTrue(any(entry["transparency"] != "system" for entry in MATRIX))
+
+    def test_ci_family_leg_runs_only_one_device_and_uses_collision_free_index(self):
+        for family in ("iPhone", "iPad"):
+            with self.subTest(family=family):
+                index = self.export(family=family)
+                self.assertEqual({row["file"].split("__")[0] for row in index}, {family})
 
     def test_export_requires_and_indexes_complete_matrix(self):
         index = self.export()

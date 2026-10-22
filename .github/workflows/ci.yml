@@ -30,6 +30,10 @@ jobs:
       - run: swift test --package-path Packages/MonoAgentKit -Xswiftc -warnings-as-errors
       - run: swift test --package-path Packages/MonoAgentStore -Xswiftc -warnings-as-errors
   ios-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [iPhone, iPad]
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -42,28 +46,47 @@ jobs:
         run: xcodebuild -project MonoAgent.xcodeproj -scheme MonoAgent -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/Xcode CODE_SIGNING_ALLOWED=NO build
       - name: Verify Release contains no test fixtures
         run: ./Tools/check-release-fixtures
-      - name: Preferred Pro Max and iPad Pro tests and synthetic screenshots
-        run: ./Tools/screenshots
+      - name: Device tests and synthetic screenshots
+        run: ./Tools/screenshots --family "${{ matrix.family }}"
       - name: Screenshot index and bounded PNGs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: synthetic-fixture-screenshots
+          name: screenshots-${{ matrix.family }}
           path: Artifacts/Screenshots/
           if-no-files-found: error
       - name: Test results and device provenance
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: simulator-test-results
+          name: simulator-test-results-${{ matrix.family }}
           path: |
             Artifacts/*.xcresult
             Artifacts/devices.json
           if-no-files-found: error
+  screenshots:
+    if: always()
+    needs: [ios-tests]
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: screenshots-*
+          merge-multiple: true
+          path: Artifacts/Screenshots
+      - run: ./Tools/merge-screenshots
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: synthetic-fixture-screenshots
+          path: Artifacts/Screenshots/
+          if-no-files-found: error
   required:
     name: Required verdict
     if: always()
-    needs: [quality, host-tests, ios-tests]
+    needs: [quality, host-tests, ios-tests, screenshots]
     runs-on: xcode-27
     steps:
       - name: Require every prerequisite to succeed

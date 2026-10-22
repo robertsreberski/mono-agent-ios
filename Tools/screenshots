@@ -29,6 +29,7 @@ def run(*command, capture=False):
 parser = argparse.ArgumentParser()
 parser.add_argument("--iphone")
 parser.add_argument("--ipad")
+parser.add_argument("--family", choices=["iPhone", "iPad"], help="Run one CI matrix leg; default runs both")
 args = parser.parse_args()
 if bool(args.iphone) != bool(args.ipad):
     parser.error("Supply both --iphone and --ipad, or neither for dynamic selection")
@@ -45,6 +46,8 @@ if args.iphone:
             sys.exit(f"Unknown or unavailable {family} identifier")
 else:
     devices = json.loads(run(str(ROOT / "Tools/select-simulators"), capture=True))
+if args.family:
+    devices = {args.family: devices[args.family]}
 ARTIFACTS.mkdir(exist_ok=True)
 (ARTIFACTS / "devices.json").write_text(json.dumps(devices, indent=2) + "\n")
 output = ARTIFACTS / "Screenshots"
@@ -131,8 +134,9 @@ for family, device in devices.items():
     except (MatrixError, subprocess.CalledProcessError) as error:
         print(f"FAILED {family}: {error}", file=sys.stderr)
         failures.append(f"{family}: {error}")
-(output / "index.json").write_text(json.dumps(index, indent=2) + "\n")
-(output / "index.html").write_text("<!doctype html><meta charset='utf-8'><title>Synthetic fixture screenshots</title>" + "".join(
+index_name = f"index-{args.family}" if args.family else "index"
+(output / f"{index_name}.json").write_text(json.dumps(index, indent=2) + "\n")
+(output / f"{index_name}.html").write_text("<!doctype html><meta charset='utf-8'><title>Synthetic fixture screenshots</title>" + "".join(
     f"<figure><img style='max-width:100%' src='{item['file']}'><figcaption>{html.escape(' / '.join([item['device'], item['runtime'], item['scenario'], item['appearance'], item['theme'] + ' theme', item['textSize'] + ' text size', item['transparency'] + ' transparency', item['label']]))}</figcaption></figure>" for item in index))
 if failures:
     sys.exit(f"Screenshot matrix FAILED ({len(index)} screenshots exported):\n" + "\n".join(failures))
