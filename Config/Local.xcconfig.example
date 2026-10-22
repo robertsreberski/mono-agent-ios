@@ -1,0 +1,3 @@
+// Copy to Local.xcconfig (ignored), then fill in your own values in Xcode.
+// DEVELOPMENT_TEAM = your personal team
+// PRODUCT_BUNDLE_IDENTIFIER = your.unique.MonoAgent

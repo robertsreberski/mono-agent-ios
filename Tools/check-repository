@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Conservative public-repository hygiene checks, not a substitute for review."""
+import pathlib
+import plistlib
+import re
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+paths = subprocess.check_output(
+    ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT
+).decode().split("\0")
+errors = []
+for name in sorted(set(filter(None, paths))):
+    path = ROOT / name
+    if not path.is_file():
+        continue
+    try:
+        text = path.read_text()
+    except UnicodeDecodeError:
+        errors.append(f"{name}: unreviewed binary file")
+        continue
+    if "/" + "Users/" in text or "/" + "home/" in text:
+        errors.append(f"{name}: absolute home path")
+    if re.search(r"(?m)^\s*(?:DEVELOPMENT_TEAM|CODE_SIGN_IDENTITY|PROVISIONING_PROFILE_SPECIFIER)\s*=\s*[^;\n\s]+", text):
+        errors.append(f"{name}: committed signing configuration")
+    if "-----BEGIN " + "PRIVATE KEY-----" in text:
+        errors.append(f"{name}: private key")
+    for host in re.findall(r"https?://([a-zA-Z0-9.-]+(?:\.ts\.net|\.local))(?=[:/\s\"']|$)", text):
+        if host.lower() not in {"console.example.ts.net", "flockbox.local"}:
+            errors.append(f"{name}: non-synthetic private-looking hostname")
+    if name.endswith((".p12", ".mobileprovision", ".key", ".xcuserstate")):
+        errors.append(f"{name}: personal signing or workspace artifact")
+info = plistlib.loads((ROOT / "Config/Info.plist").read_bytes())
+if info.get("NSAppTransportSecurity") != {"NSAllowsArbitraryLoads": True}:
+    errors.append("ATS must contain only NSAllowsArbitraryLoads")
+if info.get("UIApplicationSceneManifest", {}).get("UIApplicationSupportsMultipleScenes") is not False:
+    errors.append("Multiple scenes must remain disabled")
+if not info.get("NSLocalNetworkUsageDescription"):
+    errors.append("Missing Local Network usage description")
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    sys.exit(1)
+print(f"Repository checks passed ({len(set(filter(None, paths)))} files; manual privacy review still required).")

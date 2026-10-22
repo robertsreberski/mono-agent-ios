@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Pick the newest iOS 27+ runtime with an available iPhone AND iPad; print safe metadata."""
+import json
+import subprocess
+import sys
+
+listing = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "--json"]))
+runtimes = sorted(
+    [runtime for runtime in listing["runtimes"] if runtime.get("isAvailable") and ".iOS-" in runtime["identifier"]
+     and int(runtime["version"].split(".")[0]) >= 27],
+    key=lambda runtime: tuple(map(int, runtime["version"].split("."))), reverse=True,
+)
+for runtime in runtimes:
+    devices = listing["devices"].get(runtime["identifier"], [])
+    selected = {}
+    for family in ("iPhone", "iPad"):
+        available = [device for device in devices if device.get("isAvailable") and device["name"].startswith(family)]
+        preferences = ("iPhone 18 Pro Max", "iPhone 17 Pro Max") if family == "iPhone" else ("iPad Pro 13-inch (M5)",)
+        device = next((device for name in preferences for device in available if device["name"] == name), None)
+        preferred = device is not None
+        if device is None:
+            device = next(iter(available), None)
+        if device is not None:
+            # Never export simctl dataPath/logPath: those include local user home paths.
+            selected[family] = {key: device[key] for key in ("name", "udid", "state")}
+            selected[family].update(runtime=runtime["name"], runtimeIdentifier=runtime["identifier"], selection="preferred" if preferred else "fallback")
+    if len(selected) == 2:
+        for family, device in selected.items():
+            reason = "preferred device" if device["selection"] == "preferred" else "FALLBACK: preferred names unavailable; first available device"
+            print(f"{family}: {device['name']} on {runtime['name']} ({reason})", file=sys.stderr)
+        print(json.dumps(selected, indent=2))
+        break
+else:
+    sys.exit("No compatible iPhone/iPad pair on an installed iOS 27+ runtime (no compatible iPad on an iPhone-only runtime). Install a full iOS runtime and create both device families; the full matrix has NOT passed.")

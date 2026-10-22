@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Select a concrete installed Xcode 27 via DEVELOPER_DIR for subsequent CI steps."""
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+candidates = []
+for app in pathlib.Path("/Applications").glob("Xcode*.app"):
+    developer = app / "Contents/Developer"
+    env = dict(os.environ, DEVELOPER_DIR=str(developer))
+    result = subprocess.run(["xcodebuild", "-version"], env=env, text=True, capture_output=True)
+    match = re.search(r"Xcode (27(?:\.\d+)*)", result.stdout)
+    if result.returncode == 0 and match and "beta" not in app.name.lower():
+        candidates.append((tuple(map(int, match[1].split("."))), developer))
+if not candidates:
+    sys.exit("Xcode 27 is required")
+_, developer = max(candidates)
+env = dict(os.environ, DEVELOPER_DIR=str(developer))
+version = subprocess.check_output(["xcodebuild", "-version"], env=env, text=True)
+assert re.search(r"^Xcode 27(?:\.|$)", version, re.M), version
+swift = subprocess.check_output(["xcrun", "swift", "--version"], env=env, text=True)
+match = re.search(r"Swift version (\d+)\.(\d+)", swift)
+assert match and tuple(map(int, match.groups())) >= (6, 4), "Swift 6.4+ is required"
+print(version.strip())
+print(swift.strip())
+if "GITHUB_ENV" not in os.environ:
+    sys.exit("This selector is CI-only; select Xcode locally in Xcode Settings, then run xcodebuild -version.")
+with open(os.environ["GITHUB_ENV"], "a") as file:
+    file.write(f"DEVELOPER_DIR={developer}\n")

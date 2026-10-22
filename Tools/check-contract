@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""C2 scope marker. C3 must implement locked artifact/hash/coverage verification."""
+import argparse
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--locked", action="store_true")
+parser.add_argument("--connection-only", action="store_true")
+args = parser.parse_args()
+if args.locked or not args.connection_only:
+    print("BLOCKED: published C1 contract pin, goldens and coverage are not installed. C3 owns locked conformance.", file=sys.stderr)
+    sys.exit(2)
+print("C2 connection-only scope: provisional health/bootstrap DTOs, not locked contract conformance. Host tests validate local scenarios.")

@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Run synthetic XCUI scenarios, export named PNGs and validate the artifact matrix."""
+import argparse
+import html
+import json
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+ARTIFACTS = ROOT / "Artifacts"
+
+def run(*command, capture=False):
+    return subprocess.run(command, cwd=ROOT, check=True, text=True,
+                          stdout=subprocess.PIPE if capture else None).stdout
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--iphone")
+parser.add_argument("--ipad")
+args = parser.parse_args()
+if bool(args.iphone) != bool(args.ipad):
+    parser.error("Supply both --iphone and --ipad, or neither for dynamic selection")
+if args.iphone:
+    listing = json.loads(run("xcrun", "simctl", "list", "--json", capture=True))
+    devices = {}
+    for family, identifier in (("iPhone", args.iphone), ("iPad", args.ipad)):
+        for runtime, entries in listing["devices"].items():
+            for device in entries:
+                if device["udid"] == identifier and device.get("isAvailable") and device["name"].startswith(family):
+                    devices[family] = {key: device[key] for key in ("name", "udid", "state")}
+                    devices[family]["runtime"] = runtime
+        if family not in devices:
+            sys.exit(f"Unknown or unavailable {family} identifier")
+else:
+    devices = json.loads(run(str(ROOT / "Tools/select-simulators"), capture=True))
+ARTIFACTS.mkdir(exist_ok=True)
+(ARTIFACTS / "devices.json").write_text(json.dumps(devices, indent=2) + "\n")
+output = ARTIFACTS / "Screenshots"
+if output.exists() and any(output.iterdir()):
+    sys.exit("Screenshots already exist; move or remove old Artifacts before rerunning")
+output.mkdir(exist_ok=True)
+index = []
+for family, device in devices.items():
+    result = ARTIFACTS / f"{family}.xcresult"
+    if result.exists():
+        sys.exit(f"{result.name} already exists; move or remove old Artifacts before rerunning")
+    if device.get("state") != "Booted":
+        run("xcrun", "simctl", "boot", device["udid"])
+    run("xcrun", "simctl", "bootstatus", device["udid"], "-b")
+    run("xcrun", "simctl", "status_bar", device["udid"], "override", "--time", "2001-01-01T09:41:00.000Z",
+        "--batteryState", "charged", "--batteryLevel", "100", "--wifiMode", "active", "--wifiBars", "3")
+    try:
+        run("xcodebuild", "-project", "MonoAgent.xcodeproj", "-scheme", "MonoAgent",
+            "-destination", f"platform=iOS Simulator,id={device['udid']}",
+            "-derivedDataPath", ".build/Xcode", "-resultBundlePath", str(result),
+            "-parallel-testing-enabled", "NO", "CODE_SIGNING_ALLOWED=NO", "test")
+    finally:
+        run("xcrun", "simctl", "status_bar", device["udid"], "clear")
+    exported = ARTIFACTS / f"Attachments-{family}"
+    run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result),
+        "--output-path", str(exported))
+    manifest = json.loads((exported / "manifest.json").read_text())
+    found = set()
+    for test in manifest:
+        for attachment in test["attachments"]:
+            match = re.search(r"synthetic-fixture__(connection-empty|connection-failed|console-online)__(light|dark)", attachment["suggestedHumanReadableName"])
+            if not match:
+                continue
+            scenario, appearance = match.groups()
+            key = (scenario, appearance)
+            if key in found:
+                sys.exit(f"Duplicate screenshot: {family} {key}")
+            found.add(key)
+            source = exported / attachment["exportedFileName"]
+            if source.suffix.lower() != ".png":
+                sys.exit("Expected PNG screenshot attachment")
+            name = f"{family}__{scenario}__{appearance}.png"
+            target = output / name
+            shutil.copyfile(source, target)
+            run("sips", "-Z", "2000", str(target))
+            dimensions = list(map(int, re.findall(r"pixel(?:Width|Height): (\d+)", run("sips", "-g", "pixelWidth", "-g", "pixelHeight", str(target), capture=True))))
+            if len(dimensions) != 2 or not all(0 < dimension <= 2000 for dimension in dimensions):
+                sys.exit(f"Invalid screenshot dimensions: {name}")
+            index.append(dict(file=name, device=device["name"], runtime=device["runtime"],
+                              scenario=scenario, appearance=appearance, textSize="standard",
+                              label="synthetic fixture", dimensions=dimensions))
+    expected = {(scenario, appearance) for scenario in ("connection-empty", "connection-failed", "console-online") for appearance in ("light", "dark")}
+    if found != expected:
+        sys.exit(f"Incomplete screenshot matrix for {family}: {found}")
+(output / "index.json").write_text(json.dumps(index, indent=2) + "\n")
+(output / "index.html").write_text("<!doctype html><meta charset='utf-8'><title>Synthetic fixture screenshots</title>" + "".join(
+    f"<figure><img style='max-width:100%' src='{item['file']}'><figcaption>{html.escape(item['device'] + ' / ' + item['runtime'] + ' / ' + item['scenario'] + ' / ' + item['appearance'] + ' / synthetic fixture / standard text size')}</figcaption></figure>" for item in index))
+print(f"Exported {len(index)} synthetic fixture screenshots; every dimension <= 2000 px.")

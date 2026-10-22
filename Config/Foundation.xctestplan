@@ -1,0 +1,35 @@
+{
+  "configurations": [
+    {
+      "id": "A0000000-0000-0000-0000-000000000001",
+      "name": "Foundation",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "targetForVariableExpansion": {
+      "containerPath": "container:MonoAgent.xcodeproj",
+      "identifier": "00000000000000000000000A",
+      "name": "MonoAgent"
+    }
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:MonoAgent.xcodeproj",
+        "identifier": "00000000000000000000000B",
+        "name": "MonoAgentTests"
+      },
+      "parallelizable": false
+    },
+    {
+      "target": {
+        "containerPath": "container:MonoAgent.xcodeproj",
+        "identifier": "00000000000000000000000C",
+        "name": "MonoAgentUITests"
+      },
+      "parallelizable": false
+    }
+  ],
+  "version": 1
+}
