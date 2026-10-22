@@ -40,6 +40,9 @@ conversation/memory content, absolute local home paths, credentials or signing i
 Use fictional fixtures (Flockbox, console.example.ts.net). Review generated artifacts too;
 the hygiene script is only a backstop. Do not contact a console for screenshots.
 
+Tooling tests must never assume `.build` or any other ignored directory exists.
+Create required sandbox parents explicitly and test tooling from a fresh checkout.
+
 ## Exact verification commands
 
 Run from the repository root with Xcode 27 / Swift 6.4 selected:
