@@ -1,7 +1,7 @@
 # Mono Agent for iPhone and iPad
 
 A native SwiftUI client for the mono-agent web console. This foundation includes saved
-console connections, adaptive navigation and a Liquid Glass design system
+console connections, adaptive navigation an offline-capable observable console store and a Liquid Glass design system
 ([MonoAgentDesign](Packages/MonoAgentDesign/README.md)). It does not include agent or
 conversation features yet. The connected console's theme (evergreen, ocean, plum or
 terracotta) styles the app; disconnected or unknown themes use evergreen.
@@ -65,19 +65,25 @@ using its LAN or Tailscale IP address or Tailscale Serve URL is another option.
 Add, select, edit, remove and retry several saved consoles. Profiles are atomic versioned
 JSON under the app's Application Support directory, excluded from backup and protected
 until first unlock on iOS. Only endpoint, label, last identity, selection and HTTP
-acknowledgment are retained; no raw responses, capability URLs or credentials are cached.
+acknowledgment are retained in the profile record. The separate
+[Store repository](Packages/MonoAgentStore/README.md) retains bounded sanitized transcripts,
+text drafts/read markers and submission recovery references; capability URLs and credentials
+are stripped.
 Network sessions use no shared disk cache or cookie storage. Relaunch does not show a
 previously connected console as online without a fresh probe.
 
 Changing an endpoint creates a new UUID namespace and clears prior connection identity.
 Profiles are never merged by the server's advertised hostname (not a durable server ID).
-Remove a console to delete its profile data. Delete the app to remove **all** local data;
-reinstall starts empty. Transcript/cache/draft persistence arrives in a later change.
+Remove a console to delete its profile and retained local data. Delete the app to remove
+**all** local data; reinstall starts empty. Cache pruning never evicts drafts or unresolved
+submission references. Persistence failures are exposed by the Store, not hidden as success.
 
 Only **one window** is supported. Multiple scenes need a separate selected-thread stream
 and state design. No offline send queue, auth UI, transcript or embedded web content
-is implemented in this foundation. Kit provides the typed API/SSE/upload primitives for
-future Store and feature integration; the connection probe already uses that client.
+is implemented in this foundation. Kit supplies typed API/SSE/upload primitives; the
+Store supplies ordered transcript projections, live sync, unread, drafts and GET-only
+submission recovery for later feature screens. Cached running turns require fresh summary
+confirmation. Selecting a saved profile hydrates offline without probing.
 
 ## Tests and synthetic screenshots
 
@@ -89,7 +95,9 @@ script exhaustion fails closed. Launch with `--scenario connection-empty`,
 `design-catalog-evergreen|ocean|plum|terracotta`, `design-catalog-accessibility` or
 `design-catalog-reduce-transparency`. It always uses isolated empty fixture storage.
 Unknown scenarios fail explicitly. Reset without a scenario selects
-an isolated empty fixture, never deletes real saved consoles. Release ignores these flags.
+an isolated empty fixture, never deletes real saved consoles. DEBUG Store preparation
+scenarios are `store-offline`, `store-streaming`, `store-unread`, `store-uncertain`; these
+exercise state behind the existing shell, not new feature UI. Release ignores these flags.
 
 ```sh
 swift test --package-path Packages/MonoAgentKit
@@ -121,7 +129,9 @@ the command then exits non-zero. Failures skip slow diagnostics collection. Move
 Time in the status bar, locale, scenario data and animations are controlled; no real
 console networking is available to a fixture scenario.
 
-CI builds both Debug and Release and checks the Release executable with `nm` and `strings`
+CI runs iPhone and iPad tests as parallel matrix jobs, then merges their screenshot
+indexes and PNGs into one artifact. `Tools/screenshots` still runs both locally;
+`--family iPhone|iPad` selects one CI leg. CI builds both Debug and Release and checks the Release executable with `nm` and `strings`
 for fixture symbols/hostnames, design-catalog types/scenario names and preview helpers
 (`./Tools/check-release-fixtures`). TestSupport declarations, the catalog and previews
 are DEBUG-only, not merely inactive in production.
@@ -129,9 +139,8 @@ are DEBUG-only, not merely inactive in production.
 CI runs on `xcode-27`, selects the newest stable Xcode 27 (betas are excluded after resolving
 symlinks; no stable 27.x fails), asserts Xcode and Swift, chooses installed
 simulators dynamically, uploads screenshots and xcresults, and gates on **Required verdict**.
-Hosted exact-head CI is the broad gate. Simulator/UI tests and screenshots cannot run
-locally until Xcode components/runtimes are installed; unsigned builds and host tests
-are independent checks. Real-device permission, network and Personal Team checks remain
+Hosted exact-head CI is the broad gate. Simulator/UI tests and screenshots require installed Xcode components/runtimes;
+unsigned builds and host tests are independent checks. Real-device permission, network and Personal Team checks remain
 separate from simulator evidence. UI-changing PRs must supply iPhone and iPad screenshots;
 the later full-feature screenshot checkpoint remains after the composer feature.
 

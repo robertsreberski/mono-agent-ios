@@ -47,3 +47,11 @@ class ReleaseFixtureTests(unittest.TestCase):
                            ("nm", b"DesignPreviewMatrix")):
             with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
                 self.check(tool, leak)
+
+    def test_store_scenarios_and_transports_are_rejected(self):
+        for tool, leak in (("nm", b"StoreScenario"), ("nm", b"ScenarioConsoleTransport"),
+                           ("nm", b"ScenarioEventSource"), ("strings", b"store-offline"),
+                           ("strings", b"store-streaming"), ("strings", b"store-unread"),
+                           ("strings", b"store-uncertain")):
+            with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
+                self.check(tool, leak)

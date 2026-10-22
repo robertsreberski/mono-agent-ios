@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct MonoAgentApp: App {
+  @Environment(\.scenePhase) private var scenePhase
   @State private var model = AppModel()
   var body: some Scene {
     WindowGroup {
@@ -19,6 +20,8 @@ struct MonoAgentApp: App {
       }
       .preferredColorScheme(model.appearance)
       .task { await model.start() }
+      .task(id: model.storeCompositionKey) { await model.synchronizeStore() }
+      .onChange(of: scenePhase) { _, phase in Task { await model.scenePhaseChanged(phase) } }
     }
   }
 }
