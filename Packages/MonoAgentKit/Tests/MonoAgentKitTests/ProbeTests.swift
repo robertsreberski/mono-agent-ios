@@ -25,17 +25,27 @@ func networkFailures(example: (URLError.Code, ProbeError)) async {
 
 @Test func protocolFailures() async {
   let examples: [(HTTPResponse, ProbeError)] = [
-    (HTTPResponse(data: Data(#"{"status":"ok","version":2}"#.utf8)), .unsupportedVersion(2)),
-    (HTTPResponse(data: Data(#"{"status":"failed","version":1}"#.utf8)), .unhealthy),
+    (
+      HTTPResponse(data: Data(#"{"status":"ok","version":2,"push":"ok"}"#.utf8)),
+      .unsupportedVersion(2)
+    ),
+    (
+      HTTPResponse(data: Data(#"{"status":"failed","version":1,"push":"degraded"}"#.utf8)),
+      .unhealthy
+    ),
     (HTTPResponse(data: Data("<html>proxy</html>".utf8), contentType: "text/html"), .nonJSON),
     (HTTPResponse(data: Data("{}".utf8)), .invalidResponse),
     (
-      HTTPResponse(data: Data(#"{"error":{"code":"untrusted_host"}}"#.utf8), status: 421),
+      HTTPResponse(
+        data: Data(#"{"error":{"code":"untrusted_host","message":"Not allowed"}}"#.utf8),
+        status: 421),
       .untrustedHost
     ),
     (HTTPResponse(data: Data(#"{"code":"untrusted_host"}"#.utf8), status: 421), .http(421)),
     (
-      HTTPResponse(data: Data(#"{"error":{"code":"misdirected_request"}}"#.utf8), status: 421),
+      HTTPResponse(
+        data: Data(#"{"error":{"code":"misdirected_request","message":"Misdirected"}}"#.utf8),
+        status: 421),
       .http(421)
     ),
     (
@@ -57,8 +67,9 @@ func networkFailures(example: (URLError.Code, ProbeError)) async {
 @Test func bootstrapMustAlsoBeCompatible() async {
   let bad = HTTPResponse(
     data: Data(
-      #"{"version":9,"console":{"hostName":"example.com","displayName":"Flockbox","theme":"ocean"}}"#
-        .utf8))
+      String(decoding: Scenario.bootstrap.data, as: UTF8.self).replacingOccurrences(
+        of: "\"version\":1", with: "\"version\":9"
+      ).utf8))
   let probe = ConnectionProbe(
     transport: ScriptedTransport([.response(Scenario.health), .response(bad)]))
   await #expect(throws: ProbeError.unsupportedVersion(9)) {

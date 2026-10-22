@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/robertsreberski/mono-agent",
+  "commit": "299996bf1cebbb9e1185e9339d99e2006dfc2ccf",
+  "apiVersion": 1,
+  "artifacts": [
+    {
+      "path": "packages/web/schema/console-api.v1.schema.json",
+      "resource": "Packages/MonoAgentKit/Tests/MonoAgentKitTests/Resources/Contracts/console-api.v1.schema.json",
+      "sha256": "ae369019d9f29b7b84e6100f19bccf60c58f7ce2a17e77fcd5596995f0452cdd"
+    },
+    {
+      "path": "packages/web/schema/console-api.v1.routes.json",
+      "resource": "Packages/MonoAgentKit/Tests/MonoAgentKitTests/Resources/Contracts/console-api.v1.routes.json",
+      "sha256": "1be3a22cd280b8d27534ec88576ba52fda110f9a859efd2a857613859276a3ab"
+    },
+    {
+      "path": "packages/web/schema/console-api.v1.fixtures.json",
+      "resource": "Packages/MonoAgentKit/Tests/MonoAgentKitTests/Resources/Contracts/console-api.v1.fixtures.json",
+      "sha256": "ea2f8ade539b50fcc13da117a5f18d57559651d835f201a6e3bd7d0ffc7e4780"
+    },
+    {
+      "path": "packages/web/schema/message-delta-vectors.v1.json",
+      "resource": "Packages/MonoAgentKit/Tests/MonoAgentKitTests/Resources/Contracts/message-delta-vectors.v1.json",
+      "sha256": "a54e6e62fcf69d52901bfe0523554dd10a9abdb45d6be75303f95ddc72f194f6"
+    }
+  ]
+}

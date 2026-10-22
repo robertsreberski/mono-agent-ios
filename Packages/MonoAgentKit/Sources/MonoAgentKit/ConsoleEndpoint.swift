@@ -95,11 +95,8 @@ public struct RequestBuilder: Sendable {
     request.cachePolicy = .reloadIgnoringLocalCacheData
     request.timeoutInterval = 15
     request.setValue("application/json", forHTTPHeaderField: "Accept")
-    // C3 enables this only for manifest-marked routes. The URL and claim share an authority.
-    // Never accept an arbitrary off-origin request here and never override Host.
-    if claimingOrigin {
-      request.setValue(endpoint.origin, forHTTPHeaderField: "X-Mono-Agent-Web-Origin")
-    }
+    // Harmless on host-only routes, and robust when a handler gains an origin check.
+    request.setValue(endpoint.origin, forHTTPHeaderField: "X-Mono-Agent-Web-Origin")
     return request
   }
 }

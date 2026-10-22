@@ -19,7 +19,7 @@ jobs:
       - run: xcrun swift format lint --strict --recursive App AppTests AppUITests Packages
       - run: python3 -m unittest discover -s Tools/tests
       - run: ./Tools/check-repository
-      - run: ./Tools/check-contract --connection-only
+      - run: ./Tools/check-contract --locked
   host-tests:
     runs-on: xcode-27
     steps:

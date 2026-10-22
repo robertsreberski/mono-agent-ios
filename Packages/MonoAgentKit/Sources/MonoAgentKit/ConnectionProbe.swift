@@ -5,10 +5,16 @@ public struct HTTPResponse: Sendable {
   public let data: Data
   public let status: Int
   public let contentType: String
-  public init(data: Data, status: Int = 200, contentType: String = "application/json") {
+  public let headers: [String: String]
+  public init(
+    data: Data, status: Int = 200, contentType: String = "application/json",
+    headers: [String: String] = [:]
+  ) {
     self.data = data
     self.status = status
     self.contentType = contentType
+    self.headers = Dictionary(
+      headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { _, new in new })
   }
 }
 
@@ -16,7 +22,7 @@ public protocol HTTPTransport: Sendable {
   func send(_ request: URLRequest) async throws -> HTTPResponse
 }
 
-private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+final class NoRedirects: NSObject, URLSessionTaskDelegate {
   func urlSession(
     _ session: URLSession, task: URLSessionTask,
     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
@@ -27,10 +33,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
   }
 }
 
-public actor URLSessionTransport: HTTPTransport {
+public actor URLSessionTransport: FileUploadTransport {
   private let session: URLSession
-  public init() {
-    let config = URLSessionConfiguration.ephemeral
+  public init(configuration: URLSessionConfiguration = .ephemeral) {
+    let config = configuration
     config.urlCache = nil
     config.requestCachePolicy = .reloadIgnoringLocalCacheData
     config.httpCookieStorage = nil
@@ -40,36 +46,31 @@ public actor URLSessionTransport: HTTPTransport {
   }
   deinit { session.invalidateAndCancel() }
 
+  public func upload(
+    _ request: URLRequest, file: URL, progress: @escaping @Sendable (Double) -> Void
+  ) async throws -> HTTPResponse {
+    let (data, response) = try await session.upload(
+      for: request, fromFile: file, delegate: UploadProgressDelegate(progress: progress))
+    guard let response = response as? HTTPURLResponse else { throw ProbeError.connectivity }
+    return HTTPResponse(
+      data: data, status: response.statusCode,
+      contentType: response.value(forHTTPHeaderField: "Content-Type") ?? "",
+      headers: response.allHeaderFields.reduce(into: [:]) {
+        if let key = $1.key as? String, let value = $1.value as? String { $0[key] = value }
+      })
+  }
+
   public func send(_ request: URLRequest) async throws -> HTTPResponse {
     let (data, response) = try await session.data(for: request)
     guard let response = response as? HTTPURLResponse else { throw ProbeError.connectivity }
     return HTTPResponse(
       data: data, status: response.statusCode,
-      contentType: response.value(forHTTPHeaderField: "Content-Type") ?? ""
+      contentType: response.value(forHTTPHeaderField: "Content-Type") ?? "",
+      headers: response.allHeaderFields.reduce(into: [:]) {
+        if let key = $1.key as? String, let value = $1.value as? String { $0[key] = value }
+      }
     )
   }
-}
-
-// Provisional connection-only projections of API v1. C3 expands these, not a parallel client.
-public struct HealthResponse: Codable, Sendable {
-  public let status: String
-  public let version: Int
-}
-
-public struct ConsoleIdentity: Codable, Sendable, Equatable {
-  public let hostName: String
-  public let displayName: String
-  public let theme: String
-  public init(hostName: String, displayName: String, theme: String) {
-    self.hostName = hostName
-    self.displayName = displayName
-    self.theme = theme
-  }
-}
-
-public struct BootstrapResponse: Codable, Sendable {
-  public let version: Int
-  public let console: ConsoleIdentity
 }
 
 public enum ProbeError: Error, LocalizedError, Sendable, Equatable {
@@ -112,11 +113,11 @@ public struct ConnectionProbe: Sendable {
 
   public func probe(_ endpoint: ConsoleEndpoint) async throws -> ConsoleIdentity {
     do {
-      let builder = RequestBuilder(endpoint: endpoint)
-      let health: HealthResponse = try await read(builder.get(.health))
+      let client = APIClient(endpoint: endpoint, transport: transport)
+      let health = try await client.health().valueRequired()
       guard health.version == 1 else { throw ProbeError.unsupportedVersion(health.version) }
       guard health.status == "ok" else { throw ProbeError.unhealthy }
-      let bootstrap: BootstrapResponse = try await read(builder.get(.bootstrap))
+      let bootstrap = try await client.bootstrap(query: .init()).valueRequired()
       guard bootstrap.version == 1 else {
         throw ProbeError.unsupportedVersion(bootstrap.version)
       }
@@ -124,6 +125,14 @@ public struct ConnectionProbe: Sendable {
         throw ProbeError.invalidResponse
       }
       return bootstrap.console
+    } catch APIVersionError.unsupported(let version) {
+      throw ProbeError.unsupportedVersion(version)
+    } catch let error as APIError {
+      if error.status == 421 && error.code == "untrusted_host" { throw ProbeError.untrustedHost }
+      if error.code == "non_json" { throw ProbeError.nonJSON }
+      if error.code == "invalid_response" { throw ProbeError.invalidResponse }
+      if (300...399).contains(error.status) { throw ProbeError.redirect }
+      throw ProbeError.http(error.status)
     } catch let error as ProbeError { throw error } catch is CancellationError {
       throw CancellationError()
     } catch let error as URLError {
@@ -140,27 +149,4 @@ public struct ConnectionProbe: Sendable {
     } catch { throw ProbeError.connectivity }
   }
 
-  private func read<T: Decodable>(_ request: URLRequest) async throws -> T {
-    let response = try await transport.send(request)
-    if response.status == 421,
-      let failure = try? JSONDecoder().decode(ServerFailure.self, from: response.data),
-      failure.error.code == "untrusted_host"
-    {
-      throw ProbeError.untrustedHost
-    }
-    if (300...399).contains(response.status) { throw ProbeError.redirect }
-    guard (200...299).contains(response.status) else { throw ProbeError.http(response.status) }
-    guard
-      response.contentType.lowercased().split(separator: ";").first?
-        .trimmingCharacters(in: .whitespaces) == "application/json"
-    else { throw ProbeError.nonJSON }
-    do { return try JSONDecoder().decode(T.self, from: response.data) } catch {
-      throw ProbeError.invalidResponse
-    }
-  }
-}
-
-private struct ServerFailure: Decodable {
-  struct Detail: Decodable { let code: String }
-  let error: Detail
 }
