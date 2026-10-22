@@ -1,0 +1,141 @@
+{
+  "_comment": "Per-device synthetic screenshot matrix. Each entry needs a matching XCUI attachment named synthetic-fixture__<scenario>__<appearance>[__<variant>] (AppUITests/ScenarioTests.swift).",
+  "entries": [
+    {
+      "scenario": "connection-empty",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-failed",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-failed",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "console-online",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "console-online",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-failed",
+      "appearance": "light",
+      "variant": "ax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "design-catalog-evergreen",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "design-catalog-evergreen",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "design-catalog-ocean",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "ocean"
+    },
+    {
+      "scenario": "design-catalog-ocean",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "ocean"
+    },
+    {
+      "scenario": "design-catalog-plum",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum"
+    },
+    {
+      "scenario": "design-catalog-plum",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum"
+    },
+    {
+      "scenario": "design-catalog-terracotta",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "terracotta"
+    },
+    {
+      "scenario": "design-catalog-terracotta",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "terracotta"
+    },
+    {
+      "scenario": "design-catalog-accessibility",
+      "appearance": "light",
+      "variant": "ax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "design-catalog-accessibility",
+      "appearance": "dark",
+      "variant": "ax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "design-catalog-reduce-transparency",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "reduced (design override)",
+      "theme": "plum"
+    },
+    {
+      "scenario": "design-catalog-reduce-transparency",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "reduced (design override)",
+      "theme": "plum"
+    }
+  ]
+}

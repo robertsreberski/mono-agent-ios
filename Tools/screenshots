@@ -11,6 +11,16 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ARTIFACTS = ROOT / "Artifacts"
+MATRIX = json.loads((pathlib.Path(__file__).resolve().parent / "screenshot-matrix.json").read_text())["entries"]
+
+
+def key(entry):
+    return (entry["scenario"], entry["appearance"], entry.get("variant"))
+
+
+EXPECTED = {key(entry): entry for entry in MATRIX}
+if len(EXPECTED) != len(MATRIX):
+    sys.exit("Duplicate entries in Tools/screenshot-matrix.json")
 
 def run(*command, capture=False):
     return subprocess.run(command, cwd=ROOT, check=True, text=True,
@@ -65,18 +75,20 @@ for family, device in devices.items():
     found = set()
     for test in manifest:
         for attachment in test["attachments"]:
-            match = re.search(r"synthetic-fixture__(connection-empty|connection-failed|console-online)__(light|dark)", attachment["suggestedHumanReadableName"])
+            match = re.match(r"synthetic-fixture__([a-z0-9-]+)__(light|dark)(?:__([a-z0-9]+))?(?:_\d+_[0-9A-Fa-f-]+)?(?:\.png)?$", attachment["suggestedHumanReadableName"])
             if not match:
                 continue
-            scenario, appearance = match.groups()
-            key = (scenario, appearance)
-            if key in found:
-                sys.exit(f"Duplicate screenshot: {family} {key}")
-            found.add(key)
+            scenario, appearance, variant = match.groups()
+            entry = EXPECTED.get((scenario, appearance, variant))
+            if entry is None:
+                sys.exit(f"Screenshot not in Tools/screenshot-matrix.json: {family} {match.group(0)}")
+            if key(entry) in found:
+                sys.exit(f"Duplicate screenshot: {family} {key(entry)}")
+            found.add(key(entry))
             source = exported / attachment["exportedFileName"]
             if source.suffix.lower() != ".png":
                 sys.exit("Expected PNG screenshot attachment")
-            name = f"{family}__{scenario}__{appearance}.png"
+            name = f"{family}__{scenario}__{appearance}" + (f"__{variant}" if variant else "") + ".png"
             target = output / name
             shutil.copyfile(source, target)
             run("sips", "-Z", "2000", str(target))
@@ -84,12 +96,13 @@ for family, device in devices.items():
             if len(dimensions) != 2 or not all(0 < dimension <= 2000 for dimension in dimensions):
                 sys.exit(f"Invalid screenshot dimensions: {name}")
             index.append(dict(file=name, device=device["name"], runtime=device["runtime"],
-                              scenario=scenario, appearance=appearance, textSize="standard",
+                              scenario=scenario, appearance=appearance, textSize=entry["textSize"],
+                              transparency=entry["transparency"], theme=entry["theme"],
+                              surface="design catalog" if scenario.startswith("design-catalog") else "connection",
                               label="synthetic fixture", dimensions=dimensions))
-    expected = {(scenario, appearance) for scenario in ("connection-empty", "connection-failed", "console-online") for appearance in ("light", "dark")}
-    if found != expected:
-        sys.exit(f"Incomplete screenshot matrix for {family}: {found}")
+    if found != set(EXPECTED):
+        sys.exit(f"Incomplete screenshot matrix for {family}; missing {sorted(set(EXPECTED) - found, key=str)}")
 (output / "index.json").write_text(json.dumps(index, indent=2) + "\n")
 (output / "index.html").write_text("<!doctype html><meta charset='utf-8'><title>Synthetic fixture screenshots</title>" + "".join(
-    f"<figure><img style='max-width:100%' src='{item['file']}'><figcaption>{html.escape(item['device'] + ' / ' + item['runtime'] + ' / ' + item['scenario'] + ' / ' + item['appearance'] + ' / synthetic fixture / standard text size')}</figcaption></figure>" for item in index))
+    f"<figure><img style='max-width:100%' src='{item['file']}'><figcaption>{html.escape(' / '.join([item['device'], item['runtime'], item['scenario'], item['appearance'], item['theme'] + ' theme', item['textSize'] + ' text size', item['transparency'] + ' transparency', item['label']]))}</figcaption></figure>" for item in index))
 print(f"Exported {len(index)} synthetic fixture screenshots; every dimension <= 2000 px.")
