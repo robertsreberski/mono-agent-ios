@@ -83,3 +83,51 @@ func heldMessage() throws -> WebMessage {
   else { return }
   #expect(failedClosed.result == .string("preview"))
 }
+
+@Test func replyOptionValidationMatchesUTF16AndCcNotCf() throws {
+  func part(_ label: String) -> WebMessagePart {
+    .replyOptions(
+      .init(type: "reply_options", id: "fictional", options: [label, "Another option"]))
+  }
+  for label in ["Family 👩‍👩‍👧‍👦", "soft\u{00ad}hyphen", String(repeating: "🦉", count: 37) + "a"] {
+    #expect(try DeltaReducer.apply(ops: [.set(index: 0, part: part(label))], to: []).count == 1)
+  }
+  for label in [
+    "bad\u{0000}label", "bad\u{007f}label", "bad\u{0085}label", String(repeating: "🦉", count: 38),
+  ] {
+    #expect(throws: DeltaReducer.InvalidOperation.self) {
+      try DeltaReducer.apply(ops: [.set(index: 0, part: part(label))], to: [])
+    }
+  }
+}
+@Test func unreadableStatusAndAttributionRequireRepairEvenWhenSequenceIsStale() throws {
+  var message = try heldMessage()
+  message.seq = 9
+  var delta = WebMessageDelta(
+    messageId: message.id, baseSeq: 1, seq: 2, status: "future", updatedAt: "later", ops: [])
+  #expect(DeltaReducer.apply(delta, to: message, threadHeld: true).outcome == .gap)
+  delta.status = "complete"
+  var attribution = try JSONDecoder().decode(
+    WebRunAttribution.self,
+    from: Data(#"{"requested":{},"disposition":"future","transitions":[],"retries":[]}"#.utf8))
+  delta.attribution = attribution
+  #expect(DeltaReducer.apply(delta, to: message, threadHeld: true).outcome == .gap)
+  attribution.disposition = "requested"
+  delta.attribution = attribution
+  #expect(DeltaReducer.apply(delta, to: message, threadHeld: true).outcome == .stale)
+  let subagent = try JSONDecoder().decode(
+    WebMessagePart.self,
+    from: Data(
+      #"{"type":"subagent","toolCallId":"fictional","name":"Example","status":"complete","calls":[],"attribution":{"requested":{},"disposition":"future","transitions":[],"retries":[]}}"#
+        .utf8))
+  #expect(throws: DeltaReducer.InvalidOperation.self) {
+    try DeltaReducer.apply(ops: [.set(index: 0, part: subagent)], to: [])
+  }
+  guard case .subagent(var excessive) = subagent else { return }
+  attribution.transitions = Array(
+    repeating: .init(from: "a", to: "b", attemptIndex: nil, reason: nil), count: 33)
+  excessive.attribution = attribution
+  #expect(throws: DeltaReducer.InvalidOperation.self) {
+    try DeltaReducer.apply(ops: [.set(index: 0, part: .subagent(excessive))], to: [])
+  }
+}

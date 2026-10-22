@@ -46,11 +46,11 @@ public struct ApiBootstrap: Codable, Sendable, Equatable {
   public var push: WebPushBootstrap
   public var agents: [WebAgentSummary]
   public var threads: [WebThread]
-  public var threadsSourceId: String?
-  public var threadsNextCursor: String?
+  @RequiredNullable public var threadsSourceId: String?
+  @RequiredNullable public var threadsNextCursor: String?
   public var tags: [WebTag]
   public var projects: [WebProject]
-  public var projectsSourceId: String?
+  @RequiredNullable public var projectsSourceId: String?
   public var activeThreads: WebActiveThreads?
   public var currentThreadId: String?
   public var limits: UploadLimits
@@ -71,7 +71,7 @@ public struct EffectiveRunConfiguration: Codable, Sendable, Equatable {
 }
 public struct WebAgentRunSettings: Codable, Sendable, Equatable {
   public var config: RunConfiguration
-  public var override: RunConfiguration?
+  @RequiredNullable public var override: RunConfiguration?
   public var effective: EffectiveRunConfiguration
 }
 public struct WebAgentRestartSupport: Codable, Sendable, Equatable {
@@ -219,7 +219,7 @@ public struct WakeSummary: Codable, Sendable, Equatable {
   public var compactFirst: Bool?
 }
 public struct PendingProject: Codable, Sendable, Equatable {
-  public var projectId: String?
+  @RequiredNullable public var projectId: String?
   public var turnId: String
 }
 public struct WebThreadTrigger: Codable, Sendable, Equatable {
@@ -233,13 +233,13 @@ public struct WebThread: Codable, Sendable, Equatable {
   public var id: String
   public var sourceId: String
   public var title: String
-  public var archivedAt: String?
+  @RequiredNullable public var archivedAt: String?
   public var createdAt: String
   public var updatedAt: String
   public var revision: Int
   public var readRevision: Int?
   public var tagIds: [String]
-  public var projectId: String?
+  @RequiredNullable public var projectId: String?
   public var projectName: String?
   public var pendingProject: PendingProject?
   public var trigger: WebThreadTrigger?
@@ -249,8 +249,8 @@ public struct WebThread: Codable, Sendable, Equatable {
   public var jobActivity: WebJobActivity?
   public var canSend: Bool
   public var canUpload: Bool
-  public var runModel: String?
-  public var runEffort: String?
+  @RequiredNullable public var runModel: String?
+  @RequiredNullable public var runEffort: String?
   public var runContext1M: Bool?
 }
 public struct WebTag: Codable, Sendable, Equatable {
@@ -267,7 +267,7 @@ public struct WebExternalConversation: Codable, Sendable, Equatable {
   public var channel: String
   public var label: String
   public var state: String
-  public var projectId: String?
+  @RequiredNullable public var projectId: String?
   public var lastSeenAt: String
 }
 public struct WebProject: Codable, Sendable, Equatable {
@@ -276,7 +276,7 @@ public struct WebProject: Codable, Sendable, Equatable {
   public var sourceId: String
   public var name: String
   public var context: String
-  public var archivedAt: String?
+  @RequiredNullable public var archivedAt: String?
   public var createdAt: String
   public var updatedAt: String
   public var revision: Int
@@ -449,8 +449,8 @@ public struct WebWakeSchedule: Codable, Sendable, Equatable {
   public var definition: WebWakeScheduleDefinition
   public var state: String
   public var revision: Int
-  public var nextFireAt: String?
-  public var lastOutcome: String?
+  @RequiredNullable public var nextFireAt: String?
+  @RequiredNullable public var lastOutcome: String?
   public var createdAt: String
 }
 public struct WebSubmissionReceipt: Codable, Sendable, Equatable {

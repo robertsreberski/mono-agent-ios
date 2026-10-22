@@ -77,11 +77,9 @@ public enum DeltaReducer {
   ) -> DeltaResult {
     guard threadHeld else { return .init(outcome: .unheld) }
     guard var message, message.id == delta.messageId else { return .init(outcome: .unknown) }
+    guard isReadable(delta) else { return .init(outcome: .gap) }
     if let seq = message.seq, seq >= delta.seq { return .init(outcome: .stale) }
-    guard message.seq == delta.baseSeq,
-      ["running", "complete", "failed", "cancelled", "interrupted"].contains(delta.status),
-      delta.attribution.map({ $0.transitions.count <= 32 && $0.retries.count <= 32 }) ?? true
-    else { return .init(outcome: .gap) }
+    guard message.seq == delta.baseSeq else { return .init(outcome: .gap) }
     do {
       message.parts = try apply(
         ops: delta.ops, to: message.parts, repairedToolCallIds: repairedToolCallIds)
@@ -93,6 +91,27 @@ public enum DeltaReducer {
       return .init(outcome: .applied, message: message)
     } catch { return .init(outcome: .gap) }
   }
+  static func validAttribution(_ value: WebRunAttribution) -> Bool {
+    ["requested", "fallback", "unknown"].contains(value.disposition)
+      && value.transitions.count <= 32 && value.retries.count <= 32
+      && value.transitions.allSatisfy {
+        $0.attemptIndex.map { (0...9_007_199_254_740_991).contains($0) } ?? true
+      }
+      && value.retries.allSatisfy {
+        ($0.retryIndex.map { (0...9_007_199_254_740_991).contains($0) } ?? true)
+          && ($0.attempts.map { (0...9_007_199_254_740_991).contains($0) } ?? true)
+      }
+      && value.truncated != false
+  }
+  /// Shape validation precedes stale detection; unreadable frames must request repair.
+  static func isReadable(_ delta: WebMessageDelta) -> Bool {
+    ["running", "complete", "failed", "cancelled", "interrupted"].contains(delta.status)
+      && (delta.attribution.map(validAttribution) ?? true)
+      && delta.ops.allSatisfy {
+        if case .set(_, let part) = $0 { return valid(part) }
+        return true
+      }
+  }
   private static func valid(_ part: WebMessagePart) -> Bool {
     switch part {
     case .unknown: return false
@@ -101,12 +120,14 @@ public enum DeltaReducer {
     case .subagent(let v):
       return v.name != nil && v.calls != nil
         && ["running", "complete", "failed"].contains(v.status)
+        && (v.attribution.map(validAttribution) ?? true)
     case .replyOptions(let v):
       return (2...8).contains(v.options.count) && Set(v.options).count == v.options.count
         && v.options.allSatisfy {
-          !$0.isEmpty && $0.count <= 75 && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines)
+          !$0.isEmpty && $0.utf16.count <= 75
+            && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines)
             && !$0.unicodeScalars.contains {
-              CharacterSet.controlCharacters.contains($0) || $0.value == 0x2028
+              $0.properties.generalCategory == .control || $0.value == 0x2028
                 || $0.value == 0x2029
             }
         }

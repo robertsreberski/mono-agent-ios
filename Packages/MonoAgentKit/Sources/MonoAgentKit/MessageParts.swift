@@ -69,8 +69,8 @@ public struct RestartProposalPart: Codable, Sendable, Equatable {
   public var restartable: Availability?
 }
 public struct WebRouteSelection: Codable, Sendable, Equatable {
-  public var model: String?
-  public var effort: String?
+  @RequiredNullable public var model: String?
+  @RequiredNullable public var effort: String?
 }
 public struct WebProjectIdentity: Codable, Sendable, Equatable {
   public var id: String
@@ -213,29 +213,47 @@ public enum WebMessagePart: Codable, Sendable, Equatable {
 
   private enum CodingKeys: String, CodingKey { case type }
   public init(from decoder: any Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    switch try c.decode(String.self, forKey: .type) {
-    case "text": self = .text(try TextPart(from: decoder))
-    case "reasoning": self = .reasoning(try TextPart(from: decoder))
-    case "reply_options": self = .replyOptions(try ReplyOptionsPart(from: decoder))
-    case "restart_proposal": self = .restartProposal(try RestartProposalPart(from: decoder))
-    case "conversation-marker":
-      self = .conversationMarker(try WebConversationMarkerPart(from: decoder))
-    case "cron-reply-context": self = .cronReplyContext(try WebCronReplyContextPart(from: decoder))
-    case "tool-call": self = .toolCall(try WebToolCall(from: decoder))
-    case "subagent": self = .subagent(try WebToolCall(from: decoder))
-    case "process-job": self = .processJob(try ProcessJobPart(from: decoder))
-    case "scheduled-wake": self = .scheduledWake(try ScheduledWakePart(from: decoder))
-    case "process-job-wake": self = .processJobWake(try ProcessJobWakePart(from: decoder))
-    case "steer": self = .steer(try SteerPart(from: decoder))
-    case "telemetry": self = .telemetry(try TelemetryPart(from: decoder))
-    case "error": self = .error(try ErrorPart(from: decoder))
-    case "attachment": self = .attachment(try ReplyAttachmentPart(from: decoder))
-    case "mcp_app": self = .mcpApp(try McpAppPart(from: decoder))
-    case "failure": self = .failure(try FailurePart(from: decoder))
-    default: self = .unknown(try JSONValue(from: decoder))
+    do {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      switch try c.decode(String.self, forKey: .type) {
+      case "text": self = .text(try TextPart(from: decoder))
+      case "reasoning": self = .reasoning(try TextPart(from: decoder))
+      case "reply_options": self = .replyOptions(try ReplyOptionsPart(from: decoder))
+      case "restart_proposal": self = .restartProposal(try RestartProposalPart(from: decoder))
+      case "conversation-marker":
+        self = .conversationMarker(try WebConversationMarkerPart(from: decoder))
+      case "cron-reply-context":
+        self = .cronReplyContext(try WebCronReplyContextPart(from: decoder))
+      case "tool-call": self = .toolCall(try WebToolCall(from: decoder))
+      case "subagent": self = .subagent(try WebToolCall(from: decoder))
+      case "process-job": self = .processJob(try ProcessJobPart(from: decoder))
+      case "scheduled-wake": self = .scheduledWake(try ScheduledWakePart(from: decoder))
+      case "process-job-wake": self = .processJobWake(try ProcessJobWakePart(from: decoder))
+      case "steer": self = .steer(try SteerPart(from: decoder))
+      case "telemetry": self = .telemetry(try TelemetryPart(from: decoder))
+      case "error": self = .error(try ErrorPart(from: decoder))
+      case "attachment": self = .attachment(try ReplyAttachmentPart(from: decoder))
+      case "mcp_app": self = .mcpApp(try McpAppPart(from: decoder))
+      case "failure": self = .failure(try FailurePart(from: decoder))
+      default: self = .unknown(try JSONValue(from: decoder))
+      }
+    } catch {
+      // An additive/incompatible body has a part-sized blast radius, not a page-sized one.
+      self = .unknown(try JSONValue(from: decoder))
     }
   }
+  public var decodingDiagnostic: MessagePartDiagnostic? {
+    guard case .unknown(let value) = self else { return nil }
+    guard case .object(let object) = value, case .string(let name) = object["type"] else {
+      return .missingType
+    }
+    return Self.knownNames.contains(name) ? .unreadableKnownKind(name) : .unknownKind(name)
+  }
+  private static let knownNames: Set<String> = [
+    "text", "reasoning", "reply_options", "restart_proposal", "conversation-marker",
+    "cron-reply-context", "tool-call", "subagent", "process-job", "scheduled-wake",
+    "process-job-wake", "steer", "telemetry", "error", "attachment", "mcp_app", "failure",
+  ]
   public func encode(to encoder: any Encoder) throws {
     switch self {
     case .text(let v), .reasoning(let v): try v.encode(to: encoder)
@@ -271,4 +289,11 @@ extension KeyedDecodingContainer {
   public func decodeIfPresent(_ type: MarkerValue.Type, forKey key: Key) throws -> MarkerValue? {
     contains(key) ? try decode(type, forKey: key) : nil
   }
+}
+
+/// Safe, part-local evidence for renderers/recovery; never includes a DTO body or token.
+public enum MessagePartDiagnostic: Sendable, Equatable {
+  case missingType
+  case unknownKind(String)
+  case unreadableKnownKind(String)
 }

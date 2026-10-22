@@ -77,6 +77,8 @@ extension RequestBuilder {
     url.percentEncodedPath = "/" + components.joined(separator: "/")
     if !query.isEmpty {
       url.queryItems = query.sorted { $0.key < $1.key }.map { .init(name: $0.key, value: $0.value) }
+      // Express uses form-style query decoding, where a literal + means a space.
+      url.percentEncodedQuery = url.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
     }
     var request = get(.health)
     request.url = url.url!

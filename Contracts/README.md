@@ -25,7 +25,8 @@ forwarding methods; DTOs and union semantics are hand-written.
 The locked gate checks all four hashes, route policy/status/coverage drift and fixture type
 mappings. It validates each fictional golden against its named schema definition. This
 uses the draft-07 assertions present in this pin, not a general-purpose schema validator.
-Swift host tests separately decode all 35 goldens, parse every event frame, match route
+Swift host tests separately decode all 35 goldens and require re-encoded JSONValue equality
+(the documented intentional-difference allowlist is empty), parse every event frame, match route
 metadata, and replay all 11 shared delta vectors. `--connection-only` is now a compatibility
 alias for the full locked gate, never a provisional pass.
 

@@ -84,39 +84,48 @@ public struct ApiEvent: Codable, Sendable, Equatable {
   public var event: WebEvent
   private enum CodingKeys: String, CodingKey { case id, version, type, at, threadId, payload }
   public init(from decoder: any Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    id = try c.decode(String.self, forKey: .id)
-    version = try c.decode(Int.self, forKey: .version)
-    at = try c.decode(String.self, forKey: .at)
-    threadId = try c.decodeIfPresent(String.self, forKey: .threadId)
-    switch try c.decode(String.self, forKey: .type) {
-    case "ready": event = .ready(try c.decode(ReadyPayload.self, forKey: .payload))
-    case "agents.changed":
-      event = .agentsChanged(try c.decodeIfPresent(AgentsChangedPayload.self, forKey: .payload))
-    case "cron.changed":
-      event = .cronChanged(try c.decode(CronChangedPayload.self, forKey: .payload))
-    case "threads.changed":
-      event = .threadsChanged(try c.decodeIfPresent(ThreadChangedPayload.self, forKey: .payload))
-    case "thread.changed":
-      event = .threadChanged(try c.decode(ThreadChangedPayload.self, forKey: .payload))
-    case "tags.changed":
-      event = .tagsChanged(try c.decode(TagChangedPayload.self, forKey: .payload))
-    case "projects.changed":
-      event = .projectsChanged(try c.decode(ProjectChangedPayload.self, forKey: .payload))
-    case "message.changed":
-      event = .messageChanged(try c.decode(MessageChangedPayload.self, forKey: .payload))
-    case "message.delta":
-      event = .messageDelta(try c.decode(WebMessageDelta.self, forKey: .payload))
-    case "turn.changed":
-      event = .turnChanged(try c.decode(TurnChangedPayload.self, forKey: .payload))
-    case "attachment.changed":
-      event = .attachmentChanged(try c.decode(AttachmentChangedPayload.self, forKey: .payload))
-    case "push.pending":
-      event = .pushPending(try c.decode(PushPendingPayload.self, forKey: .payload))
-    default:
-      throw DecodingError.dataCorruptedError(
-        forKey: .type, in: c, debugDescription: "Unknown event")
+    try self.init(envelope: WebEventEnvelope(from: decoder))
+  }
+  init(envelope: WebEventEnvelope) throws {
+    id = envelope.id
+    version = envelope.version
+    at = envelope.at
+    threadId = envelope.threadId
+    func read<T: Decodable>(_ type: T.Type) throws -> T {
+      try JSONDecoder().decode(type, from: JSONEncoder().encode(envelope.payload ?? .null))
     }
+    func readOptional<T: Decodable>(_ type: T.Type) throws -> T? {
+      guard let payload = envelope.payload, payload != .null else { return nil }
+      return try read(type)
+    }
+    switch envelope.type {
+    case "ready": event = .ready(try read(ReadyPayload.self))
+    case "agents.changed":
+      event = .agentsChanged(try readOptional(AgentsChangedPayload.self))
+    case "cron.changed":
+      event = .cronChanged(try read(CronChangedPayload.self))
+    case "threads.changed":
+      event = .threadsChanged(try readOptional(ThreadChangedPayload.self))
+    case "thread.changed":
+      event = .threadChanged(try read(ThreadChangedPayload.self))
+    case "tags.changed":
+      event = .tagsChanged(try read(TagChangedPayload.self))
+    case "projects.changed":
+      event = .projectsChanged(try read(ProjectChangedPayload.self))
+    case "message.changed":
+      event = .messageChanged(try read(MessageChangedPayload.self))
+    case "message.delta":
+      event = .messageDelta(try read(WebMessageDelta.self))
+    case "turn.changed":
+      event = .turnChanged(try read(TurnChangedPayload.self))
+    case "attachment.changed":
+      event = .attachmentChanged(try read(AttachmentChangedPayload.self))
+    case "push.pending":
+      event = .pushPending(try read(PushPendingPayload.self))
+    default:
+      throw StreamFailure.malformedEvent
+    }
+    guard event.isReadable else { throw StreamFailure.malformedEvent }
   }
   public func encode(to encoder: any Encoder) throws {
     var c = encoder.container(keyedBy: CodingKeys.self)
@@ -138,6 +147,36 @@ public struct ApiEvent: Codable, Sendable, Equatable {
     case .turnChanged(let v): try c.encode(v, forKey: .payload)
     case .attachmentChanged(let v): try c.encode(v, forKey: .payload)
     case .pushPending(let v): try c.encode(v, forKey: .payload)
+    }
+  }
+}
+
+/// Envelope shape is validated independently of the event-specific payload.
+struct WebEventEnvelope: Decodable {
+  var id: String
+  var version: Int
+  var type: String
+  var at: String
+  var threadId: String?
+  var payload: JSONValue?
+}
+extension WebEvent {
+  var isReadable: Bool {
+    switch self {
+    case .ready(let value): return value.version == 1
+    case .messageDelta(let value): return DeltaReducer.isReadable(value)
+    case .threadChanged(let value):
+      return value.thread != nil || (value.removed == true && value.threadId != nil)
+    case .threadsChanged(let value):
+      guard let value else { return true }
+      return value.thread != nil || (value.removed == true && value.threadId != nil)
+    case .tagsChanged(let value):
+      return value.tag != nil || (value.removed == true && value.tagId != nil)
+    case .projectsChanged(let value):
+      return value.project != nil || (value.removed == true && value.projectId != nil)
+    case .attachmentChanged(let value):
+      return value.attachment != nil || (value.removed == true && value.attachmentId != nil)
+    default: return true
     }
   }
 }

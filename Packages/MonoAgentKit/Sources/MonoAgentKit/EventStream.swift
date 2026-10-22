@@ -40,8 +40,8 @@ public protocol SSETransport: Sendable {
 }
 public actor URLSessionSSETransport: SSETransport {
   private let session: URLSession
-  public init() {
-    let config = URLSessionConfiguration.ephemeral
+  public init(configuration: URLSessionConfiguration = .ephemeral) {
+    let config = configuration
     config.urlCache = nil
     config.requestCachePolicy = .reloadIgnoringLocalCacheData
     config.httpCookieStorage = nil
@@ -61,8 +61,9 @@ public actor URLSessionSSETransport: SSETransport {
         $0[key.lowercased()] = value
       }
     }
+    // Raw chunks never cause delivery gaps. Only decoded StreamUpdate delivery is bounded.
     let (stream, continuation) = AsyncThrowingStream<Data, any Error>.makeStream(
-      bufferingPolicy: .bufferingOldest(64))
+      bufferingPolicy: .unbounded)
     let task = Task {
       do {
         var chunk = Data()
@@ -70,16 +71,12 @@ public actor URLSessionSSETransport: SSETransport {
           try Task.checkCancellation()
           chunk.append(byte)
           if byte == 10 || byte == 13 || chunk.count >= 4096 {
-            switch continuation.yield(chunk) {
-            case .enqueued: chunk.removeAll(keepingCapacity: true)
-            case .dropped: throw StreamFailure.overflow
-            case .terminated: throw CancellationError()
-            @unknown default: throw StreamFailure.overflow
-            }
+            if case .terminated = continuation.yield(chunk) { throw CancellationError() }
+            chunk.removeAll(keepingCapacity: true)
           }
         }
-        if !chunk.isEmpty, case .dropped = continuation.yield(chunk) {
-          throw StreamFailure.overflow
+        if !chunk.isEmpty, case .terminated = continuation.yield(chunk) {
+          throw CancellationError()
         }
         continuation.finish()
       } catch { continuation.finish(throwing: error) }
@@ -104,6 +101,8 @@ public enum StreamUpdate: Sendable {
   case connecting(generation: UInt64, gap: GapReason)
   case event(generation: UInt64, gap: GapReason, ApiEvent)
   case diagnostic(generation: UInt64, EventDiagnostic)
+  case unreadable(generation: UInt64, UnreadableEvent)
+  case gap(generation: UInt64, reason: GapReason)
   case waiting(generation: UInt64, gap: GapReason, seconds: Double)
 }
 public struct StreamDeliveryGap: Error, Sendable, Equatable {
@@ -123,6 +122,8 @@ private actor AttemptState {
   func snapshot() -> (lastLine: Double, started: Double, ready: Bool) { (lastLine, started, ready) }
 }
 public enum ReconnectPolicy {
+  /// Server Retry-After values may extend normal backoff, but never beyond five minutes.
+  public static let maximumRetryAfter: Double = 300
   public static func delay(
     failures: Int, random: Double, retryAfter: String? = nil, now: Date = Date()
   ) -> Double {
@@ -141,7 +142,7 @@ public enum ReconnectPolicy {
         }
       }
     }
-    return value
+    return min(maximumRetryAfter, value)
   }
 }
 /// One active subscription. Changing thread restarts immediately; debounce belongs to Store.
@@ -163,40 +164,32 @@ public actor EventStream {
     self.random = random
   }
   deinit { task?.cancel() }
-  public func subscribe(thread: String? = nil, capacity: Int = 128) -> AsyncThrowingStream<
+  public func subscribe(thread: String? = nil, capacity: Int = 128) async -> AsyncThrowingStream<
     StreamUpdate, any Error
   > {
     let changed = task != nil
     task?.cancel()
-    let (stream, continuation) = AsyncThrowingStream<StreamUpdate, any Error>.makeStream(
-      bufferingPolicy: .bufferingOldest(max(1, capacity)))
-    task = Task {
+    let delivery = StreamDelivery(capacity: capacity)
+    let active = Task {
       await self.run(
-        thread: thread, reason: changed ? .subscriptionChanged : .initial,
-        continuation: continuation)
+        thread: thread, reason: changed ? .subscriptionChanged : .initial, delivery: delivery)
     }
-    let active = task
-    continuation.onTermination = { _ in active?.cancel() }
-    return stream
+    task = active
+    await delivery.setProducer(active)
+    return AsyncThrowingStream(unfolding: { try await delivery.next() })
   }
   public func cancel() {
     task?.cancel()
     task = nil
   }
   private func publish(
-    _ update: StreamUpdate, generation: UInt64,
-    continuation: AsyncThrowingStream<StreamUpdate, any Error>.Continuation
-  ) throws {
-    switch continuation.yield(update) {
-    case .enqueued: return
-    case .dropped: throw StreamDeliveryGap(generation: generation, reason: .overflow)
-    case .terminated: throw CancellationError()
-    @unknown default: throw StreamDeliveryGap(generation: generation, reason: .overflow)
-    }
+    _ update: StreamUpdate, generation: UInt64, delivery: StreamDelivery, overflowing: Bool = true
+  ) async throws {
+    try await delivery.send(update, generation: generation, overflowing: overflowing)
   }
   private func run(
     thread: String?, reason initialReason: GapReason,
-    continuation: AsyncThrowingStream<StreamUpdate, any Error>.Continuation
+    delivery: StreamDelivery
   ) async {
     var failures = 0
     var reason = initialReason
@@ -204,9 +197,9 @@ public actor EventStream {
       while !Task.isCancelled {
         generation += 1
         let current = generation
-        try publish(
+        try await publish(
           .connecting(generation: current, gap: reason), generation: current,
-          continuation: continuation)
+          delivery: delivery, overflowing: false)
         var request = try RequestBuilder(endpoint: endpoint).request(
           route: APIRoute.eventsRequest.descriptor, query: thread.map { ["thread": $0] } ?? [:])
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -252,15 +245,16 @@ public actor EventStream {
                     case .skipped(let diagnostic):
                       try await self.publish(
                         .diagnostic(generation: current, diagnostic), generation: current,
-                        continuation: continuation)
+                        delivery: delivery)
+                    case .unreadable(let event):
+                      try await self.publish(
+                        .unreadable(generation: current, event), generation: current,
+                        delivery: delivery)
                     case .event(let event):
-                      if case .ready(let payload) = event.event {
-                        guard payload.version == 1 else { throw StreamFailure.malformedEvent }
-                        await state.becameReady()
-                      }
+                      if case .ready = event.event { await state.becameReady() }
                       try await self.publish(
                         .event(generation: current, gap: attemptReason, event), generation: current,
-                        continuation: continuation)
+                        delivery: delivery)
                     }
                   }
                 }
@@ -270,7 +264,10 @@ public actor EventStream {
             defer { group.cancelAll() }
             try await group.next()
           }
-        } catch let error as StreamDeliveryGap { throw error } catch is CancellationError {
+        } catch is StreamDeliveryGap {
+          reason = .overflow
+          try await delivery.reportGap(generation: current)
+        } catch is CancellationError {
           throw CancellationError()
         } catch let error as APIError {
           if error.retryClass != .transient && error.retryClass != .throttled {
@@ -280,7 +277,9 @@ public actor EventStream {
           reason = .http
         } catch let error as StreamFailure {
           switch error {
-          case .overflow: throw StreamDeliveryGap(generation: current, reason: .overflow)
+          case .overflow:
+            reason = .overflow
+            try await delivery.reportGap(generation: current)
           case .watchdog: reason = .watchdog
           case .readyTimeout: reason = .readyTimeout
           case .disconnected: reason = .disconnected
@@ -303,14 +302,14 @@ public actor EventStream {
         let delay = ReconnectPolicy.delay(
           failures: failures, random: random(), retryAfter: retryAfter, now: await clock.wallNow())
         failures += 1
-        try publish(
+        try await publish(
           .waiting(generation: current, gap: reason, seconds: delay), generation: current,
-          continuation: continuation)
+          delivery: delivery, overflowing: false)
         try await clock.sleep(seconds: delay)
       }
-      continuation.finish()
-    } catch is CancellationError { continuation.finish() } catch {
-      continuation.finish(throwing: error)
+      await delivery.finish()
+    } catch is CancellationError { await delivery.finish() } catch {
+      await delivery.finish(throwing: error)
     }
   }
 }

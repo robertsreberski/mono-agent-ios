@@ -144,7 +144,7 @@ public struct ChannelAskSnapshot: Codable, Sendable, Equatable {
   public var activeQuestionIndex: Int
   public var status: String
   public var createdAt: String
-  public var expiresAt: String?
+  @RequiredNullable public var expiresAt: String?
 }
 public struct ChannelAskSubmissionResult: Codable, Sendable, Equatable {
   public var accepted: Bool
@@ -323,14 +323,14 @@ public struct ProcessJobProjection: Codable, Sendable, Equatable {
     public var channel: String
     public var runId: String
     public var historyBoundary: String
-    public var bucket: String?
+    @RequiredNullable public var bucket: String?
   }
   public struct Timestamps: Codable, Sendable, Equatable {
     public var admittedAt: String
     public var queueDeadlineAt: String
-    public var startedAt: String?
-    public var runtimeDeadlineAt: String?
-    public var completedAt: String?
+    @RequiredNullable public var startedAt: String?
+    @RequiredNullable public var runtimeDeadlineAt: String?
+    @RequiredNullable public var completedAt: String?
   }
   public struct Limits: Codable, Sendable, Equatable {
     public var maxRuntimeMs: Double
@@ -343,14 +343,14 @@ public struct ProcessJobProjection: Codable, Sendable, Equatable {
     public var stderrBytes: Int
     public var truncated: Bool
     public var preview: String
-    public var stdoutRef: String?
-    public var stderrRef: String?
+    @RequiredNullable public var stdoutRef: String?
+    @RequiredNullable public var stderrRef: String?
   }
   public struct Wake: Codable, Sendable, Equatable {
     public var state: String
     public var attempts: Int
     public var deliveryKey: String
-    public var lastAttemptAt: String?
+    @RequiredNullable public var lastAttemptAt: String?
   }
   public struct Question: Codable, Sendable, Equatable {
     public var question: String
@@ -366,11 +366,11 @@ public struct ProcessJobProjection: Codable, Sendable, Equatable {
   public var limits: Limits
   public var output: Output
   public var wake: Wake
-  public var exitCode: Int?
-  public var signal: String?
-  public var durationMs: Double?
+  @RequiredNullable public var exitCode: Int?
+  @RequiredNullable public var signal: String?
+  @RequiredNullable public var durationMs: Double?
   public var cancelRequested: Bool
-  public var lastError: RunError?
+  @RequiredNullable public var lastError: RunError?
   public var kind: String?
   public var instanceId: String?
   public var childStillBusy: Bool?
@@ -421,10 +421,10 @@ public struct AgentCompactionAccounting: Codable, Sendable, Equatable {
     public var model: String?
     public var providerInvoked: Bool?
     public var status: String
-    public var input: Double?
-    public var output: Double?
-    public var cacheRead: Double?
-    public var cacheWrite: Double?
+    @RequiredNullable public var input: Double?
+    @RequiredNullable public var output: Double?
+    @RequiredNullable public var cacheRead: Double?
+    @RequiredNullable public var cacheWrite: Double?
     public var costUsd: Double?
     public var costUnknown: Bool?
   }

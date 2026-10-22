@@ -143,7 +143,10 @@ final class LocalURLProtocol: URLProtocol {
     }
     let response = HTTPURLResponse(
       url: url, statusCode: 200, httpVersion: nil,
-      headerFields: ["Content-Type": "application/json", "ETag": "local"])!
+      headerFields: [
+        "Content-Type": request.value(forHTTPHeaderField: "X-Fixture-Content-Type")
+          ?? "application/json", "ETag": "local",
+      ])!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
     client?.urlProtocol(self, didLoad: data)
     client?.urlProtocolDidFinishLoading(self)
@@ -195,4 +198,23 @@ private actor SensitiveErrorTransport: HTTPTransport {
   await #expect(throws: APIError(status: 409, code: "submission_conflict")) {
     try await conflicted.startSubmission(id: "thread", body: .init(submissionId: "fictional"))
   }
+}
+
+@Test func queryValuesRoundTripThroughFormStyleServerDecoding() throws {
+  let values = ["q": "C++ & = # % 雪", "cursor": "+/&=#%"]
+  let request = try RequestBuilder(endpoint: Scenario.endpoint).request(
+    route: APIRoute.searchThreads.descriptor, query: values)
+  let query = try #require(
+    URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedQuery)
+  #expect(!query.contains("+"))
+  #expect(query.contains("%2B"))
+  let decoded = try query.split(separator: "&").reduce(into: [String: String]()) { result, item in
+    let pair = item.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+    let key = try #require(
+      String(pair[0]).replacingOccurrences(of: "+", with: " ").removingPercentEncoding)
+    let value: String = try #require(
+      String(pair[1]).replacingOccurrences(of: "+", with: " ").removingPercentEncoding)
+    result[key] = value
+  }
+  #expect(decoded == values)
 }

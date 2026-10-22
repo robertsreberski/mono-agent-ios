@@ -88,10 +88,20 @@ public struct SSEParser: Sendable {
     guard frameSize <= maxFrameBytes else { throw StreamFailure.oversizedFrame }
   }
 }
-public enum EventDiagnostic: String, Sendable, Equatable { case unknownName, unsupportedVersion }
+public enum EventDiagnostic: String, Sendable, Equatable {
+  case unknownName, unsupportedVersion, unreadablePayload
+}
 public enum DecodedFrame: Sendable, Equatable {
   case event(ApiEvent)
   case skipped(EventDiagnostic)
+  case unreadable(UnreadableEvent)
+}
+/// The stream remains connected. Store repairs this message/thread or marks it stale.
+public struct UnreadableEvent: Sendable, Equatable {
+  public let name: String
+  public let threadId: String?
+  public let messageId: String?
+  public var diagnostic: EventDiagnostic { .unreadablePayload }
 }
 public enum EventDecoder {
   private struct Header: Decodable {
@@ -107,10 +117,18 @@ public enum EventDecoder {
     }
     guard header.version == 1 else { return .skipped(.unsupportedVersion) }
     guard header.type == frame.name else { throw StreamFailure.envelopeMismatch }
-    do {
-      let event = try JSONDecoder().decode(ApiEvent.self, from: data)
-      if let id = frame.id, event.id != id { throw StreamFailure.envelopeMismatch }
-      return .event(event)
-    } catch let error as StreamFailure { throw error } catch { throw StreamFailure.malformedEvent }
+    let envelope: WebEventEnvelope
+    do { envelope = try JSONDecoder().decode(WebEventEnvelope.self, from: data) } catch {
+      throw StreamFailure.malformedEvent
+    }
+    if let id = frame.id, envelope.id != id { throw StreamFailure.envelopeMismatch }
+    do { return .event(try ApiEvent(envelope: envelope)) } catch {
+      var messageId: String?
+      if case .object(let payload) = envelope.payload, case .string(let id) = payload["messageId"] {
+        messageId = id
+      }
+      return .unreadable(
+        .init(name: envelope.type, threadId: envelope.threadId, messageId: messageId))
+    }
   }
 }

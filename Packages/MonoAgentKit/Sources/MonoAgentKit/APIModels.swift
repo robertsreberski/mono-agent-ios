@@ -3,7 +3,7 @@ import Foundation
 
 public struct ApiAgent: Codable, Sendable, Equatable { public var agent: WebAgentSummary }
 public struct ApiLatestRestart: Codable, Sendable, Equatable {
-  public var operation: WebAgentRestartOperation?
+  @RequiredNullable public var operation: WebAgentRestartOperation?
 }
 public struct ApiCronConfig: Codable, Sendable, Equatable {
   public var configView: WebChannelConfigView
@@ -26,7 +26,7 @@ public struct ApiMcpAppAccess: Codable, Sendable, Equatable { public var part: M
 public struct ApiMcpAppResult: Codable, Sendable, Equatable { public var result: JSONValue }
 public struct ApiJob: Codable, Sendable, Equatable { public var job: ProcessJobProjection }
 public struct ApiWakeSchedule: Codable, Sendable, Equatable {
-  public var schedule: WebWakeSchedule?
+  @RequiredNullable public var schedule: WebWakeSchedule?
 }
 public struct ApiStartedTurn: Codable, Sendable, Equatable {
   public var thread: WebThread
@@ -36,7 +36,9 @@ public struct ApiCancelled: Codable, Sendable, Equatable {
   public var cancelled: Bool
   public var thread: WebThread
 }
-public struct ApiAsk: Codable, Sendable, Equatable { public var ask: ChannelAskSnapshot? }
+public struct ApiAsk: Codable, Sendable, Equatable {
+  @RequiredNullable public var ask: ChannelAskSnapshot?
+}
 public struct ApiPushSubscription: Codable, Sendable, Equatable {
   public var subscription: WebPushSubscriptionStatus
 }

@@ -28,6 +28,14 @@ private func decode<T: Codable & Sendable & Equatable>(_ type: T.Type, data: Dat
   let value = try JSONDecoder().decode(T.self, from: data)
   let again = try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
   #expect(value == again)
+  let expected = try JSONDecoder().decode(JSONValue.self, from: data)
+  let encoded = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
+  let differences = goldenDifferences(expected, encoded)
+  if intentionalGoldenNullOmissions.isEmpty {
+    #expect(encoded == expected, "\(T.self): \(differences.joined(separator: ", "))")
+  } else {
+    #expect(differences.isEmpty, "\(T.self): \(differences.joined(separator: ", "))")
+  }
 }
 @Test func everyGoldenDecodesThroughItsMappedType() throws {
   let fixtures = try goldens()
@@ -162,4 +170,51 @@ private func decode<T: Codable & Sendable & Equatable>(_ type: T.Type, data: Dat
       #"{"type":"conversation-marker","kind":"project","at":"2030-01-02T12:00:00Z","before":null,"after":null}"#
         .utf8))
   #expect(marker.before == .null && marker.after == .null)
+}
+
+// No blanket null removal or ignored optional fields: only explicitly listed paths may
+// differ, and only when a golden null is intentionally omitted by a response encoder.
+private let intentionalGoldenNullOmissions: Set<String> = []
+private func goldenDifferences(_ expected: JSONValue, _ actual: JSONValue, path: String = "")
+  -> [String]
+{
+  switch (expected, actual) {
+  case (.object(let lhs), .object(let rhs)):
+    return Set(lhs.keys).union(rhs.keys).sorted().flatMap { key -> [String] in
+      let child = path.isEmpty ? key : path + "." + key
+      if lhs[key] == .null && rhs[key] == nil && intentionalGoldenNullOmissions.contains(child) {
+        return []
+      }
+      guard let l = lhs[key], let r = rhs[key] else { return [child] }
+      return goldenDifferences(l, r, path: child)
+    }
+  case (.array(let lhs), .array(let rhs)) where lhs.count == rhs.count:
+    return zip(lhs, rhs).flatMap { goldenDifferences($0, $1, path: path + "[]") }
+  default: return expected == actual ? [] : [path]
+  }
+}
+
+@Test func malformedKnownPartFallsBackLocallyWithoutFailingItsPage() throws {
+  guard
+    case .object(var page) = try JSONDecoder().decode(JSONValue.self, from: fixture("message-page")),
+    case .array(var messages) = page["messages"], case .object(var message) = messages[0]
+  else {
+    Issue.record("Missing fictional page")
+    return
+  }
+  let malformed: JSONValue = .object(["type": .string("text"), "text": .number(42)])
+  let good: JSONValue = .object(["type": .string("text"), "text": .string("Following part")])
+  message["parts"] = .array([malformed, good])
+  messages[0] = .object(message)
+  page["messages"] = .array(messages)
+  let value = try JSONDecoder().decode(
+    ApiMessagePage.self, from: JSONEncoder().encode(JSONValue.object(page)))
+  #expect(value.messages[0].parts[0] == .unknown(malformed))
+  #expect(value.messages[0].parts[0].decodingDiagnostic == .unreadableKnownKind("text"))
+  #expect(value.messages[0].parts[1] == .text(.init(text: "Following part")))
+}
+@Test func goldenComparisonDetectsMissingOptionalFieldsIncludingNull() {
+  #expect(
+    goldenDifferences(.object(["knownCostUsd": .number(0.02)]), .object([:])) == ["knownCostUsd"])
+  #expect(goldenDifferences(.object(["projectId": .null]), .object([:])) == ["projectId"])
 }

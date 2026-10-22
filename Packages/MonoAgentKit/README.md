@@ -3,7 +3,8 @@
 Platform-neutral Swift 6 console API v1 client. No third-party packages or live console
 access in tests. IDs/cursors and ISO timestamps are opaque strings; unknown response fields
 are ignored. String vocabularies accept additive server values. Unknown message parts retain
-opaque JSON, but cannot be installed by a delta.
+opaque JSON, but cannot be installed by a delta. A known part with an unreadable body also
+falls back locally; inspect `decodingDiagnostic` rather than rejecting its whole page.
 
 ## Contract and public seams
 
@@ -20,23 +21,32 @@ see `Contracts/console-api.lock.json`. There is no npm release at this pin.
 - All manifest DTOs have Codable/Sendable models (`ApiErrorBody` is the wire error;
   `APIError` is the safe transport error). Opaque arguments/results, telemetry and peer
   schemas use `JSONValue`. `InputField` preserves omitted/null/value requests. `CostAmount`
-  never turns a missing or unknown amount into zero. Response encoding is not a persistence
-  format: nullable response properties may encode as omitted. Preserve the original wire
-  or define a separate Store record if that distinction matters.
+  never turns a missing or unknown amount into zero. `RequiredNullable` preserves required
+  response nulls. Golden tests compare re-encoded DTOs with the original JSONValue, with an
+  explicit empty intentional-difference allowlist. Codable is not a persistence format:
+  unknown additive fields are ignored and Store records must strip capability/auth material.
 - `ReadResult.modified(value, etag:)` / `.notModified`: 304 is accepted only after a
   validator was supplied. Mutations never retry automatically. Cron 428 is a typed
   `WebCronMutationResult.confirmationRequired`; submission 409 decodes its receipt.
 - `SSEParser`, `EventDecoder`, `WebEvent` (12 typed cases), and `ApiEvent` (envelope).
   Incremental bytes handle split UTF-8, CR/LF/CRLF, comments and multiline data. Unknown
-  names/versions are skipped one frame at a time with diagnostics. Malformed known frames
-  require a gap. Default line/frame limit: 2 MiB.
+  names/versions are skipped one frame at a time with diagnostics. Envelope and payload
+  decoding are separate: a known unreadable payload emits `StreamUpdate.unreadable` with a
+  diagnostic and thread/message identity for targeted C4 repair, without reconnecting or
+  losing subsequent frames. Non-JSON/mismatched envelopes and framing/size failures still
+  require an attempt gap. Default line/frame limit: 2 MiB.
 - Actor `EventStream.subscribe(thread:capacity:)`: generation-tagged attempts with gap
   reasons, 45-second complete-line watchdog (heartbeats count), 20-second initial ready
-  deadline, injected `StreamClock`/random, jittered 1–30-second backoff and Retry-After.
+  deadline, injected `StreamClock`/random, jittered 1–30-second backoff and Retry-After
+  (capped at 300 seconds, for both delay-seconds and HTTP-date).
   Ready resets backoff. Selection changes restart immediately; Store owns debounce and
   reconciliation. There is no Last-Event-ID/replay. Default delivery buffer: 128 updates.
-  Overflow cancels the socket and finishes with `StreamDeliveryGap(.overflow)`; the consumer
-  must reconcile and subscribe again, never treat queued events as a complete history.
+  Raw URLSession byte chunks are unbounded and never produce delivery overflow. The bounded
+  single-consumer StreamUpdate queue uses backpressure for control updates. Event overflow
+  cancels only that attempt, invalidates its queued updates with `.gap(.overflow)`, and waits
+  until the consumer observes the gap before reconnecting within the same subscription.
+  C4 must reconcile on gaps, never treat queued events as a complete history. Cancel the
+  consuming Task or call `cancel()` when leaving; do not abandon a live subscription.
 - `DeltaReducer`: pure, transactional replay; applied/stale/gap/unknown/unheld results.
   Pass Store's repaired tool-call IDs; digest-matching full arguments/results survive
   preview writes, including subagent children. No invented consecutive-sequence condition.

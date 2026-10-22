@@ -20,7 +20,7 @@ import Testing
   var parser = SSEParser(maxFrameBytes: 4)
   #expect(throws: StreamFailure.oversizedFrame) { try parser.feed(Data("data: long".utf8)) }
 }
-@Test func unknownEventsAndFutureVersionsSkipPerFrameButMalformedKnownEventsFail() throws {
+@Test func unknownEventsAndFutureVersionsSkipPerFrameButMalformedEnvelopesFail() throws {
   #expect(
     try EventDecoder.decode(.init(name: "future", data: "not JSON", id: nil))
       == .skipped(.unknownName))
@@ -161,12 +161,13 @@ func supervisorHeartbeatsResetLineWatchdogReconnectGenerationsAndReadyBackoff() 
 {
   let clock = ManualStreamClock()
   let (bytes, input) = AsyncThrowingStream<Data, any Error>.makeStream()
-  let probe = CancellationProbe()
   let (oldBytes, oldInput) = AsyncThrowingStream<Data, any Error>.makeStream()
+  let (resumedBytes, resumedInput) = AsyncThrowingStream<Data, any Error>.makeStream()
+  let probe = CancellationProbe()
   let overflowing = SSEAttempt(
     status: 200, headers: ["content-type": "text/event-stream"], bytes: bytes,
     cancel: { Task { await probe.mark() } })
-  let script = ByteScript([scriptedAttempt(oldBytes), overflowing])
+  let script = ByteScript([scriptedAttempt(oldBytes), overflowing, scriptedAttempt(resumedBytes)])
   let supervisor = EventStream(endpoint: Scenario.endpoint, transport: script, clock: clock)
   let old = await supervisor.subscribe(thread: "old")
   var oldIterator = old.makeAsyncIterator()
@@ -175,17 +176,38 @@ func supervisorHeartbeatsResetLineWatchdogReconnectGenerationsAndReadyBackoff() 
   let replacement = await supervisor.subscribe(thread: "new", capacity: 1)
   try #require(await eventually { await script.requests.count == 2 })
   input.yield(try readyFrame())  // connecting occupies the only delivery slot.
-  var iterator = replacement.makeAsyncIterator()
-  // Wait for the attempt to detect overflow before draining the bounded slot.
   try #require(await eventually { await probe.cancelled })
-  guard case .connecting(_, .subscriptionChanged) = try await iterator.next() else {
-    Issue.record("Missing changed subscription")
+  var iterator = replacement.makeAsyncIterator()
+  var first = try await iterator.next()
+  // The consumer may observe connecting just before cancellation finishes; it must
+  // always observe the following gap before any new-generation event.
+  if case .connecting(_, .subscriptionChanged) = first { first = try await iterator.next() }
+  guard case .gap(let overflowGeneration, .overflow) = first else {
+    Issue.record("Missing explicit queue invalidation")
     return
   }
-  await #expect(throws: StreamDeliveryGap.self) { try await iterator.next() }
+  guard case .waiting(_, .overflow, let delay) = try await iterator.next() else {
+    Issue.record("Missing automatic recovery")
+    return
+  }
+  try #require(await eventually { await clock.count > 0 })
+  await clock.advance(to: delay)
+  guard case .connecting(let nextGeneration, .overflow) = try await iterator.next() else {
+    Issue.record("Subscription ended instead of reconnecting")
+    return
+  }
+  #expect(nextGeneration > overflowGeneration)
+  try #require(await eventually { await script.requests.count == 3 })
+  resumedInput.yield(try readyFrame())
+  guard case .event(let deliveredGeneration, _, _) = try await iterator.next() else {
+    Issue.record("Missing event after overflow")
+    return
+  }
+  #expect(deliveredGeneration == nextGeneration)
   #expect(try await oldIterator.next() == nil)
   input.finish()
   oldInput.finish()
+  resumedInput.finish()
   await supervisor.cancel()
 }
 @Test(.timeLimit(.minutes(1))) func initialReadyDeadlineAndHTTPRetryAfter() async throws {
@@ -288,4 +310,142 @@ private struct FailingSSETransport: SSETransport {
   _ = try await missing.next()
   await #expect(throws: APIError(status: 404, code: "stream_http")) { try await missing.next() }
   #expect(await script.requests.count == 1)
+}
+
+func eventFrame(name: String, payload: JSONValue) throws -> SSEFrame {
+  let envelope: JSONValue = .object([
+    "id": .string("event-fictional"), "version": .number(1), "type": .string(name),
+    "at": .string("2030-01-02T12:00:00Z"), "threadId": .string("thread-fictional"),
+    "payload": payload,
+  ])
+  return .init(
+    name: name, data: String(decoding: try JSONEncoder().encode(envelope), as: UTF8.self),
+    id: "event-fictional")
+}
+func wireFrame(_ frame: SSEFrame) -> Data {
+  Data("id: \(frame.id!)\nevent: \(frame.name)\ndata: \(frame.data)\n\n".utf8)
+}
+@Test func knownUndecodablePayloadsArePerFrameRepairItemsNotFramingFailures() throws {
+  for op in [
+    JSONValue.object(["op": .string("future"), "index": .number(0)]),
+    .object(["op": .string("append"), "index": .number(0.5), "delta": .string("tail")]),
+  ] {
+    let frame = try eventFrame(
+      name: "message.delta",
+      payload: .object([
+        "messageId": .string("message-fictional"), "baseSeq": .number(1), "seq": .number(2),
+        "status": .string("running"), "updatedAt": .string("later"), "ops": .array([op]),
+      ]))
+    #expect(
+      try EventDecoder.decode(frame)
+        == .unreadable(
+          .init(name: "message.delta", threadId: "thread-fictional", messageId: "message-fictional")
+        ))
+  }
+  for name in ["thread.changed", "turn.changed", "ready"] {
+    guard
+      case .unreadable(let repair) = try EventDecoder.decode(
+        eventFrame(name: name, payload: .object([:])))
+    else {
+      Issue.record("Missing payload diagnostic")
+      continue
+    }
+    #expect(repair.diagnostic == .unreadablePayload)
+  }
+  #expect(throws: StreamFailure.malformedEvent) {
+    try EventDecoder.decode(.init(name: "ready", data: "not JSON", id: nil))
+  }
+  let frame = try eventFrame(name: "ready", payload: .object(["version": .number(1)]))
+  #expect(throws: StreamFailure.envelopeMismatch) {
+    try EventDecoder.decode(.init(name: frame.name, data: frame.data, id: "different"))
+  }
+}
+@Test(.timeLimit(.minutes(1))) func unreadableDeltaDoesNotReconnectOrLoseFollowingFrames()
+  async throws
+{
+  let clock = ManualStreamClock()
+  let (bytes, input) = AsyncThrowingStream<Data, any Error>.makeStream()
+  let script = ByteScript([scriptedAttempt(bytes)])
+  let supervisor = EventStream(endpoint: Scenario.endpoint, transport: script, clock: clock)
+  var iterator = await supervisor.subscribe().makeAsyncIterator()
+  _ = try await iterator.next()
+  try #require(await eventually { await script.requests.count == 1 })
+  input.yield(try readyFrame())
+  guard case .event(let generation, _, _) = try await iterator.next() else {
+    Issue.record("Missing ready")
+    return
+  }
+  let unreadable = try eventFrame(
+    name: "message.delta",
+    payload: .object([
+      "messageId": .string("message-fictional"),
+      "ops": .array([.object(["op": .string("future")])]),
+    ]))
+  let following = try eventFrame(
+    name: "message.changed",
+    payload: .object(["messageId": .string("message-next"), "updatedAt": .string("later")]))
+  input.yield(wireFrame(unreadable) + wireFrame(following))
+  guard case .unreadable(let repairGeneration, let repair) = try await iterator.next() else {
+    Issue.record("Missing repair")
+    return
+  }
+  #expect(repairGeneration == generation && repair.messageId == "message-fictional")
+  guard case .event(let followingGeneration, _, let event) = try await iterator.next() else {
+    Issue.record("Lost frame after unreadable delta")
+    return
+  }
+  #expect(followingGeneration == generation && event.event.name == "message.changed")
+  #expect(await script.requests.count == 1)
+  await supervisor.cancel()
+  input.finish()
+}
+@Test func retryAfterIsCappedAtFiveMinutes() {
+  #expect(ReconnectPolicy.delay(failures: 0, random: 0, retryAfter: "86400") == 300)
+  #expect(
+    ReconnectPolicy.delay(
+      failures: 0, random: 0, retryAfter: "Thu, 01 Jan 1970 02:00:00 GMT",
+      now: Date(timeIntervalSince1970: 0)) == 300)
+}
+@Test(.timeLimit(.minutes(1))) func rawURLSessionByteBurstDoesNotOverflowAt64Chunks() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [LocalURLProtocol.self]
+  let transport = URLSessionSSETransport(configuration: configuration)
+  var request = RequestBuilder(endpoint: Scenario.endpoint).get(.health)
+  let body = Data(repeating: 10, count: 512) + (try readyFrame())
+  request.setValue(body.base64EncodedString(), forHTTPHeaderField: "X-Fixture-Body")
+  request.setValue("text/event-stream", forHTTPHeaderField: "X-Fixture-Content-Type")
+  let attempt = try await transport.open(request)
+  defer { attempt.cancel() }
+  var received = Data()
+  var chunks = 0
+  for try await chunk in attempt.bytes {
+    received.append(chunk)
+    chunks += 1
+    for _ in 0..<10 { await Task.yield() }  // intentionally slower than the raw-byte producer
+  }
+  #expect(chunks > 64 && received == body)
+}
+
+@Test(.timeLimit(.minutes(1))) func cancellingConsumerStopsAttemptAndWatchdog() async throws {
+  let clock = ManualStreamClock()
+  let (bytes, input) = AsyncThrowingStream<Data, any Error>.makeStream()
+  let probe = CancellationProbe()
+  let attempt = SSEAttempt(
+    status: 200, headers: ["content-type": "text/event-stream"], bytes: bytes,
+    cancel: { Task { await probe.mark() } })
+  let script = ByteScript([attempt])
+  let supervisor = EventStream(endpoint: Scenario.endpoint, transport: script, clock: clock)
+  let stream = await supervisor.subscribe()
+  let consumer = Task {
+    for try await _ in stream {}
+    return true
+  }
+  try #require(await eventually { await script.requests.count == 1 })
+  consumer.cancel()
+  _ = await consumer.result
+  try #require(await eventually { await probe.cancelled })
+  try #require(await eventually { await clock.count == 0 })
+  #expect(await script.requests.count == 1)
+  input.finish()
+  await supervisor.cancel()
 }

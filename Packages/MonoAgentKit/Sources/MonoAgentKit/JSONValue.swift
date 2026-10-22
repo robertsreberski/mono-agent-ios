@@ -98,3 +98,20 @@ public enum CostAmount: Sendable, Equatable {
     }
   }
 }
+
+/// Required nullable response fields must re-encode as null, not silently disappear.
+/// Optional nullable request fields continue to use InputField for three-way semantics.
+@propertyWrapper
+public struct RequiredNullable<Value: Codable & Sendable & Equatable>: Codable, Sendable, Equatable
+{
+  public var wrappedValue: Value?
+  public init(wrappedValue: Value?) { self.wrappedValue = wrappedValue }
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.singleValueContainer()
+    wrappedValue = c.decodeNil() ? nil : try c.decode(Value.self)
+  }
+  public func encode(to encoder: any Encoder) throws {
+    var c = encoder.singleValueContainer()
+    if let wrappedValue { try c.encode(wrappedValue) } else { try c.encodeNil() }
+  }
+}
