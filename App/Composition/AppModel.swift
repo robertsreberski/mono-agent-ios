@@ -17,6 +17,8 @@ final class AppModel {
   @ObservationIgnored private var started = false
   #if DEBUG
     @ObservationIgnored private let scenario: Scenario?
+    /// A DEBUG design-catalog scenario replaces the console shell; storage stays isolated.
+    let catalog: DesignCatalogScenario?
   #endif
 
   init() {
@@ -28,6 +30,7 @@ final class AppModel {
         configuration = try LaunchConfiguration(arguments: ProcessInfo.processInfo.arguments)
       } catch { fatalError("Invalid DEBUG launch configuration: \(error)") }
       scenario = configuration.scenario
+      catalog = configuration.catalog
       appearance = configuration.appearance
       if let scenario {
         directory = FileManager.default.temporaryDirectory
@@ -57,6 +60,7 @@ final class AppModel {
     init(scenario: Scenario, appearance: ColorScheme? = nil) {
       self.scenario = scenario
       self.appearance = appearance
+      catalog = nil
       let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("SyntheticPreviews", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -92,6 +96,7 @@ final class AppModel {
 #if DEBUG
   struct LaunchConfiguration {
     let scenario: Scenario?
+    let catalog: DesignCatalogScenario?
     let appearance: ColorScheme?
 
     init(arguments: [String]) throws {
@@ -103,12 +108,19 @@ final class AppModel {
         return arguments[index + 1]
       }
       if let name = try value("--scenario") {
-        guard let scenario = Scenario(rawValue: name) else {
+        if let catalog = DesignCatalogScenario(rawValue: name) {
+          // The catalog never touches real profiles: it runs on the isolated empty fixture.
+          self.catalog = catalog
+          scenario = .connectionEmpty
+        } else if let scenario = Scenario(rawValue: name) {
+          self.scenario = scenario
+          catalog = nil
+        } else {
           throw LaunchError.unknownScenario(name)
         }
-        self.scenario = scenario
       } else {
         scenario = arguments.contains("--reset-test-data") ? .connectionEmpty : nil
+        catalog = nil
       }
       if let name = try value("--appearance") {
         switch name {

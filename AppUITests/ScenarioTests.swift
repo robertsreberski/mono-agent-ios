@@ -10,13 +10,44 @@ final class ScenarioTests: XCTestCase {
   func testConnectionFailedDark() { capture("connection-failed", "dark") }
   func testConsoleOnlineLight() { capture("console-online", "light") }
   func testConsoleOnlineDark() { capture("console-online", "dark") }
+  func testConnectionFailedAccessibilityText() {
+    capture("connection-failed", "light", accessibilityText: true)
+  }
 
-  private func capture(_ scenario: String, _ appearance: String) {
+  // DEBUG design catalog: every theme in both appearances, plus accessibility fallbacks.
+  func testDesignCatalogEvergreenLight() { capture("design-catalog-evergreen", "light") }
+  func testDesignCatalogEvergreenDark() { capture("design-catalog-evergreen", "dark") }
+  func testDesignCatalogOceanLight() { capture("design-catalog-ocean", "light") }
+  func testDesignCatalogOceanDark() { capture("design-catalog-ocean", "dark") }
+  func testDesignCatalogPlumLight() { capture("design-catalog-plum", "light") }
+  func testDesignCatalogPlumDark() { capture("design-catalog-plum", "dark") }
+  func testDesignCatalogTerracottaLight() { capture("design-catalog-terracotta", "light") }
+  func testDesignCatalogTerracottaDark() { capture("design-catalog-terracotta", "dark") }
+  func testDesignCatalogAccessibilityLight() {
+    capture("design-catalog-accessibility", "light", accessibilityText: true)
+  }
+  func testDesignCatalogAccessibilityDark() {
+    capture("design-catalog-accessibility", "dark", accessibilityText: true)
+  }
+  func testDesignCatalogReduceTransparencyLight() {
+    capture("design-catalog-reduce-transparency", "light")
+  }
+  func testDesignCatalogReduceTransparencyDark() {
+    capture("design-catalog-reduce-transparency", "dark")
+  }
+
+  /// `accessibilityText` launches at Accessibility XL (AX3) so system chrome scales too.
+  private func capture(_ scenario: String, _ appearance: String, accessibilityText: Bool = false) {
     let app = XCUIApplication()
     app.launchArguments = [
       "--scenario", scenario, "--reset-test-data", "--appearance", appearance,
       "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
     ]
+    if accessibilityText {
+      app.launchArguments += [
+        "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL",
+      ]
+    }
     app.launch()
     XCTAssertTrue(
       app.descendants(matching: .any)[scenario].firstMatch.waitForExistence(timeout: 15))
@@ -33,7 +64,8 @@ final class ScenarioTests: XCTestCase {
     let screenshot = XCUIScreen.main.screenshot()
     XCTAssertTrue(screenshotHasContent(screenshot), "Do not publish a blank startup frame")
     let attachment = XCTAttachment(screenshot: screenshot)
-    attachment.name = "synthetic-fixture__\(scenario)__\(appearance)"
+    attachment.name =
+      "synthetic-fixture__\(scenario)__\(appearance)" + (accessibilityText ? "__ax3" : "")
     attachment.lifetime = .keepAlways
     add(attachment)
     app.terminate()

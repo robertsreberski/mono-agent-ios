@@ -1,28 +1,65 @@
 #!/usr/bin/env python3
-"""Select a concrete installed Xcode 27 via DEVELOPER_DIR for subsequent CI steps."""
+"""Select the newest installed *stable* Xcode 27 via DEVELOPER_DIR for subsequent CI steps.
+
+Runner images may expose a stable-looking name (`Xcode_27.2.app`) as a symlink to a beta
+bundle (`Xcode_27.2_beta_2.app`), so betas are excluded by the resolved bundle name and by
+version metadata, never by the link name alone. No stable Xcode 27 is a hard failure.
+"""
+import argparse
 import os
 import pathlib
+import plistlib
 import re
 import subprocess
 import sys
 
-candidates = []
-for app in pathlib.Path("/Applications").glob("Xcode*.app"):
-    developer = app / "Contents/Developer"
+parser = argparse.ArgumentParser()
+parser.add_argument("--applications", type=pathlib.Path, default=pathlib.Path("/Applications"))
+args = parser.parse_args()
+
+
+def beta_reason(app, resolved, version_output):
+    if "beta" in app.name.lower() or "beta" in resolved.name.lower():
+        return f"beta bundle name ({resolved.name})"
+    for plist in ("Contents/version.plist", "Contents/Info.plist"):
+        try:
+            info = plistlib.loads((resolved / plist).read_bytes())
+        except (OSError, plistlib.InvalidFileException, ValueError):
+            continue
+        for key in ("CFBundleShortVersionString", "CFBundleVersion", "ProductBuildVersion"):
+            if "beta" in str(info.get(key, "")).lower():
+                return f"beta {key} in {plist}"
+    if "beta" in version_output.lower():
+        return "beta in xcodebuild -version"
+    return None
+
+
+candidates = {}
+for app in sorted(args.applications.glob("Xcode*.app")):
+    resolved = app.resolve()
+    if resolved in candidates:
+        continue
+    developer = resolved / "Contents/Developer"
     env = dict(os.environ, DEVELOPER_DIR=str(developer))
     result = subprocess.run(["xcodebuild", "-version"], env=env, text=True, capture_output=True)
-    match = re.search(r"Xcode (27(?:\.\d+)*)", result.stdout)
-    if result.returncode == 0 and match and "beta" not in app.name.lower():
-        candidates.append((tuple(map(int, match[1].split("."))), developer))
+    match = re.search(r"^Xcode (27(?:\.\d+)*)", result.stdout, re.M)
+    if result.returncode != 0 or not match:
+        continue
+    reason = beta_reason(app, resolved, result.stdout)
+    if reason:
+        print(f"Skipping {app.name} -> {resolved.name}: {reason}", file=sys.stderr)
+        continue
+    candidates[resolved] = (tuple(map(int, match[1].split("."))), developer)
 if not candidates:
-    sys.exit("Xcode 27 is required")
-_, developer = max(candidates)
+    sys.exit("A stable (non-beta) Xcode 27 is required; refusing to fall back to a beta.")
+_, developer = max(candidates.values())
 env = dict(os.environ, DEVELOPER_DIR=str(developer))
 version = subprocess.check_output(["xcodebuild", "-version"], env=env, text=True)
 assert re.search(r"^Xcode 27(?:\.|$)", version, re.M), version
 swift = subprocess.check_output(["xcrun", "swift", "--version"], env=env, text=True)
 match = re.search(r"Swift version (\d+)\.(\d+)", swift)
 assert match and tuple(map(int, match.groups())) >= (6, 4), "Swift 6.4+ is required"
+print(f"DEVELOPER_DIR: {developer}")
 print(version.strip())
 print(swift.strip())
 if "GITHUB_ENV" not in os.environ:

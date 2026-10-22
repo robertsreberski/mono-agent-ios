@@ -13,6 +13,11 @@ args = parser.parse_args()
 executable = args.app / "MonoAgent"
 if not executable.is_file():
     sys.exit("Release app executable missing; build the unsigned Release simulator app first")
+# Fixture transport, fixture hostname, DEBUG design catalog (types and scenario names)
+# and design-package preview helpers must all be compiled out of Release. `nm -a` also
+# lists debug-map source file names, so DEBUG-only files must not be named after markers.
+MARKERS = (b"ScriptedTransport", b"console.example.ts.net", b"DesignCatalog", b"design-catalog",
+           b"DesignPreviewMatrix")
 images = [executable]
 debug_library = args.app / "MonoAgent.debug.dylib"
 if debug_library.is_file():
@@ -20,7 +25,7 @@ if debug_library.is_file():
 for image in images:
     for tool in ("nm", "strings"):
         result = subprocess.run(["xcrun", tool, "-a", str(image)], check=True, capture_output=True)
-        for marker in (b"ScriptedTransport", b"console.example.ts.net"):
+        for marker in MARKERS:
             if marker in result.stdout:
                 sys.exit(f"Release fixture leak: {marker.decode()} found by {tool} in {image.name}")
-print("Release fixture check passed: nm/strings contain neither ScriptedTransport nor the fixture hostname.")
+print("Release fixture check passed: nm/strings contain no fixture transport, fixture hostname, design catalog or preview helper.")

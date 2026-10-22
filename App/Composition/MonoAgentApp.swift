@@ -6,9 +6,19 @@ struct MonoAgentApp: App {
   @State private var model = AppModel()
   var body: some Scene {
     WindowGroup {
-      ConsoleShell(model: model)
-        .preferredColorScheme(model.appearance)
-        .task { await model.start() }
+      Group {
+        #if DEBUG
+          if let catalog = model.catalog {
+            DesignCatalogView(scenario: catalog)
+          } else {
+            ConsoleShell(model: model)
+          }
+        #else
+          ConsoleShell(model: model)
+        #endif
+      }
+      .preferredColorScheme(model.appearance)
+      .task { await model.start() }
     }
   }
 }

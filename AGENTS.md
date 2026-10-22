@@ -12,6 +12,12 @@
 - `Packages/MonoAgentStore`: MainActor observable connection registry; actor-backed profile
   repository. Future persistence/recovery belongs here, not in views.
 - `Packages/MonoAgentDesign`: iOS-only value-driven tokens/components; no Kit/Store/network.
+  Screens use its tokens, `.consoleTheme`, and components. Follow the glass rules in its
+  README: system bars first, custom glass only for floating controls, never on content,
+  and opaque fallbacks for Reduce Transparency. Contrast changes need test updates.
+- `App/Catalog`: DEBUG-only previews and the design catalog (`design-catalog…` scenarios).
+  Release must not contain catalog code. Do not name DEBUG-only files after the release
+  fixture markers, because `nm -a` lists source file names.
 - App → Kit, Store, Design. Store → Kit. Tests/DEBUG composition → TestSupport → Kit.
   No inverse dependencies, third-party packages or project generators.
 - `.xcodeproj` uses synchronized source folders; add sources there without pbxproj edits.
