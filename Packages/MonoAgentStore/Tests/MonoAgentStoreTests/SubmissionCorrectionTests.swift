@@ -63,7 +63,7 @@ struct SubmissionCorrectionTests {
     } catch SubmissionError.threadWriteTimeout {}
     #expect(h.store.writeTasks.count == 1)
     h.store.enqueueThreadWrite(threadID: "thread-example") { await order.record("new landed") }
-    await h.clock.advance(30)
+    await h.clock.advance(0.01)
     #expect(await order.values.isEmpty)
     await gate.release()
     try await h.store.settleThreadWrites("thread-example")
@@ -129,23 +129,26 @@ struct SubmissionCorrectionTests {
     #expect(await h.transport.count(submissionPath) == 0)
     await h.store.stop()
   }
-  @Test func historicalPrepared404NeverExpiresButDispatched404HasAnAgeBound() async throws {
+  @Test func markedUndispatchedRetiresAtHydrateWhileLegacyAndRecentDispatchedRemain() async throws {
     let h = Harness()
     let now = await h.clock.wallNow()
     let historical = prepared(profileID: h.profile.id, createdAt: .distantPast)
+    let marked = prepared(profileID: h.profile.id, createdAt: now, dispatchProtocol: 1)
     let recent = prepared(profileID: h.profile.id, createdAt: now, dispatched: true)
     let expired = prepared(
       profileID: h.profile.id, createdAt: now.addingTimeInterval(-ConsoleBounds.journal404Age),
       dispatched: true)
     var journal = JournalRecord()
     journal.revision = 1
-    journal.pending = [historical, recent, expired]
+    journal.pending = [historical, marked, recent, expired]
     try await h.repository.saveJournal(journal, namespace: h.store.namespace)
     for reference in journal.pending {
       await h.transport.set(submissionPath + "/" + reference.submissionID, [.response(notFound())])
     }
     await h.store.hydrate()
+    #expect(!h.store.pendingSubmissions.contains { $0.submissionID == marked.submissionID })
     await h.store.recoverSubmissions()
+    #expect(await h.transport.count(submissionPath + "/" + marked.submissionID) == 0)
     #expect(
       Set(h.store.pendingSubmissions.map(\.submissionID)) == [
         historical.submissionID, recent.submissionID,

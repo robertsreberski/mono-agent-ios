@@ -68,6 +68,7 @@ struct ReviewRegressionTests {
     }
     await eventually { !h.store.pendingSubmissions.isEmpty }
     await h.store.select(sourceID: "other-agent")
+    #expect(h.store.stagedAttachments.map(\.id) == ["upload-example"])
     #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
     await gate.release()
     _ = try? await send.value

@@ -16,6 +16,7 @@ final class AppModel {
   @ObservationIgnored private let consoleRepository: any ConsoleRepository
   @ObservationIgnored private var networkAdapter: ConsoleNetworkAdapter?
   @ObservationIgnored private var compositionGeneration: UInt64 = 0
+  @ObservationIgnored private var compositionTask: Task<Void, Never>?
   var connectedProfile: SavedConsole? {
     guard let id = registry.selectedID, case .connected = registry.states[id] else { return nil }
     return registry.consoles.first { $0.id == id }
@@ -78,7 +79,10 @@ final class AppModel {
 
   #if DEBUG
     /// Previews share the exact same catalog and fail-closed transport as XCUI screenshots.
-    init(scenario: Scenario, appearance: ColorScheme? = nil, storeScenario: StoreScenario? = nil) {
+    init(
+      scenario: Scenario, appearance: ColorScheme? = nil, storeScenario: StoreScenario? = nil,
+      consoleRepository: (any ConsoleRepository)? = nil
+    ) {
       self.scenario = scenario
       self.storeScenario = storeScenario
       self.appearance = appearance
@@ -86,12 +90,14 @@ final class AppModel {
       let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("SyntheticPreviews", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
-      consoleRepository = FileConsoleRepository(
-        directory: directory.appendingPathComponent("Consoles"))
+      self.consoleRepository =
+        consoleRepository
+        ?? FileConsoleRepository(
+          directory: directory.appendingPathComponent("Consoles"))
       registry = ConnectionRegistry(
         repository: FileProfileRepository(directory: directory),
         probe: ConnectionProbe(transport: ScriptedTransport(scenario.steps)),
-        consoleRepository: consoleRepository
+        consoleRepository: self.consoleRepository
       )
     }
   #endif
@@ -114,10 +120,40 @@ final class AppModel {
         } catch { fatalError("Synthetic fixture setup failed: \(error)") }
       }
     #endif
+    // Connection/navigation readiness must not wait for cache, journal or stream initialization.
+    // Store fixture readiness still guarantees that its prepared state has been hydrated.
+    #if DEBUG
+      if storeScenario == nil { isReady = true }
+    #else
+      isReady = true
+    #endif
     await synchronizeStore()
     isReady = true
   }
   func synchronizeStore() async {
+    compositionGeneration &+= 1
+    let generation = compositionGeneration
+    let previous = compositionTask
+    let task = Task { [weak self] in
+      await previous?.value
+      guard let self, self.compositionGeneration == generation else { return }
+      await self.synchronizeStoreNow(generation: generation)
+    }
+    compositionTask = task
+    var waiting = task
+    var waitingGeneration = generation
+    while true {
+      await waiting.value
+      if compositionGeneration == waitingGeneration {
+        compositionTask = nil
+        return
+      }
+      guard let latest = compositionTask else { return }
+      waiting = latest
+      waitingGeneration = compositionGeneration
+    }
+  }
+  private func synchronizeStoreNow(generation: UInt64) async {
     let profile = retainedProfile
     let connected = connectedProfile != nil
     if let profile, let existing = store, existing.namespace == ConsoleNamespace(profile: profile) {
@@ -137,8 +173,6 @@ final class AppModel {
       }
       return
     }
-    compositionGeneration &+= 1
-    let generation = compositionGeneration
     let previous = store
     store = nil
     networkAdapter?.cancel()

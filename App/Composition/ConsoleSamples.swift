@@ -41,7 +41,7 @@
             threadID: thread.id, submissionID: "00000000-0000-0000-0000-000000000001",
             payloadDigest: "fictional-digest",
             draftKey: .init(profileID: store.profile.id, sourceID: thread.sourceId),
-            draftVersion: nil)
+            draftVersion: nil, dispatched: true)
         ]
         try await repository.saveJournal(journal, namespace: store.namespace)
       }

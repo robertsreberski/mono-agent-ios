@@ -30,7 +30,9 @@ Screens must not instantiate API clients or submit directly.
   the authored draft still belongs to a source's new-conversation context. Switching context
   cancels uploads and disposes reservations; bytes and capability URLs are never restored.
 - `enqueueThreadWrite` serializes pending settings/project edits; `settleThreadWrites`
-  completes before a submission POST. Each write has the web's 15-second deadline. A failed
+  completes before a submission POST. Each caller's 15-second deadline starts at enqueue,
+  including queue wait. An expired queued write never starts. Cancelling settlement stops
+  only that caller's wait, without releasing the real write-ordering barrier. A failed
   edit is reported once, a successful later edit clears it, and drained tails are removed.
   Timeout/cancellation settles the caller but **not** the physical write queue: a transport
   that ignores cancellation blocks subsequent writes on that thread until it actually completes.
@@ -69,7 +71,12 @@ The Store and headless service reload/rebase and retry once; a second supersedin
 remains explicitly non-durable (`PersistenceState.superseded`, `ChangeSummary.persisted == false`).
 Authored rebasing merges drafts by key, version and update time and keeps the highest seen
 revision per thread. A known deleted draft version cannot erase another writer's newer draft.
+A draft unchanged from the loaded baseline stays deleted if another writer removed its key.
 Stopped stores cannot flush authored state, including late submission confirmations.
+AppModel serializes replacement, awaiting the old store's final flush before the next hydrate;
+quick requests coalesce to the latest selection. Connection-shell readiness is published after
+the profile/probe phase, not after Store I/O; feature data must use `store.hydrated`/freshness.
+DEBUG Store scenarios still wait for their prepared Store state before declaring readiness.
 Corrupt/newer/oversized files are preserved and that record becomes memory-only.
 The Store exposes separate failure states; cache degradation cannot evict authored data.
 Profile removal deletes all its identity namespaces, and late flushes cannot recreate them.
@@ -83,7 +90,7 @@ Bounds per namespace:
 | Deletion barriers | 256 tombstones, 30 days; explicit removal or two 404s ≥5 s apart; a newer revision lifts an explicit-removal barrier, any authoritative row fetched after removal lifts a not-found barrier |
 | Cache | 24 conversations, 24 buckets, 30 days, 16 MiB total; 2 MiB per conversation |
 | Authored | 40 text drafts, 32,768 characters each, 30 days; 200 LRU seen revisions; 6 MiB |
-| Journal | 1 MiB / 50 entries for new writes; oldest non-active uncertain dispatched references evicted first. A dispatched reference with an authoritative 404 expires 30 days after its latest dispatch checkpoint. Historical prepared identities are never age/count-evicted; if they fill capacity, new sends fail closed |
+| Journal | 1 MiB / 50 entries for new writes; oldest non-active uncertain dispatched references evicted first. A dispatched reference with an authoritative 404 expires 30 days after its latest dispatch checkpoint. Historical prepared identities are never automatically age/count-evicted; if they fill capacity, sends fail with visible guidance and explicit acknowledged forgetting can free a slot |
 
 Drafts flush after 500 ms and on context/background changes. Cache flushes batch at one
 second. Oversized cached history is explicitly `truncated`, with paging disabled until a
@@ -103,15 +110,19 @@ excluded on CoreSimulator, is **not CI coverage**, and requires a physical iOS t
 
 A submission UUID and payload digest are durably journaled **before POST**. After settling
 thread writes, a second durable checkpoint marks the reference possibly dispatched; POST is
-strictly gated on that save. A checkpoint is not proof of admission. Only identities prepared
-in this Store lifetime and proven not to have reached POST may be cleaned up as undispatched.
-A historical prepared reference (including legacy references lacking dispatch/age metadata)
-remains uncertain, even after retry/checkpoint/relaunch, unless
-a receipt resolves it. A later failed preflight or rejection cannot erase an earlier ambiguous
+strictly gated on that save. A checkpoint is not proof of admission. New references carry per-entry `dispatchProtocol: 1`, declaring that POST requires the
+checkpoint. A marked `dispatched: false` reference therefore proves no POST occurred and is
+retired at hydration without receipt polling (also if a previous cleanup save failed).
+Resolved and idle provably-undispatched entries never consume admission capacity.
+Only unmarked/legacy prepared references remain historical uncertainty through retries and
+relaunch, unless a receipt resolves them. A later failed preflight or rejection cannot erase an earlier ambiguous
 attempt. Historical oversized journals retain those protected identities but cannot grow;
 repository writes reject >50 entries. The 50-entry cap and 30-day dispatched-404 policy are
 explicit retention limits, **not proof of non-admission**: check the transcript before sending
-again after an uncertain identity has been evicted. Recovery never submits automatically.
+again after an uncertain identity has been evicted. Recovery never submits automatically. `forgetRecoveryReference(_:acknowledgingPossibleAdmission:)`
+is an explicit user action, requires risk acknowledgement, and refuses active POST/recovery
+owners. It saves the removal durably and reports failures; it never sends or DELETEs uploads.
+Forgetting cannot undo an admission and ends same-UUID recovery for that reference.
 The journal contains no immutable payload, upload bytes or capability URLs, only attachment IDs
 and identity/dispatch metadata. Payload IDs are protected before the first submit suspension.
 Files stay staged through preparation and POST; selection/background cannot DELETE owned files.
@@ -119,7 +130,8 @@ All non-admission exits release protection and retain staging. Unchanged uncerta
 the digest and UUID; a compaction HTTP rejection with absent receipt also keeps an in-memory
 retry identity. A known receipt settles its journal identity. Admission removes staged files
 without DELETE; rejection retains them. Only explicit context abandonment with no active owner
-can DELETE staged files. Recovery rechecks active submissions after every receipt GET.
+can DELETE staged files. Recovery rechecks active submissions and the live dispatch checkpoint after every receipt GET;
+a stale 404 cannot expire a reference whose checkpoint changed while the GET was pending.
 Relaunch, foreground and reconnect recover by receipt GET only; there is no offline send
 queue or automatic resend. An explicit unchanged retry reuses the UUID, including across
 relaunch; changed input gets another UUID. Only confirmed admission clears the exact draft

@@ -14,11 +14,13 @@ enum AuthoredMerge {
       disk.drafts.filter { !removedVersions.contains($0.version) }.map { ($0.key, $0) },
       uniquingKeysWith: { first, _ in first })
     for draft in local.drafts {
+      let oldVersion = baseline.drafts.first { $0.key == draft.key }?.version
       guard let other = drafts[draft.key] else {
+        // An unchanged local copy is not an edit that can undo another writer's deletion.
+        if draft.version == oldVersion { continue }
         drafts[draft.key] = draft
         continue
       }
-      let oldVersion = baseline.drafts.first { $0.key == draft.key }?.version
       if other.version == draft.version || other.version == oldVersion
         || (draft.version != oldVersion && draft.updatedAt > other.updatedAt)
       {

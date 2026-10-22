@@ -152,6 +152,8 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
   public var payloadDigest: String
   public var draftKey: DraftKey
   public var draftVersion: UUID?
+  /// Version 1 gates POST on a durable dispatched checkpoint; zero denotes unmarked legacy data.
+  public var dispatchProtocol: Int
   public var dispatched: Bool
   public var historicalPreparation: Bool
   public var lastDispatchedAt: Date?
@@ -159,7 +161,7 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
   public var attachmentIDs: [String]
   private enum CodingKeys: String, CodingKey {
     case threadID, submissionID, payloadDigest, draftKey, draftVersion, dispatched, createdAt,
-      attachmentIDs, historicalPreparation, lastDispatchedAt
+      attachmentIDs, historicalPreparation, lastDispatchedAt, dispatchProtocol
   }
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -168,13 +170,15 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
     payloadDigest = try c.decode(String.self, forKey: .payloadDigest)
     draftKey = try c.decode(DraftKey.self, forKey: .draftKey)
     draftVersion = try c.decodeIfPresent(UUID.self, forKey: .draftVersion)
-    // Legacy references might have reached the server; never assume they were undispatched.
+    dispatchProtocol = try c.decodeIfPresent(Int.self, forKey: .dispatchProtocol) ?? 0
+    // Only marked references prove that false means no POST could have started.
     let dispatchFlag = try c.decodeIfPresent(Bool.self, forKey: .dispatched)
     let preparationDate = try c.decodeIfPresent(Date.self, forKey: .createdAt)
     dispatched = dispatchFlag ?? true
     let historical = try c.decodeIfPresent(Bool.self, forKey: .historicalPreparation) ?? false
     historicalPreparation =
-      dispatchFlag == nil || preparationDate == nil || !dispatched || historical
+      historical || dispatchFlag == nil
+      || (dispatchProtocol != 1 && (!dispatched || preparationDate == nil))
     lastDispatchedAt = try c.decodeIfPresent(Date.self, forKey: .lastDispatchedAt)
     createdAt = preparationDate ?? .distantPast
     attachmentIDs = try c.decodeIfPresent([String].self, forKey: .attachmentIDs) ?? []
@@ -182,19 +186,25 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
   public init(
     threadID: String, submissionID: String, payloadDigest: String, draftKey: DraftKey,
     draftVersion: UUID?, dispatched: Bool = false, createdAt: Date = Date(),
-    attachmentIDs: [String] = [], historicalPreparation: Bool = false, lastDispatchedAt: Date? = nil
+    attachmentIDs: [String] = [], historicalPreparation: Bool = false,
+    lastDispatchedAt: Date? = nil,
+    dispatchProtocol: Int = 1
   ) {
     self.threadID = threadID
     self.submissionID = submissionID
     self.payloadDigest = payloadDigest
     self.draftKey = draftKey
     self.draftVersion = draftVersion
+    self.dispatchProtocol = dispatchProtocol
     self.dispatched = dispatched
     self.historicalPreparation = historicalPreparation
     self.lastDispatchedAt = lastDispatchedAt
     self.createdAt = createdAt
     self.attachmentIDs = attachmentIDs
   }
+}
+extension SubmissionReference {
+  var provablyUndispatched: Bool { dispatchProtocol == 1 && !dispatched && !historicalPreparation }
 }
 public struct JournalRecord: Codable, Sendable {
   public var version = 1

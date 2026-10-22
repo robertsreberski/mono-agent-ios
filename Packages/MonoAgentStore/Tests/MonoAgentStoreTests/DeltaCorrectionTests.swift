@@ -407,7 +407,9 @@ struct DeltaCorrectionTests {
     let saved = prepared(profileID: h.profile.id, createdAt: Date(), dispatched: true)
     var fields = try #require(
       try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
-    for key in ["dispatched", "createdAt", "historicalPreparation", "lastDispatchedAt"] {
+    for key in [
+      "dispatched", "createdAt", "historicalPreparation", "lastDispatchedAt", "dispatchProtocol",
+    ] {
       fields[key] = nil
     }
     let legacy = try JSONDecoder().decode(

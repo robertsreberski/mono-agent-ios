@@ -102,11 +102,13 @@ func admission(_ reference: SubmissionReference, status: Int = 202) throws -> HT
       "threadId": .string(reference.threadID), "outcome": .string("turn"),
     ]), status: status)
 }
-func prepared(profileID: UUID, createdAt: Date, dispatched: Bool = false) -> SubmissionReference {
+func prepared(profileID: UUID, createdAt: Date, dispatched: Bool = false, dispatchProtocol: Int = 0)
+  -> SubmissionReference
+{
   .init(
     threadID: "thread-example", submissionID: UUID().uuidString, payloadDigest: "fictional-digest",
     draftKey: .init(profileID: profileID, sourceID: "agent-example"), draftVersion: nil,
-    dispatched: dispatched, createdAt: createdAt)
+    dispatched: dispatched, createdAt: createdAt, dispatchProtocol: dispatchProtocol)
 }
 
 actor WriteOrder {
@@ -131,5 +133,5 @@ func reference(profileID: UUID, input: ApiStartSubmission, createdAt: Date, disp
       String(decoding: try encoder.encode(payload), as: UTF8.self)),
     draftKey: .init(profileID: profileID, sourceID: "agent-example", threadID: "thread-example"),
     draftVersion: nil, dispatched: dispatched, createdAt: createdAt,
-    attachmentIDs: input.attachmentIds ?? [])
+    attachmentIDs: input.attachmentIds ?? [], dispatchProtocol: 0)
 }

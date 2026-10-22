@@ -5,7 +5,7 @@ import MonoAgentKit
 public enum SubmissionError: Error {
   case notReady, busy, journalUnavailable, threadWriteFailed, threadWriteTimeout
   case rejected(String)
-  case uncertain, journalFull
+  case uncertain, journalFull, acknowledgementRequired, threadWriteInterrupted
 }
 extension ConsoleStore {
   /// Thread creation is outside recovery, and is never retried by lifecycle effects.
@@ -34,6 +34,7 @@ extension ConsoleStore {
     guard !submitting.contains(threadID) else { throw SubmissionError.busy }
     guard journalStorage != .memoryOnly else { throw SubmissionError.journalUnavailable }
     if conversations[threadID]?.thread.archivedAt != nil { throw SubmissionError.notReady }
+    trimJournal()
     submitting.insert(threadID)
     let claim = UUID()
     attachmentClaims[claim] = Set(input.attachmentIds ?? [])
@@ -73,7 +74,7 @@ extension ConsoleStore {
       createdAt: isLocalPreparation ? now : pending?.createdAt ?? now,
       attachmentIDs: payload.attachmentIds ?? [],
       historicalPreparation: pending?.historicalPreparation ?? false,
-      lastDispatchedAt: pending?.lastDispatchedAt)
+      lastDispatchedAt: pending?.lastDispatchedAt, dispatchProtocol: pending?.dispatchProtocol ?? 1)
     journal.pending.removeAll { $0.submissionID == reference.submissionID }
     journal.pending.append(reference)
     do {
@@ -213,6 +214,15 @@ extension ConsoleStore {
   }
   /// Never evict a historical prepared identity: a previous process may have sent it.
   func trimJournal(reserving: Int = 0) {
+    let removable = journal.pending.filter {
+      completedSubmissions.contains($0.submissionID)
+        || ($0.provablyUndispatched && !submitting.contains($0.threadID)
+          && !recoveries.contains($0.submissionID))
+    }
+    let ids = Set(removable.map(\.submissionID))
+    for reference in removable { recordRetirement(reference.submissionID) }
+    journal.pending.removeAll { ids.contains($0.submissionID) }
+    if !ids.isEmpty { journalRevision &+= 1 }
     while journal.pending.count + reserving > ConsoleBounds.journalCount {
       guard
         let oldest = journal.pending.filter({
@@ -230,14 +240,37 @@ extension ConsoleStore {
   func makeJournalRoom() throws {
     trimJournal(reserving: 1)
     guard journal.pending.count < ConsoleBounds.journalCount else {
+      errorMessage =
+        "Recovery journal is full. Check the conversation for earlier admissions, then explicitly forget an uncertain reference to make room. Forgetting cannot undo an admitted message."
       throw SubmissionError.journalFull
     }
   }
+  /// Explicit user acknowledgement only. Never sends or deletes uploads; forgetting is not undo.
+  public func forgetRecoveryReference(_ id: String, acknowledgingPossibleAdmission: Bool)
+    async throws
+  {
+    guard acknowledgingPossibleAdmission else { throw SubmissionError.acknowledgementRequired }
+    if let reference = journal.pending.first(where: { $0.submissionID == id }) {
+      guard !submitting.contains(reference.threadID), !recoveries.contains(id) else {
+        throw SubmissionError.busy
+      }
+      preparedHere.remove(id)
+      retryIdentities[reference.threadID] = nil
+      recordRetirement(id)
+      journal.pending.removeAll { $0.submissionID == id }
+      journalRevision &+= 1
+    }
+    if completedSubmissions.contains(id) { try await persistJournal() }
+    errorMessage =
+      "Recovery reference forgotten. Check the conversation before sending again; the earlier message may already be admitted."
+  }
   public func recoverSubmissions() async {
     let generation = epoch
-    for reference in journal.pending {
+    for snapshot in journal.pending {
       guard epoch == generation, !backgrounded, !Task.isCancelled else { return }
-      guard !recoveries.contains(reference.submissionID), !submitting.contains(reference.threadID)
+      guard
+        let reference = journal.pending.first(where: { $0.submissionID == snapshot.submissionID }),
+        !recoveries.contains(reference.submissionID), !submitting.contains(reference.threadID)
       else { continue }
       recoveries.insert(reference.submissionID)
       do {
@@ -245,25 +278,25 @@ extension ConsoleStore {
           id: reference.threadID, submissionId: reference.submissionID, etag: nil)
         guard epoch == generation, !backgrounded, !Task.isCancelled else { return }
         if !submitting.contains(reference.threadID),
-          journal.pending.contains(where: { $0.submissionID == reference.submissionID }),
+          let live = journal.pending.first(where: { $0.submissionID == reference.submissionID }),
           case .modified(let receipt, _) = result
         {
-          try await confirm(receipt, reference: reference)
+          try await confirm(receipt, reference: live)
         }
       } catch {
         let now = await clock.wallNow()
         guard epoch == generation, !backgrounded, !Task.isCancelled else { return }
         if !submitting.contains(reference.threadID),
-          journal.pending.contains(where: { $0.submissionID == reference.submissionID }),
-          let missing = error as? APIError, missing.status == 404, reference.dispatched,
-          !reference.historicalPreparation,
-          now.timeIntervalSince(reference.lastDispatchedAt ?? reference.createdAt)
+          let live = journal.pending.first(where: { $0.submissionID == reference.submissionID }),
+          live.lastDispatchedAt == reference.lastDispatchedAt,
+          let missing = error as? APIError, missing.status == 404, live.dispatched,
+          !live.historicalPreparation,
+          now.timeIntervalSince(live.lastDispatchedAt ?? live.createdAt)
             >= ConsoleBounds.journal404Age
         {
-          // Explicit retention bound, not proof that the server never admitted this identity.
           errorMessage =
             "An old uncertain reference expired. Check the conversation before sending again."
-          await retire(reference)
+          await retire(live)
         }
       }
       if epoch == generation { recoveries.remove(reference.submissionID) }
