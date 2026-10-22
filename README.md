@@ -1,7 +1,10 @@
 # Mono Agent for iPhone and iPad
 
 A native SwiftUI client for the mono-agent web console. This foundation includes saved
-console connections and adaptive navigation, not agent or conversation features yet.
+console connections, adaptive navigation and a Liquid Glass design system
+([MonoAgentDesign](Packages/MonoAgentDesign/README.md)). It does not include agent or
+conversation features yet. The connected console's theme (evergreen, ocean, plum or
+terracotta) styles the app; disconnected or unknown themes use evergreen.
 GPL-3.0-only; see [LICENSE](LICENSE).
 
 ## Prerequisites and build
@@ -81,7 +84,10 @@ See [AGENTS.md](AGENTS.md) for exact commands and module boundaries. Ordinary te
 contact a live console. Debug scenarios use isolated fresh storage and scripted responses;
 script exhaustion fails closed. Launch with `--scenario connection-empty`,
 `connection-failed`, or `console-online`, optionally `--appearance light|dark` and
-`--reset-test-data`. Unknown scenarios fail explicitly. Reset without a scenario selects
+`--reset-test-data`. The DEBUG design catalog opens with `--scenario design-catalog`,
+`design-catalog-evergreen|ocean|plum|terracotta`, `design-catalog-accessibility` or
+`design-catalog-reduce-transparency`. It always uses isolated empty fixture storage.
+Unknown scenarios fail explicitly. Reset without a scenario selects
 an isolated empty fixture, never deletes real saved consoles. Release ignores these flags.
 
 ```sh
@@ -97,15 +103,25 @@ skipping iPhone-only runtimes. It prefers iPhone 18 Pro Max, then iPhone 17 Pro 
 iPad Pro 13-inch (M5); if those names are absent, it logs a fallback to the first
 available device in that family. CI uses the same selector. Or pass `--iphone "$IPHONE_UDID" --ipad "$IPAD_UDID"`.
 It runs the shared app test plan (app/Design Swift Testing and XCUI scenarios),
-waits for readiness identifiers and a non-blank rendered frame, and exports 12 labeled synthetic PNGs (three states ×
-two appearances × two devices). `Artifacts/Screenshots/index.html` and `index.json` name
-the device/runtime/scenario/appearance/text size; both image dimensions are ≤ 2000 px.
+waits for readiness identifiers and a non-blank rendered frame, and exports the labeled
+synthetic PNGs listed in `Tools/screenshot-matrix.json` for each device. That is 19 per
+device (38 in total):
+
+- the 12 connection screens (three states × two appearances × two devices);
+- the failed connection at Accessibility XL text;
+- the design catalog per theme in light and dark;
+- the catalog at Accessibility XL text;
+- the catalog with the Reduce Transparency fallback.
+
+`Artifacts/Screenshots/index.html` and `index.json` name the device, runtime, scenario,
+appearance, theme, text size and transparency. Both image dimensions are ≤ 2000 px.
 Results are retained as xcresult bundles. Move/remove old `Artifacts` before rerunning.
 Time in the status bar, locale, scenario data and animations are controlled; no real
 console networking is available to a fixture scenario.
 
 CI builds both Debug and Release and checks the Release executable with `nm` and `strings`
-for fixture symbols/hostnames (`./Tools/check-release-fixtures`). TestSupport declarations
+for fixture symbols/hostnames, design-catalog types/scenario names and preview helpers
+(`./Tools/check-release-fixtures`). TestSupport declarations, the catalog and previews
 are DEBUG-only, not merely inactive in production.
 
 CI runs on `xcode-27`, explicitly selects/asserts Xcode and Swift, chooses installed
