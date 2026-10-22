@@ -17,7 +17,8 @@ if not executable.is_file():
 # and design-package preview helpers must all be compiled out of Release. `nm -a` also
 # lists debug-map source file names, so DEBUG-only files must not be named after markers.
 MARKERS = (b"ScriptedTransport", b"console.example.ts.net", b"DesignCatalog", b"design-catalog",
-           b"DesignPreviewMatrix")
+           b"DesignPreviewMatrix", b"StoreScenario", b"ScenarioConsoleTransport", b"ScenarioEventSource",
+           b"store-offline", b"store-streaming", b"store-unread", b"store-uncertain")
 images = [executable]
 debug_library = args.app / "MonoAgent.debug.dylib"
 if debug_library.is_file():

@@ -16,14 +16,20 @@ public final class ConnectionRegistry {
   public private(set) var selectedID: UUID?
   public private(set) var states: [UUID: ConnectionState] = [:]
   public private(set) var storageError: String?
+  public private(set) var localDataError: String?
   public private(set) var isLoaded = false
   @ObservationIgnored private let repository: any ProfileRepository
+  @ObservationIgnored private let consoleRepository: (any ConsoleRepository)?
   @ObservationIgnored private let probe: ConnectionProbe
   @ObservationIgnored private var loadStarted = false
   @ObservationIgnored private var revision: UInt64 = 0
   @ObservationIgnored private var generations: [UUID: UUID] = [:]
 
-  public init(repository: any ProfileRepository, probe: ConnectionProbe) {
+  public init(
+    repository: any ProfileRepository, probe: ConnectionProbe,
+    consoleRepository: (any ConsoleRepository)? = nil
+  ) {
+    self.consoleRepository = consoleRepository
     self.repository = repository
     self.probe = probe
   }
@@ -98,6 +104,10 @@ public final class ConnectionRegistry {
     states[id] = nil
     if selectedID == id { selectedID = consoles.first?.id }
     await persist()
+    do { try await consoleRepository?.delete(profileID: id) } catch {
+      localDataError =
+        "Retained console data could not be deleted. Delete local app data to remove it."
+    }
   }
 
   /// Only a deliberate user action (or DEBUG scripted scenario) should call connect.

@@ -64,7 +64,7 @@ struct ConsoleShell: View {
       .consoleTheme(theme)
     }
     .confirmationDialog(
-      "Remove saved console and its local profile data?",
+      "Remove saved console and all its retained local data?",
       isPresented: Binding(
         get: { deleting != nil }, set: { if !$0 { deleting = nil } }
       ), titleVisibility: .visible
@@ -86,6 +86,9 @@ struct ConsoleShell: View {
 
   private var sidebar: some View {
     List {
+      if let error = model.registry.localDataError {
+        Section { ConnectionBanner(.storage, title: "Deletion warning", message: error) }
+      }
       if let error = model.registry.storageError {
         Section {
           ConnectionBanner(.storage, title: "Storage warning", message: error)

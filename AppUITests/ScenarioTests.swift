@@ -10,6 +10,16 @@ final class ScenarioTests: XCTestCase {
   func testConnectionFailedDark() { capture("connection-failed", "dark") }
   func testConsoleOnlineLight() { capture("console-online", "light") }
   func testConsoleOnlineDark() { capture("console-online", "dark") }
+  func testStoreScenariosLoad() {
+    for scenario in ["store-offline", "store-streaming", "store-unread", "store-uncertain"] {
+      let app = XCUIApplication()
+      app.launchArguments = ["--scenario", scenario, "--reset-test-data"]
+      app.launch()
+      XCTAssertTrue(
+        app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 15))
+      app.terminate()
+    }
+  }
   func testConnectionFailedAccessibilityText() {
     capture("connection-failed", "light", accessibilityText: true)
   }
