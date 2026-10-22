@@ -85,6 +85,7 @@ struct LifecycleAndRepairTests {
         directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
       clock: clock, uploads: reservations)
     store.started = true
+    store.enabled = true
     await store.select(sourceID: "agent-example", threadID: "one")
     await store.select(sourceID: "agent-example", threadID: "two")
     await eventually { await clock.pending() >= 1 }
@@ -137,6 +138,8 @@ struct LifecycleAndRepairTests {
       Issue.record("Must fail before POST")
     } catch {}
     #expect(h.store.journalStorage == .writeFailed)
+    #expect(h.store.pendingSubmissions.isEmpty)
+    #expect(h.store.journal.pending.isEmpty)
     #expect(
       await h.transport.count("/api/v1/threads/thread-example/submissions", method: "POST") == 0)
     await h.store.stop()

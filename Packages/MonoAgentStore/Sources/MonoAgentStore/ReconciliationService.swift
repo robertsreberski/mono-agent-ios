@@ -15,6 +15,7 @@ public struct ChangeSummary: Sendable {
   public var reads = 0
   public var budgetExhausted = false
   public var persisted = false
+  public var saveResult: RepositorySaveResult?
   public init() {}
 }
 /// No observation or UIKit. A future poller supplies scheduling/permission policy separately.
@@ -61,9 +62,14 @@ public actor ReconciliationService {
     }
     summary.reads = 1
     guard refreshes[namespace] == request else { return summary }
-    for row in bootstrap.threads where !record.tombstones.contains(row.id) {
+    for row in bootstrap.threads where !record.tombstones.keys.contains(row.id) {
       if let revision = before[row.id], row.revision > revision {
         summary.changedThreadIDs.insert(row.id)
+      }
+    }
+    for row in bootstrap.threads + (bootstrap.activeThreads?.threads ?? []) {
+      if let removed = record.tombstones[row.id], row.revision > removed.revision {
+        record.tombstones[row.id] = nil
       }
     }
     record.bootstrap = bootstrap
@@ -73,8 +79,15 @@ public actor ReconciliationService {
       return summary
     }
     try Task.checkCancellation()
-    try await repository.saveCache(record, namespace: namespace)
-    summary.persisted = true
+    var result = try await repository.saveCache(record, namespace: namespace)
+    if case .superseded = result {
+      let disk = try await repository.loadCache(namespace)
+      guard refreshes[namespace] == request else { return summary }
+      record = CacheMerge.rebase(record, onto: disk)
+      result = try await repository.saveCache(record, namespace: namespace)
+    }
+    summary.saveResult = result
+    summary.persisted = result == .saved
     return summary
   }
 }

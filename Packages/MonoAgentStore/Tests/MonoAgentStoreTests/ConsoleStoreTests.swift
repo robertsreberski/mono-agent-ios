@@ -50,7 +50,7 @@ struct ConsoleStoreTests {
     await h.store.flushCache()
     let again = Harness(profile: h.profile, directory: h.directory)
     await again.store.hydrate()
-    #expect(again.store.tombstones.contains("thread-example"))
+    #expect(again.store.tombstones.keys.contains("thread-example"))
     await h.store.stop()
     await again.store.stop()
   }

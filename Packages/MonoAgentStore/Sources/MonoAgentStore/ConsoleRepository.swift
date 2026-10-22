@@ -2,13 +2,21 @@
 import Foundation
 import MonoAgentKit
 
+public enum RepositorySaveResult: Sendable, Equatable {
+  case saved
+  case superseded(revision: UInt64)
+}
+
 public protocol ConsoleRepository: Sendable {
   func loadCache(_ namespace: ConsoleNamespace) async throws -> CacheRecord
   func loadAuthored(_ namespace: ConsoleNamespace) async throws -> AuthoredRecord
   func loadJournal(_ namespace: ConsoleNamespace) async throws -> JournalRecord
-  func saveCache(_ record: CacheRecord, namespace: ConsoleNamespace) async throws
-  func saveAuthored(_ record: AuthoredRecord, namespace: ConsoleNamespace) async throws
-  func saveJournal(_ record: JournalRecord, namespace: ConsoleNamespace) async throws
+  @discardableResult func saveCache(_ record: CacheRecord, namespace: ConsoleNamespace) async throws
+    -> RepositorySaveResult
+  @discardableResult func saveAuthored(_ record: AuthoredRecord, namespace: ConsoleNamespace)
+    async throws -> RepositorySaveResult
+  @discardableResult func saveJournal(_ record: JournalRecord, namespace: ConsoleNamespace)
+    async throws -> RepositorySaveResult
   func delete(profileID: UUID) async throws
 }
 
@@ -67,7 +75,9 @@ public actor FileConsoleRepository: ConsoleRepository {
       JournalRecord.self, at: file(namespace, "journal"), empty: JournalRecord(),
       version: { $0.version }, revision: { $0.revision }, budget: ConsoleBounds.journalBytes)
   }
-  public func saveCache(_ record: CacheRecord, namespace: ConsoleNamespace) throws {
+  @discardableResult public func saveCache(_ record: CacheRecord, namespace: ConsoleNamespace)
+    throws -> RepositorySaveResult
+  {
     guard !deletedProfiles.contains(namespace.profileID) else {
       throw ConsoleStorageError.unavailable
     }
@@ -76,28 +86,34 @@ public actor FileConsoleRepository: ConsoleRepository {
     // Retain evicted in-memory conversations on disk, up to the independent 24-entry bound.
     var merged = record
     let old = try loadCache(namespace)
+    merged.bootstrap = record.bootstrap ?? old.bootstrap
     let ids = Set(record.conversations.map { $0.thread.id })
     merged.conversations += old.conversations.filter {
-      !ids.contains($0.thread.id) && !record.tombstones.contains($0.thread.id)
+      !ids.contains($0.thread.id) && record.tombstones[$0.thread.id] == nil
     }
-    try write(bounded(merged), at: url, revision: record.revision, budget: ConsoleBounds.cacheBytes)
+    return try write(
+      bounded(merged), at: url, revision: record.revision, budget: ConsoleBounds.cacheBytes)
   }
-  public func saveAuthored(_ record: AuthoredRecord, namespace: ConsoleNamespace) throws {
+  @discardableResult public func saveAuthored(_ record: AuthoredRecord, namespace: ConsoleNamespace)
+    throws -> RepositorySaveResult
+  {
     guard !deletedProfiles.contains(namespace.profileID) else {
       throw ConsoleStorageError.unavailable
     }
     let url = file(namespace, "authored")
-    if revisions[url] == nil { _ = try loadAuthored(namespace) }
-    try write(
+    _ = try loadAuthored(namespace)
+    return try write(
       bounded(record), at: url, revision: record.revision, budget: ConsoleBounds.authoredBytes)
   }
-  public func saveJournal(_ record: JournalRecord, namespace: ConsoleNamespace) throws {
+  @discardableResult public func saveJournal(_ record: JournalRecord, namespace: ConsoleNamespace)
+    throws -> RepositorySaveResult
+  {
     guard !deletedProfiles.contains(namespace.profileID) else {
       throw ConsoleStorageError.unavailable
     }
     let url = file(namespace, "journal")
-    if revisions[url] == nil { _ = try loadJournal(namespace) }
-    try write(record, at: url, revision: record.revision, budget: ConsoleBounds.journalBytes)
+    _ = try loadJournal(namespace)
+    return try write(record, at: url, revision: record.revision, budget: ConsoleBounds.journalBytes)
   }
   public func delete(profileID: UUID) throws {
     deletedProfiles.insert(profileID)
@@ -108,9 +124,11 @@ public actor FileConsoleRepository: ConsoleRepository {
     revisions = revisions.filter { !$0.key.path.hasPrefix(url.path + "/") }
     blocked = blocked.filter { !$0.path.hasPrefix(url.path + "/") }
   }
-  private func write<T: Encodable>(_ record: T, at url: URL, revision: UInt64, budget: Int) throws {
+  private func write<T: Encodable>(_ record: T, at url: URL, revision: UInt64, budget: Int) throws
+    -> RepositorySaveResult
+  {
     guard !blocked.contains(url) else { throw ConsoleStorageError.unavailable }
-    guard revisions[url].map({ revision > $0 }) ?? true else { return }
+    if let latest = revisions[url], revision <= latest { return .superseded(revision: latest) }
     let data = try JSONEncoder().encode(record)
     guard data.count <= budget else { throw ConsoleStorageError.byteBudget }
     var parent = url.deletingLastPathComponent()
@@ -127,12 +145,14 @@ public actor FileConsoleRepository: ConsoleRepository {
     var target = url
     try target.setResourceValues(values)
     revisions[url] = revision
+    return .saved
   }
   private func bounded(_ input: CacheRecord) throws -> CacheRecord {
     var record = try CacheSanitizer.sanitize(input)
+    record.tombstones = CacheMerge.prune(record.tombstones, now: now())
     let cutoff = now().addingTimeInterval(-ConsoleBounds.maxAge)
     record.conversations = try record.conversations.filter {
-      $0.savedAt >= cutoff && !record.tombstones.contains($0.thread.id)
+      $0.savedAt >= cutoff && record.tombstones[$0.thread.id] == nil
     }
     .sorted { $0.savedAt > $1.savedAt }.prefix(ConsoleBounds.diskConversations).map(
       CacheSanitizer.conversation)

@@ -18,7 +18,7 @@ Screens must not instantiate API clients or submit directly.
   Never infer confirmed running from a hydrated `runState.status`: use
   `isRunningConfirmed(threadID:)` for fleet/bucket rows and `runningConfirmed` for detail.
 - Read `connection`, `freshness`, `errorMessage`, `storage`, `authoredStorage`,
-  `journalStorage`, `pendingSubmissions`, `serverClockOffset`, and `serverNow()`.
+  `journalStorage`, `pendingSubmissions`, `draftClearStorage`, `serverClockOffset`, and `serverNow()`.
 - Commands: `start`, `hydrate`, `select(sourceID:archived:threadID:)`, `loadOlder`,
   `refreshBucket(_:older:)`, `markVisible`, `reconcile`, `repairMessage`,
   `repairToolOutput`, `cancel(threadID:)`, `scenePhaseChanged`, and `stop`.
@@ -30,7 +30,8 @@ Screens must not instantiate API clients or submit directly.
   the authored draft still belongs to a source's new-conversation context. Switching context
   cancels uploads and disposes reservations; bytes and capability URLs are never restored.
 - `enqueueThreadWrite` serializes pending settings/project edits; `settleThreadWrites`
-  completes before a submission POST. A failed edit blocks that send, not all future edits.
+  completes before a submission POST. Each write has the web's 15-second deadline. A failed
+  edit is reported once, a successful later edit clears it, and drained tails are removed.
 - `setDataMode(.auto/.lean/.full)` persists per console. Auto uses full unless the app's
   NWPathMonitor adapter reports Low Data Mode. Full publishes applied deltas immediately;
   lean batches only transcript publication for one second, never terminal writes, and halves
@@ -60,7 +61,10 @@ MonoAgent/Consoles/<profile UUID>/<SHA256(endpoint + console identity)>/
 ```
 
 Each record has independent monotonic revisions; stale/equal saves cannot replace newer
-ones. Corrupt/newer/oversized files are preserved and that record becomes memory-only.
+ones. Save commands return `RepositorySaveResult.saved` or `.superseded(revision:)`.
+The Store and headless service reload/rebase and retry once; a second superseding write
+remains explicitly non-durable (`PersistenceState.superseded`, `ChangeSummary.persisted == false`).
+Corrupt/newer/oversized files are preserved and that record becomes memory-only.
 The Store exposes separate failure states; cache degradation cannot evict authored data.
 Profile removal deletes all its identity namespaces, and late flushes cannot recreate them.
 An endpoint edit creates a new UUID namespace; no advertised-hostname alias merging occurs.
@@ -70,9 +74,10 @@ Bounds per namespace:
 | Record | Bounds |
 |---|---|
 | In-memory detail | 8 conversations, 256 observation clocks |
+| Deletion barriers | 256 tombstones, 30 days; explicit removal or two confirming 404s; newer authoritative revisions lift barriers |
 | Cache | 24 conversations, 24 buckets, 30 days, 16 MiB total; 2 MiB per conversation |
 | Authored | 40 text drafts, 32,768 characters each, 30 days; 200 LRU seen revisions; 6 MiB |
-| Journal | 1 MiB; no age-based eviction of unresolved submissions |
+| Journal | 1 MiB; dispatched references never age-evicted; prepared references expire after 24 h only after an authoritative 404 |
 
 Drafts flush after 500 ms and on context/background changes. Cache flushes batch at one
 second. Oversized cached history is explicitly `truncated`, with paging disabled until a
@@ -80,25 +85,39 @@ fresh detail supplies a valid cursor. Cache eviction retains up to 24 previously
 details independently of the eight held in memory. Authored data and journal are separate
 from cache pruning. Cache hydration and writes strip capability URLs, all validators,
 transient compaction and legacy silent-cron rows (including count/preview corrections).
-Opaque extension objects and authored capability links are scrubbed too.
+Durable attachment `storedUrl` is retained. Opaque tool payload keys such as `token` and
+`expiresAt` are not reinterpreted or removed; stripping is scoped to the reference's
+attachment/MCP capability fields. Authored capability links are scrubbed too.
 
 Files are excluded from backup and use complete protection until first authentication on
 iOS. This is OS-protected local data, not application-level encryption. No shared network
 response cache is used. Read/write failure states must remain visible in future feature UI.
 
 A submission UUID and payload digest are durably journaled **before POST**. Failure to write
-that reference prevents dispatch. The journal contains no immutable payload or upload bytes.
+that reference prevents dispatch. Provably undispatched exits remove the prepared reference
+and re-save; a failed save also rolls it back in memory. Dispatch is marked at the POST call
+boundary, never while waiting on authored state/thread writes. A crash inside POST may leave
+only the prepared checkpoint, which is still recovered exclusively by GET. The journal
+contains no immutable payload, upload bytes or capability URLs; only attachment IDs are retained.
+Attachments move out of visible staging into protected in-flight ownership before POST and
+are not deleted by selection/background cleanup. Known receipts release that ownership.
 Relaunch, foreground and reconnect recover by receipt GET only; there is no offline send
 queue or automatic resend. An explicit unchanged retry reuses the UUID, including across
 relaunch; changed input gets another UUID. Only confirmed admission clears the exact draft
-version. A newer edit survives an older admission. Journal/draft failures never claim durable
-recovery. Definite rejection retains authored text; compaction busy refreshes detail/bootstrap.
+version. A newer edit survives an older admission. Known admission always retires the UUID,
+even if draft clearing cannot be saved; `draftClearStorage` reports that separate durability.
+An authored record degraded to memory-only does not disable sending. A real authored write
+failure blocks that attempt without leaving a prepared journal ghost. Journal/draft failures
+never claim durable recovery. Definite rejection retains authored text; compaction busy refreshes detail/bootstrap.
 
 `ReconciliationService.refresh(profile:budget:) -> ChangeSummary` is a headless actor seam
 for a future poller. Its conservative first implementation performs at most one bootstrap
 GET within the supplied read/time budget and persists the sanitized snapshot. It never
 submits or schedules background work. Background permissions, notification policy and
-multi-scene synchronization are not implemented here.
+multi-scene synchronization are not implemented here. `stop()` terminally disables live
+network effects until an explicit `start()`. Foreground alone only resumes a started,
+connected store; offline hydration never opens SSE. Interrupted initial hydration resumes
+before bootstrap/stream setup when the connected scene becomes active.
 
 ## Connection registry
 

@@ -61,6 +61,7 @@ public final class ConsoleStore {
   }
   public var isStarted: Bool { started }
   public internal(set) var hydrated = false
+  public internal(set) var draftClearStorage: [String: PersistenceState] = [:]
   public internal(set) var stagedAttachments: [WebAttachment] = []
   @ObservationIgnored var uploadTasks: [UUID: Task<[WebAttachment], any Error>] = [:]
 
@@ -72,10 +73,11 @@ public final class ConsoleStore {
   @ObservationIgnored var authored = AuthoredRecord()
   @ObservationIgnored var journal = JournalRecord()
   @ObservationIgnored var cacheRevision: UInt64 = 0
-  @ObservationIgnored var tombstones: Set<String> = []
+  @ObservationIgnored var tombstones: [String: ThreadTombstone] = [:]
   @ObservationIgnored var observedOrder: [String] = []
   @ObservationIgnored var observations: [String: UInt64] = [:]
   @ObservationIgnored var observation: UInt64 = 0
+  @ObservationIgnored var bootstrapClock: UInt64 = 0
   @ObservationIgnored var epoch: UInt64 = 0
   @ObservationIgnored var selection: UInt64 = 0
   @ObservationIgnored var visible = false
@@ -100,7 +102,15 @@ public final class ConsoleStore {
   @ObservationIgnored var repairWanted: [String: Int] = [:]
   @ObservationIgnored var recoveries: Set<String> = []
   @ObservationIgnored var submitting: Set<String> = []
-  @ObservationIgnored var writeTasks: [String: Task<Void, any Error>] = [:]
+  @ObservationIgnored var writeTasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored var writeTokens: [String: UUID] = [:]
+  @ObservationIgnored var writeFailures: [String: SubmissionError] = [:]
+  @ObservationIgnored var inFlightAttachments: [String: WebAttachment] = [:]
+  @ObservationIgnored var completedSubmissions: Set<String> = []
+  @ObservationIgnored var retirementOrder: [String] = []
+  @ObservationIgnored var draftClearOrder: [String] = []
+  @ObservationIgnored var missingReads: [String: Int] = [:]
+  @ObservationIgnored var enabled = false
   @ObservationIgnored var lru: [String] = []
 
   public init(
@@ -127,9 +137,13 @@ public final class ConsoleStore {
     for task in uploadTasks.values { task.cancel() }
   }
   public func start() async {
-    guard !started else { return }
+    guard !enabled || !started else { return }
+    enabled = true
     started = true
     backgrounded = false
+    await initialize()
+  }
+  func initialize() async {
     let generation = epoch
     await hydrate()
     guard epoch == generation, !backgrounded else { return }
@@ -183,6 +197,7 @@ public final class ConsoleStore {
     hydrated = true
   }
   public func select(sourceID: String, archived: Bool = false, threadID: String? = nil) async {
+    pruneTombstones()
     selection &+= 1
     visible = false
     selectedBucket = BucketKey(sourceID: sourceID, archived: archived)
@@ -289,7 +304,7 @@ public final class ConsoleStore {
   var authoredRevision: UInt64 = 0
   var journalRevision: UInt64 = 0
   func hold(_ entry: CachedConversation, fromDevice: Bool = false) {
-    guard !tombstones.contains(entry.thread.id) else { return }
+    guard !tombstones.keys.contains(entry.thread.id) else { return }
     let state = conversations[entry.thread.id] ?? ConversationState(entry)
     state.record = entry
     state.runningConfirmed = !fromDevice
@@ -331,18 +346,31 @@ public final class ConsoleStore {
     guard hydrated, authoredStorage != .memoryOnly else { return }
     authored.revision &+= 1
     let record = authored
+    var savingRevision = record.revision
     do {
-      try await repository.saveAuthored(record, namespace: namespace)
+      var result = try await repository.saveAuthored(record, namespace: namespace)
       guard authored.revision == record.revision else { return }
-      authoredStorage = .durable
+      if case .superseded = result {
+        let disk = try await repository.loadAuthored(namespace)
+        guard authored.revision == record.revision else { return }
+        authored.revision = max(authored.revision, disk.revision) + 1
+        savingRevision = authored.revision
+        result = try await repository.saveAuthored(authored, namespace: namespace)
+      }
+      guard authored.revision == savingRevision else { return }
+      switch result {
+      case .saved: authoredStorage = .durable
+      case .superseded: authoredStorage = .superseded
+      }
     } catch {
-      guard authored.revision == record.revision else { return }
+      guard authored.revision == savingRevision else { return }
       authoredStorage = .writeFailed
       errorMessage = "Drafts and read markers are not saved durably."
     }
   }
   public func flushCache() async {
     guard hydrated, storage != .memoryOnly else { return }
+    pruneTombstones()
     cacheRevision &+= 1
     var record = CacheRecord()
     record.revision = cacheRevision
@@ -354,9 +382,22 @@ public final class ConsoleStore {
     record.conversations = conversations.values.map(\.record)
     record.tombstones = tombstones
     do {
-      try await repository.saveCache(record, namespace: namespace)
-      storage = .durable
+      var result = try await repository.saveCache(record, namespace: namespace)
+      if case .superseded = result {
+        let disk = try await repository.loadCache(namespace)
+        guard cacheRevision == record.revision else { return }
+        record = CacheMerge.rebase(record, onto: disk)
+        cacheRevision = max(cacheRevision, record.revision)
+        bootstrap = record.bootstrap
+        result = try await repository.saveCache(record, namespace: namespace)
+      }
+      guard cacheRevision == record.revision else { return }
+      switch result {
+      case .saved: storage = .durable
+      case .superseded: storage = .superseded
+      }
     } catch {
+      guard cacheRevision == record.revision else { return }
       storage = .writeFailed
       errorMessage = "Offline cache could not be saved."
     }

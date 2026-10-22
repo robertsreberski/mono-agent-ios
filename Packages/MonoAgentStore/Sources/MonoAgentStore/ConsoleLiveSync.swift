@@ -15,7 +15,7 @@ extension ConsoleStore {
     }
   }
   func connectStream() async {
-    guard !backgrounded else { return }
+    guard enabled, started, !backgrounded else { return }
     subscriptionRevision &+= 1
     let subscription = subscriptionRevision
     streamTask?.cancel()
@@ -46,11 +46,15 @@ extension ConsoleStore {
       guard generation >= streamGeneration else { return }
       streamGeneration = generation
       connection = .connecting
-      markGap(bootstrap: reason != .initial && reason != .subscriptionChanged)
+      markGap(
+        bootstrap: reason != .initial && reason != .subscriptionChanged,
+        global: reason != .initial && reason != .subscriptionChanged)
     case .gap(let generation, let reason):
       guard generation >= streamGeneration else { return }
       streamGeneration = generation
-      markGap(bootstrap: reason != .initial && reason != .subscriptionChanged)
+      markGap(
+        bootstrap: reason != .initial && reason != .subscriptionChanged,
+        global: reason != .initial && reason != .subscriptionChanged)
       // EventStream owns reconnect, including overflow. Never create a second subscription here.
       requestReconciliation()
     case .waiting(let generation, _, _):
@@ -147,6 +151,8 @@ extension ConsoleStore {
         scheduleCache()
       }
     case .agentsChanged:
+      bootstrapClock &+= 1
+      freshness = .stale
       needsBootstrap = true
       requestReconciliation()
     case .tagsChanged(let payload):
@@ -182,7 +188,7 @@ extension ConsoleStore {
       return
     }
     if let thread = payload.thread {
-      guard !tombstones.contains(thread.id) else { return }
+      guard acceptSummary(thread) else { return }
       let heldRows = buckets.values.flatMap(\.threads) + (activeFleet?.threads ?? [])
       let revision = max(
         conversations[thread.id]?.record.thread.revision ?? 0,
@@ -195,7 +201,7 @@ extension ConsoleStore {
         if !belongs {
           buckets[key]?.threads.removeAll { $0.id == thread.id }
         } else if buckets[key]?.threads.contains(where: { $0.id == thread.id }) == false,
-          !tombstones.contains(thread.id)
+          !tombstones.keys.contains(thread.id)
         {
           buckets[key]?.threads.insert(thread, at: 0)
         }
@@ -224,9 +230,12 @@ extension ConsoleStore {
       } while self.repairDirty.contains(key) && self.epoch == generation && !Task.isCancelled
     }
   }
-  func markGap(bootstrap: Bool) {
+  func markGap(bootstrap: Bool, global: Bool = true) {
     observation &+= 1
-    freshness = .stale
+    if global && (!bootstrap || !pendingDiscontinuity) {
+      bootstrapClock &+= 1
+      freshness = .stale
+    }
     for id in conversations.keys {
       observations[id] = observation
       conversations[id]?.freshness = .stale
@@ -285,8 +294,12 @@ extension ConsoleStore {
       await flushAuthored()
       await flushCache()
     case .active:
-      guard backgrounded else { return }
+      guard backgrounded, enabled, started else { return }
       backgrounded = false
+      if !hydrated {
+        await initialize()
+        return
+      }
       pendingDiscontinuity = false
       markGap(bootstrap: true)
       await connectStream()
@@ -294,6 +307,7 @@ extension ConsoleStore {
     }
   }
   public func stop() async {
+    enabled = false
     backgrounded = true
     await stopEffects()
     await flushAuthored()
@@ -321,7 +335,10 @@ extension ConsoleStore {
     repairWanted.removeAll()
     for task in writeTasks.values { task.cancel() }
     writeTasks.removeAll()
+    writeTokens.removeAll()
+    writeFailures.removeAll()
     connection = .offline
+    pendingDiscontinuity = false
     markGap(bootstrap: true)
     await events.cancel()
   }

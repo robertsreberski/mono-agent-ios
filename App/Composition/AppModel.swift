@@ -129,13 +129,11 @@ final class AppModel {
         #else
           if networkAdapter == nil { networkAdapter = ConsoleNetworkAdapter(store: existing) }
         #endif
-        if existing.isStarted {
-          await existing.scenePhaseChanged(.active)
-        } else {
-          await existing.start()
-        }
-      } else if existing.isStarted {
-        await existing.scenePhaseChanged(.background)
+        await existing.start()
+      } else {
+        networkAdapter?.cancel()
+        networkAdapter = nil
+        await existing.stop()
       }
       return
     }

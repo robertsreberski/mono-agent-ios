@@ -8,24 +8,25 @@ extension ConsoleStore {
     bootstrapRequest = request
     let generation = epoch
     let began = observation
+    let globalBegan = bootstrapClock
     let selected = selection
     do {
       let result = try await api.bootstrap(
         query: .init(
           sourceId: selectedBucket?.sourceID,
           archived: selectedBucket?.archived, limit: pageLimit), etag: bootstrapETag)
-      guard epoch == generation, selection == selected, bootstrapRequest == request,
+      guard epoch == generation, bootstrapRequest == request,
         !Task.isCancelled
       else { return }
       if case .modified(let value, let etag) = result {
         bootstrap = value
         bootstrapETag = etag
-        if observation == began {
+        if observation == began, selection == selected {
           tags = value.tags
           projects = value.projects
         }
         if let active = value.activeThreads { applyFleet(active) }
-        if let source = value.threadsSourceId {
+        if selection == selected, let source = value.threadsSourceId {
           let key = BucketKey(sourceID: source, archived: selectedBucket?.archived ?? false)
           if selectedBucket == nil { selectedBucket = key }
           mergeBucket(
@@ -33,7 +34,7 @@ extension ConsoleStore {
             fresh: observation == began)
         }
       }
-      freshness = observation == began ? .fresh : .stale
+      freshness = bootstrapClock == globalBegan ? .fresh : .stale
       scheduleCache()
     } catch {
       if epoch == generation { errorMessage = "Console refresh failed; cached data may be stale." }
@@ -64,7 +65,7 @@ extension ConsoleStore {
   }
   func mergeBucket(_ key: BucketKey, rows: [WebThread], cursor: String?, older: Bool, fresh: Bool) {
     let old = buckets[key]?.threads ?? []
-    let mapped = rows.filter { !tombstones.contains($0.id) }.map { row -> WebThread in
+    let mapped = rows.filter { acceptSummary($0) }.map { row -> WebThread in
       noteSummary(row)
       patchSummary(row, listed: true)
       let held = old.first { $0.id == row.id }
@@ -81,7 +82,8 @@ extension ConsoleStore {
     buckets[key] = bucket
   }
   public func refreshDetail(_ id: String) async {
-    guard !tombstones.contains(id) else { return }
+    pruneTombstones()
+    guard !tombstones.keys.contains(id) else { return }
     let request = UUID()
     detailRequests[id] = request
     defer { if detailRequests[id] == request { detailRequests[id] = nil } }
@@ -93,9 +95,10 @@ extension ConsoleStore {
     do {
       let result = try await api.thread(id: id, query: .init(), etag: etag)
       guard epoch == generation, detailRequests[id] == request, !Task.isCancelled,
-        !tombstones.contains(id),
+        !tombstones.keys.contains(id),
         !wasSelected || selection == selected
       else { return }
+      missingReads[id] = nil
       switch result {
       case .notModified:
         if let state = conversations[id], began == (observations[id] ?? 0) {
@@ -104,7 +107,7 @@ extension ConsoleStore {
         }
       case .modified(let value, let validator):
         let now = await clock.wallNow()
-        guard epoch == generation, detailRequests[id] == request, !tombstones.contains(id),
+        guard epoch == generation, detailRequests[id] == request, !tombstones.keys.contains(id),
           !wasSelected || selection == selected
         else { return }
         let previous = conversations[id]?.record
@@ -122,7 +125,7 @@ extension ConsoleStore {
             paged: previous.pagedIDs, repaired: previous.repairedToolCallIDs,
             complete: value.messagesNextCursor == nil)
         }
-        guard epoch == generation, detailRequests[id] == request, !tombstones.contains(id),
+        guard epoch == generation, detailRequests[id] == request, !tombstones.keys.contains(id),
           !wasSelected || selection == selected
         else { return }
         hold(record)
@@ -134,7 +137,12 @@ extension ConsoleStore {
     } catch {
       guard epoch == generation, detailRequests[id] == request else { return }
       if let error = error as? APIError, error.status == 404 {
-        removeThread(id)
+        missingReads[id, default: 0] += 1
+        if missingReads[id, default: 0] >= 2 {
+          removeThread(id)
+        } else {
+          conversations[id]?.freshness = .stale
+        }
       } else {
         errorMessage = "Conversation could not be refreshed."
       }
@@ -148,7 +156,8 @@ extension ConsoleStore {
     do {
       let page = try await api.messages(
         id: id, query: .init(before: cursor, limit: messagePageLimit), etag: nil)
-      guard epoch == generation, selection == selected, !tombstones.contains(id), !Task.isCancelled
+      guard epoch == generation, selection == selected, !tombstones.keys.contains(id),
+        !Task.isCancelled
       else { return }
       if case .modified(let value, _) = page {
         let ids = Set(state.record.messages.map(\.id))
@@ -179,7 +188,7 @@ extension ConsoleStore {
   }
   func applyFleet(_ incoming: WebActiveThreads) {
     var value = incoming
-    value.threads = incoming.threads.filter { !tombstones.contains($0.id) }.map { row in
+    value.threads = incoming.threads.filter { acceptSummary($0) }.map { row in
       noteSummary(row)
       patchSummary(row, listed: true)
       if let held = activeFleet?.threads.first(where: { $0.id == row.id }),
@@ -212,7 +221,7 @@ extension ConsoleStore {
     } catch { if epoch == generation { errorMessage = "Tags and projects may be stale." } }
   }
   func patchSummary(_ incoming: WebThread, listed: Bool = false) {
-    guard !tombstones.contains(incoming.id) else { return }
+    guard acceptSummary(incoming) else { return }
     if let state = conversations[incoming.id] {
       guard incoming.revision >= state.record.thread.revision else { return }
       if incoming.revision > state.record.thread.revision
@@ -236,19 +245,37 @@ extension ConsoleStore {
       activeFleet?.threads[index] = incoming
     }
   }
+  func pruneTombstones() { tombstones = CacheMerge.prune(tombstones, now: Date()) }
+  func acceptSummary(_ row: WebThread) -> Bool {
+    pruneTombstones()
+    if let removed = tombstones[row.id] {
+      guard row.revision > removed.revision else { return false }
+      tombstones[row.id] = nil
+    }
+    missingReads[row.id] = nil
+    return true
+  }
   func removeThread(_ id: String) {
     observe(id)
-    tombstones.insert(id)
+    let revision = max(
+      conversations[id]?.thread.revision ?? 0,
+      (buckets.values.flatMap(\.threads) + (bootstrap?.threads ?? []) + (activeFleet?.threads ?? []))
+        .filter { $0.id == id }.map(\.revision).max() ?? 0)
+    tombstones[id] = ThreadTombstone(revision: revision, removedAt: Date())
+    tombstones = CacheMerge.prune(tombstones, now: Date())
+    missingReads[id] = nil
     conversations[id] = nil
     lru.removeAll { $0 == id }
     for key in buckets.keys { buckets[key]?.threads.removeAll { $0.id == id } }
     activeFleet?.threads.removeAll { $0.id == id }
+    bootstrap?.threads.removeAll { $0.id == id }
+    bootstrap?.activeThreads?.threads.removeAll { $0.id == id }
     scheduleCache()
   }
 
   /// Single-flight repair with a trailing obligation. Unknown sequence hints always trail once.
   public func repairMessage(threadID: String, messageID: String, wantedSeq: Int? = nil) {
-    guard conversations[threadID] != nil, !tombstones.contains(threadID), !backgrounded else {
+    guard conversations[threadID] != nil, !tombstones.keys.contains(threadID), !backgrounded else {
       return
     }
     let key = threadID + "\u{0}" + messageID
@@ -274,7 +301,8 @@ extension ConsoleStore {
         do {
           let result = try await self.api.message(
             threadId: threadID, messageId: messageID, query: .init(), etag: nil)
-          guard self.epoch == generation, !Task.isCancelled, !self.tombstones.contains(threadID),
+          guard self.epoch == generation, !Task.isCancelled,
+            !self.tombstones.keys.contains(threadID),
             let state = self.conversations[threadID]
           else { return }
           if case .modified(let value, _) = result {
@@ -296,7 +324,7 @@ extension ConsoleStore {
     do {
       let result = try await api.toolCall(
         threadId: threadID, messageId: messageID, toolCallId: toolCallID, etag: nil)
-      guard epoch == generation, !tombstones.contains(threadID),
+      guard epoch == generation, !tombstones.keys.contains(threadID),
         let state = conversations[threadID],
         let index = state.record.messages.firstIndex(where: { $0.id == messageID })
       else { return }

@@ -10,6 +10,7 @@ public enum PersistenceState: Sendable, Equatable {
   case durable
   case memoryOnly
   case writeFailed
+  case superseded
 }
 
 /// Identity is deliberately conservative: an endpoint edit or advertised identity change isolates data.
@@ -61,14 +62,43 @@ public struct CachedConversation: Codable, Sendable {
     self.savedAt = savedAt
   }
 }
+public struct ThreadTombstone: Codable, Sendable, Equatable {
+  public var revision: Int
+  public var removedAt: Date
+  public init(revision: Int, removedAt: Date) {
+    self.revision = revision
+    self.removedAt = removedAt
+  }
+}
 public struct CacheRecord: Codable, Sendable {
   public var version = 1
   public var revision: UInt64 = 0
   public var bootstrap: ApiBootstrap?
   public var buckets: [ThreadBucket] = []
   public var conversations: [CachedConversation] = []
-  public var tombstones: Set<String> = []
+  public var tombstones: [String: ThreadTombstone] = [:]
   public init() {}
+  private enum CodingKeys: String, CodingKey {
+    case version, revision, bootstrap, buckets, conversations, tombstones
+  }
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    version = try c.decode(Int.self, forKey: .version)
+    revision = try c.decode(UInt64.self, forKey: .revision)
+    bootstrap = try c.decodeIfPresent(ApiBootstrap.self, forKey: .bootstrap)
+    buckets = try c.decode([ThreadBucket].self, forKey: .buckets)
+    conversations = try c.decode([CachedConversation].self, forKey: .conversations)
+    if let values = try? c.decode([String: ThreadTombstone].self, forKey: .tombstones) {
+      tombstones = values
+    } else {
+      // The first v1 cache had an unbounded ID set. Give legacy entries a finite lifetime.
+      let ids = try c.decode(Set<String>.self, forKey: .tombstones)
+      tombstones = Dictionary(
+        uniqueKeysWithValues: ids.map {
+          ($0, ThreadTombstone(revision: 0, removedAt: .distantPast))
+        })
+    }
+  }
 }
 public struct DraftKey: Codable, Hashable, Sendable {
   public var profileID: UUID
@@ -109,15 +139,38 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
   public var payloadDigest: String
   public var draftKey: DraftKey
   public var draftVersion: UUID?
+  public var dispatched: Bool
+  public var createdAt: Date
+  public var attachmentIDs: [String]
+  private enum CodingKeys: String, CodingKey {
+    case threadID, submissionID, payloadDigest, draftKey, draftVersion, dispatched, createdAt,
+      attachmentIDs
+  }
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    threadID = try c.decode(String.self, forKey: .threadID)
+    submissionID = try c.decode(String.self, forKey: .submissionID)
+    payloadDigest = try c.decode(String.self, forKey: .payloadDigest)
+    draftKey = try c.decode(DraftKey.self, forKey: .draftKey)
+    draftVersion = try c.decodeIfPresent(UUID.self, forKey: .draftVersion)
+    // Legacy references might have reached the server; never assume they were undispatched.
+    dispatched = try c.decodeIfPresent(Bool.self, forKey: .dispatched) ?? true
+    createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? .distantPast
+    attachmentIDs = try c.decodeIfPresent([String].self, forKey: .attachmentIDs) ?? []
+  }
   public init(
     threadID: String, submissionID: String, payloadDigest: String, draftKey: DraftKey,
-    draftVersion: UUID?
+    draftVersion: UUID?, dispatched: Bool = false, createdAt: Date = Date(),
+    attachmentIDs: [String] = []
   ) {
     self.threadID = threadID
     self.submissionID = submissionID
     self.payloadDigest = payloadDigest
     self.draftKey = draftKey
     self.draftVersion = draftVersion
+    self.dispatched = dispatched
+    self.createdAt = createdAt
+    self.attachmentIDs = attachmentIDs
   }
 }
 public struct JournalRecord: Codable, Sendable {
@@ -126,7 +179,7 @@ public struct JournalRecord: Codable, Sendable {
   public var pending: [SubmissionReference] = []
   public init() {}
 }
-public enum ConsoleStorageError: Error { case invalidFormat, byteBudget, unavailable }
+public enum ConsoleStorageError: Error { case invalidFormat, byteBudget, unavailable, superseded }
 public struct ConsoleBounds: Sendable {
   public static let memoryConversations = 8
   public static let diskConversations = 24
@@ -134,19 +187,31 @@ public struct ConsoleBounds: Sendable {
   public static let cacheBytes = 16 * 1024 * 1024
   public static let conversationBytes = 2 * 1024 * 1024
   public static let authoredBytes = 6 * 1024 * 1024
+  public static let tombstoneCount = 256
+  public static let tombstoneAge: TimeInterval = 30 * 24 * 60 * 60
+  public static let preparationAge: TimeInterval = 24 * 60 * 60
+  public static let threadWriteTimeout: TimeInterval = 15
   public static let journalBytes = 1024 * 1024
 }
 
 /// Sanitization is applied on both write and hydrate, including opaque extension objects.
 public enum CacheSanitizer {
-  static let forbidden: Set<String> = [
-    "contentUrl", "storedUrl", "resourceUrl", "bridgeUrl", "expiresAt", "accessToken",
-    "refreshToken", "token", "ackToken", "authorization", "etag",
-  ]
   public static func scrub(_ value: JSONValue) -> JSONValue {
     switch value {
     case .object(let fields):
-      return .object(fields.filter { !forbidden.contains($0.key) }.mapValues(scrub))
+      let isAttachment =
+        fields["type"] == .string("attachment")
+        || (fields["uploaded"] != nil && fields["sizeBytes"] != nil)
+      let isMCP = fields["type"] == .string("mcp_app")
+      let stripped = fields.filter { key, _ in
+        !(isAttachment && key == "contentUrl")
+          && !(isMCP && ["resourceUrl", "bridgeUrl"].contains(key))
+      }
+      let isTool = fields["type"] == .string("tool-call") || fields["type"] == .string("subagent")
+      return .object(
+        stripped.mapValues(scrub).merging(
+          isTool ? fields.filter { ["args", "result", "structuredResult"].contains($0.key) } : [:],
+          uniquingKeysWith: { _, opaque in opaque }))
     case .array(let items): return .array(items.map(scrub))
     case .string(let text):
       // Capability URLs can also be embedded in authored text/opaque tool output.

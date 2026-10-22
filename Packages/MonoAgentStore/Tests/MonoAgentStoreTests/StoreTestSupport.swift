@@ -122,7 +122,7 @@ actor ManualStoreClock: StreamClock {
   }
   var waiters: [UUID: Waiter] = [:]
   func now() -> Double { time }
-  func wallNow() -> Date { Date(timeIntervalSince1970: 1_893_585_600 + time) }
+  func wallNow() async -> Date { Date(timeIntervalSince1970: 1_893_585_600 + time) }
   func sleep(seconds: Double) async throws {
     let id = UUID()
     try await withTaskCancellationHandler {
