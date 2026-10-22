@@ -115,7 +115,8 @@ device (38 in total):
 
 `Artifacts/Screenshots/index.html` and `index.json` name the device, runtime, scenario,
 appearance, theme, text size and transparency. Both image dimensions are ≤ 2000 px.
-Results are retained as xcresult bundles. Move/remove old `Artifacts` before rerunning.
+Results are retained as xcresult bundles. Every device runs even if an earlier one fails;
+the command then exits non-zero. Failures skip slow diagnostics collection. Move/remove old `Artifacts` before rerunning.
 Time in the status bar, locale, scenario data and animations are controlled; no real
 console networking is available to a fixture scenario.
 
@@ -124,7 +125,8 @@ for fixture symbols/hostnames, design-catalog types/scenario names and preview h
 (`./Tools/check-release-fixtures`). TestSupport declarations, the catalog and previews
 are DEBUG-only, not merely inactive in production.
 
-CI runs on `xcode-27`, explicitly selects/asserts Xcode and Swift, chooses installed
+CI runs on `xcode-27`, selects the newest stable Xcode 27 (betas are excluded after resolving
+symlinks; no stable 27.x fails), asserts Xcode and Swift, chooses installed
 simulators dynamically, uploads screenshots and xcresults, and gates on **Required verdict**.
 Hosted exact-head CI is the broad gate. Simulator/UI tests and screenshots cannot run
 locally until Xcode components/runtimes are installed; unsigned builds and host tests

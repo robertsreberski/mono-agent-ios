@@ -51,23 +51,39 @@ output = ARTIFACTS / "Screenshots"
 if output.exists() and any(output.iterdir()):
     sys.exit("Screenshots already exist; move or remove old Artifacts before rerunning")
 output.mkdir(exist_ok=True)
-index = []
-for family, device in devices.items():
+for family in devices:
+    if (ARTIFACTS / f"{family}.xcresult").exists():
+        sys.exit(f"{family}.xcresult already exists; move or remove old Artifacts before rerunning")
+
+
+class MatrixError(Exception):
+    pass
+
+
+def capture(family, device):
+    """Test one device and export its screenshots. Raises on any failure, after exporting
+    whatever attachments exist, so CI still uploads partial evidence."""
     result = ARTIFACTS / f"{family}.xcresult"
-    if result.exists():
-        sys.exit(f"{result.name} already exists; move or remove old Artifacts before rerunning")
     if device.get("state") != "Booted":
         run("xcrun", "simctl", "boot", device["udid"])
     run("xcrun", "simctl", "bootstatus", device["udid"], "-b")
     run("xcrun", "simctl", "status_bar", device["udid"], "override", "--time", "2001-01-01T09:41:00.000Z",
         "--batteryState", "charged", "--batteryLevel", "100", "--wifiMode", "active", "--wifiBars", "3")
+    test_failure = None
     try:
+        # Verbose diagnostics (sysdiagnose) after a failure cost ~10 minutes and add nothing
+        # the xcresult does not already hold.
         run("xcodebuild", "-project", "MonoAgent.xcodeproj", "-scheme", "MonoAgent",
             "-destination", f"platform=iOS Simulator,id={device['udid']}",
             "-derivedDataPath", ".build/Xcode", "-resultBundlePath", str(result),
-            "-parallel-testing-enabled", "NO", "CODE_SIGNING_ALLOWED=NO", "test")
+            "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never",
+            "CODE_SIGNING_ALLOWED=NO", "test")
+    except subprocess.CalledProcessError as error:
+        test_failure = error
     finally:
         run("xcrun", "simctl", "status_bar", device["udid"], "clear")
+    if not result.exists():
+        raise MatrixError(f"{family}: xcodebuild test failed before producing a result bundle")
     exported = ARTIFACTS / f"Attachments-{family}"
     run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result),
         "--output-path", str(exported))
@@ -81,28 +97,43 @@ for family, device in devices.items():
             scenario, appearance, variant = match.groups()
             entry = EXPECTED.get((scenario, appearance, variant))
             if entry is None:
-                sys.exit(f"Screenshot not in Tools/screenshot-matrix.json: {family} {match.group(0)}")
+                raise MatrixError(f"Screenshot not in Tools/screenshot-matrix.json: {family} {match.group(0)}")
             if key(entry) in found:
-                sys.exit(f"Duplicate screenshot: {family} {key(entry)}")
+                raise MatrixError(f"Duplicate screenshot: {family} {key(entry)}")
             found.add(key(entry))
             source = exported / attachment["exportedFileName"]
             if source.suffix.lower() != ".png":
-                sys.exit("Expected PNG screenshot attachment")
+                raise MatrixError("Expected PNG screenshot attachment")
             name = f"{family}__{scenario}__{appearance}" + (f"__{variant}" if variant else "") + ".png"
             target = output / name
             shutil.copyfile(source, target)
             run("sips", "-Z", "2000", str(target))
             dimensions = list(map(int, re.findall(r"pixel(?:Width|Height): (\d+)", run("sips", "-g", "pixelWidth", "-g", "pixelHeight", str(target), capture=True))))
             if len(dimensions) != 2 or not all(0 < dimension <= 2000 for dimension in dimensions):
-                sys.exit(f"Invalid screenshot dimensions: {name}")
+                raise MatrixError(f"Invalid screenshot dimensions: {name}")
             index.append(dict(file=name, device=device["name"], runtime=device["runtime"],
                               scenario=scenario, appearance=appearance, textSize=entry["textSize"],
                               transparency=entry["transparency"], theme=entry["theme"],
                               surface="design catalog" if scenario.startswith("design-catalog") else "connection",
                               label="synthetic fixture", dimensions=dimensions))
+    if test_failure is not None:
+        raise MatrixError(f"{family}: xcodebuild test exited {test_failure.returncode}; see {result.name}")
     if found != set(EXPECTED):
-        sys.exit(f"Incomplete screenshot matrix for {family}; missing {sorted(set(EXPECTED) - found, key=str)}")
+        raise MatrixError(f"Incomplete screenshot matrix for {family}; missing {sorted(set(EXPECTED) - found, key=str)}")
+
+
+index = []
+failures = []
+# Every device runs even if an earlier one fails, so CI reports both results.
+for family, device in devices.items():
+    try:
+        capture(family, device)
+    except (MatrixError, subprocess.CalledProcessError) as error:
+        print(f"FAILED {family}: {error}", file=sys.stderr)
+        failures.append(f"{family}: {error}")
 (output / "index.json").write_text(json.dumps(index, indent=2) + "\n")
 (output / "index.html").write_text("<!doctype html><meta charset='utf-8'><title>Synthetic fixture screenshots</title>" + "".join(
     f"<figure><img style='max-width:100%' src='{item['file']}'><figcaption>{html.escape(' / '.join([item['device'], item['runtime'], item['scenario'], item['appearance'], item['theme'] + ' theme', item['textSize'] + ' text size', item['transparency'] + ' transparency', item['label']]))}</figcaption></figure>" for item in index))
+if failures:
+    sys.exit(f"Screenshot matrix FAILED ({len(index)} screenshots exported):\n" + "\n".join(failures))
 print(f"Exported {len(index)} synthetic fixture screenshots; every dimension <= 2000 px.")

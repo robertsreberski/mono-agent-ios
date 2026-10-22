@@ -87,7 +87,7 @@ class ToolingTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 runpy.run_path(str(ROOT / "Tools/select-simulators"), run_name="__main__")
 
-    def export(self, omit_last=False, extra=None):
+    def export(self, omit_last=False, extra=None, fail_family=None):
         # Copy only the executable into an isolated root; no real Artifacts or simulator use.
         (ROOT / ".build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as directory:
@@ -100,6 +100,13 @@ class ToolingTests(unittest.TestCase):
             def fake_run(command, **kwargs):
                 calls.append(command)
                 stdout = ""
+                if command[0] == "xcodebuild":
+                    bundle = pathlib.Path(command[command.index("-resultBundlePath") + 1])
+                    bundle.mkdir(parents=True)
+                    self.assertIn("-collect-test-diagnostics", command)
+                    self.assertEqual(command[command.index("-collect-test-diagnostics") + 1], "never")
+                    if fail_family and bundle.name == f"{fail_family}.xcresult":
+                        raise subprocess.CalledProcessError(65, command)
                 if command[:3] == ("xcrun", "simctl", "list"):
                     stdout = json.dumps(listing())
                 if command[:4] == ("xcrun", "xcresulttool", "export", "attachments"):
@@ -119,8 +126,13 @@ class ToolingTests(unittest.TestCase):
                     stdout = "pixelWidth: 1000\npixelHeight: 2000\n"
                 return subprocess.CompletedProcess(command, 0, stdout=stdout)
 
-            with patch.object(sys, "argv", ["screenshots", "--iphone", "phone", "--ipad", "pad"]), patch("subprocess.run", side_effect=fake_run), contextlib.redirect_stdout(io.StringIO()):
-                runpy.run_path(str(root / "Tools/screenshots"), run_name="__main__")
+            with patch.object(sys, "argv", ["screenshots", "--iphone", "phone", "--ipad", "pad"]), patch("subprocess.run", side_effect=fake_run), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    runpy.run_path(str(root / "Tools/screenshots"), run_name="__main__")
+                finally:
+                    self.calls = calls
+                    index_path = root / "Artifacts/Screenshots/index.json"
+                    self.partial_index = json.loads(index_path.read_text()) if index_path.exists() else None
             index = json.loads((root / "Artifacts/Screenshots/index.json").read_text())
             self.assertEqual(len(index), 2 * len(MATRIX))
             self.assertTrue(all(item["label"] == "synthetic fixture" for item in index))
@@ -150,6 +162,14 @@ class ToolingTests(unittest.TestCase):
     def test_export_fails_on_missing_scenario(self):
         with self.assertRaises(SystemExit):
             self.export(omit_last=True)
+
+    def test_failed_iphone_pass_still_runs_ipad_then_fails(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.export(fail_family="iPhone")
+        self.assertIn("iPhone", str(raised.exception.code))
+        self.assertEqual(sum(command[0] == "xcodebuild" for command in self.calls), 2)
+        # Partial evidence is still exported and indexed for both devices.
+        self.assertEqual({item["file"].split("__")[0] for item in self.partial_index}, {"iPhone", "iPad"})
 
     def test_export_rejects_unlisted_scenario(self):
         with self.assertRaises(SystemExit):
