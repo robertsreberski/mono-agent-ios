@@ -20,6 +20,7 @@ public final class ConnectionRegistry {
   @ObservationIgnored private let repository: any ProfileRepository
   @ObservationIgnored private let probe: ConnectionProbe
   @ObservationIgnored private var loadStarted = false
+  @ObservationIgnored private var revision: UInt64 = 0
   @ObservationIgnored private var generations: [UUID: UUID] = [:]
 
   public init(repository: any ProfileRepository, probe: ConnectionProbe) {
@@ -34,13 +35,14 @@ public final class ConnectionRegistry {
     defer { isLoaded = true }
     do {
       let snapshot = try await repository.load()
+      revision = snapshot.revision
       consoles = snapshot.consoles
       selectedID = snapshot.selectedID.flatMap { id in consoles.contains { $0.id == id } ? id : nil
       }
       storageError = nil
     } catch {
       storageError =
-        "Saved consoles could not be loaded. They have not been overwritten. Delete local app data to reset, or retry after fixing storage."
+        "Saved consoles could not be loaded. They have not been overwritten. Relaunch to retry after fixing storage, or delete local app data to reset."
     }
   }
 
@@ -48,6 +50,7 @@ public final class ConnectionRegistry {
   public func add(name: String, endpoint: ConsoleEndpoint, httpAcknowledged: Bool) async throws
     -> UUID
   {
+    guard isLoaded else { throw RegistryError.notLoaded }
     try validate(endpoint, acknowledged: httpAcknowledged)
     let console = SavedConsole(name: name, endpoint: endpoint, httpAcknowledged: httpAcknowledged)
     consoles.append(console)
@@ -61,6 +64,7 @@ public final class ConnectionRegistry {
   public func edit(id: UUID, name: String, endpoint: ConsoleEndpoint, httpAcknowledged: Bool)
     async throws -> UUID
   {
+    guard isLoaded else { throw RegistryError.notLoaded }
     try validate(endpoint, acknowledged: httpAcknowledged)
     guard let index = consoles.firstIndex(where: { $0.id == id }) else {
       throw RegistryError.notFound
@@ -82,12 +86,13 @@ public final class ConnectionRegistry {
   }
 
   public func select(_ id: UUID) async {
-    guard consoles.contains(where: { $0.id == id }) else { return }
+    guard isLoaded, consoles.contains(where: { $0.id == id }) else { return }
     selectedID = id
     await persist()
   }
 
   public func remove(_ id: UUID) async {
+    guard isLoaded else { return }
     consoles.removeAll { $0.id == id }
     generations[id] = nil
     states[id] = nil
@@ -97,7 +102,7 @@ public final class ConnectionRegistry {
 
   /// Only a deliberate user action (or DEBUG scripted scenario) should call connect.
   public func connect(_ id: UUID) async {
-    guard let console = consoles.first(where: { $0.id == id }) else { return }
+    guard isLoaded, let console = consoles.first(where: { $0.id == id }) else { return }
     do { try validate(console.endpoint, acknowledged: console.httpAcknowledged) } catch { return }
     let generation = UUID()
     generations[id] = generation
@@ -126,10 +131,17 @@ public final class ConnectionRegistry {
 
   private func persist() async {
     // Do not destroy an unreadable or newer-format file by writing an empty replacement.
-    guard storageError == nil else { return }
+    guard isLoaded, storageError == nil else { return }
+    guard revision < UInt64.max else {
+      storageError = "Changes are in memory only: the profile revision limit was reached."
+      return
+    }
+    revision += 1
+    let snapshot = ProfileSnapshot(consoles: consoles, selectedID: selectedID, revision: revision)
     do {
-      try await repository.save(ProfileSnapshot(consoles: consoles, selectedID: selectedID))
+      try await repository.save(snapshot)
     } catch {
+      guard revision == snapshot.revision else { return }
       storageError =
         "Changes are in memory only: saved consoles could not be written. Relaunch may lose changes."
     }
@@ -137,10 +149,12 @@ public final class ConnectionRegistry {
 }
 
 public enum RegistryError: Error, LocalizedError {
+  case notLoaded
   case notFound
   case httpConfirmationRequired
   public var errorDescription: String? {
     switch self {
+    case .notLoaded: "Wait for saved consoles to finish loading."
     case .notFound: "This console is no longer saved."
     case .httpConfirmationRequired:
       "Confirm the plaintext HTTP risk before connecting to this non-local host."

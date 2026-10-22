@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Fail if test fixture symbols or strings survive in a built Release application."""
+import argparse
+import pathlib
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser()
+parser.add_argument("--app", type=pathlib.Path,
+                    default=ROOT / ".build/Xcode/Build/Products/Release-iphonesimulator/MonoAgent.app")
+args = parser.parse_args()
+executable = args.app / "MonoAgent"
+if not executable.is_file():
+    sys.exit("Release app executable missing; build the unsigned Release simulator app first")
+images = [executable]
+debug_library = args.app / "MonoAgent.debug.dylib"
+if debug_library.is_file():
+    images.append(debug_library)
+for image in images:
+    for tool in ("nm", "strings"):
+        result = subprocess.run(["xcrun", tool, "-a", str(image)], check=True, capture_output=True)
+        for marker in (b"ScriptedTransport", b"console.example.ts.net"):
+            if marker in result.stdout:
+                sys.exit(f"Release fixture leak: {marker.decode()} found by {tool} in {image.name}")
+print("Release fixture check passed: nm/strings contain neither ScriptedTransport nor the fixture hostname.")

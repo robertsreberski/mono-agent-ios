@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
+import Network
 
 public struct ConsoleEndpoint: Hashable, Sendable, Codable {
   public let origin: String
@@ -17,8 +18,17 @@ public struct ConsoleEndpoint: Hashable, Sendable, Codable {
       parts.percentEncodedPath.isEmpty || parts.percentEncodedPath == "/",
       parts.port.map({ (1...65535).contains($0) }) ?? true
     else { throw EndpointError.invalid }
+    var normalizedHost = host.lowercased()
+    if normalizedHost.hasSuffix(".") { normalizedHost.removeLast() }
+    guard !normalizedHost.isEmpty, !normalizedHost.hasSuffix(".") else {
+      throw EndpointError.invalid
+    }
+    if normalizedHost.contains(":") {
+      let address = normalizedHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+      guard IPv6Address(address) != nil else { throw EndpointError.invalid }
+    }
     parts.scheme = scheme
-    parts.host = host.lowercased()
+    parts.host = normalizedHost
     parts.path = ""
     if (scheme == "http" && parts.port == 80) || (scheme == "https" && parts.port == 443) {
       parts.port = nil
@@ -36,13 +46,21 @@ public struct ConsoleEndpoint: Hashable, Sendable, Codable {
     if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") {
       return true
     }
-    if host == "::1" || host.hasPrefix("fc") && host.contains(":")
-      || host.hasPrefix("fd") && host.contains(":") || host.hasPrefix("fe80:")
-    {
-      return true
+    if let address = IPv6Address(host) {
+      let bytes = Array(address.rawValue)
+      return bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
+        || bytes[0] & 0xfe == 0xfc
+        || bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80
     }
-    let bytes = host.split(separator: ".").compactMap { UInt8($0) }
-    guard bytes.count == 4 else { return false }
+    // Only canonical dotted decimal is an IPv4 literal. Never discard DNS labels or
+    // interpret octal/hex/short forms as decimal when deciding to skip confirmation.
+    let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+    guard labels.count == 4 else { return false }
+    var bytes: [UInt8] = []
+    for label in labels {
+      guard let byte = UInt8(label), String(byte) == label else { return false }
+      bytes.append(byte)
+    }
     return bytes[0] == 127 || bytes[0] == 10
       || (bytes[0] == 172 && (16...31).contains(bytes[1]))
       || (bytes[0] == 192 && bytes[1] == 168)

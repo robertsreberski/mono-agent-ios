@@ -11,3 +11,9 @@ generations, so old results cannot resurrect removed or edited profiles. Last re
 identity is a label, not proof of a current connection. Relaunch never probes automatically.
 C4 owns transcript persistence, pruning, recovery and namespace data deletion; C2 retains
 no transcript data. Removing a profile deletes the only retained C2 data for it.
+
+Mutators wait until the initial load attempt finishes. Snapshots carry monotonic revisions;
+the file actor ignores stale/equal writes before atomic replacement, even if async calls
+arrive out of order. Older v1 snapshots without a revision load as revision zero. After
+a failed load the registry stays memory-only and preserves the unreadable file; relaunch
+to retry after fixing storage.

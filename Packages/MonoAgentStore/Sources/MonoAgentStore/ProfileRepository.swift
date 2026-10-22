@@ -25,19 +25,33 @@ public struct ProfileSnapshot: Codable, Sendable {
   public var version = 1
   public var consoles: [SavedConsole]
   public var selectedID: UUID?
-  public init(consoles: [SavedConsole] = [], selectedID: UUID? = nil) {
+  public var revision: UInt64
+  public init(consoles: [SavedConsole] = [], selectedID: UUID? = nil, revision: UInt64 = 0) {
     self.consoles = consoles
     self.selectedID = selectedID
+    self.revision = revision
+  }
+
+  private enum CodingKeys: String, CodingKey { case version, consoles, selectedID, revision }
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    version = try container.decode(Int.self, forKey: .version)
+    consoles = try container.decode([SavedConsole].self, forKey: .consoles)
+    selectedID = try container.decodeIfPresent(UUID.self, forKey: .selectedID)
+    // Existing v1 profiles predate ordered writes.
+    revision = try container.decodeIfPresent(UInt64.self, forKey: .revision) ?? 0
   }
 }
 
 public protocol ProfileRepository: Sendable {
   func load() async throws -> ProfileSnapshot
+  /// Ignore stale/equal revisions; asynchronous callers may reach storage out of order.
   func save(_ snapshot: ProfileSnapshot) async throws
 }
 
 public actor FileProfileRepository: ProfileRepository {
   private let directory: URL
+  private var latestRevision: UInt64?
   private var file: URL { directory.appendingPathComponent("profiles-v1.json") }
   public init(directory: URL) { self.directory = directory }
 
@@ -47,10 +61,15 @@ public actor FileProfileRepository: ProfileRepository {
     guard snapshot.version == 1,
       Set(snapshot.consoles.map(\.id)).count == snapshot.consoles.count
     else { throw RepositoryError.invalidFormat }
+    latestRevision = max(latestRevision ?? 0, snapshot.revision)
     return snapshot
   }
 
   public func save(_ snapshot: ProfileSnapshot) throws {
+    if latestRevision == nil, FileManager.default.fileExists(atPath: file.path) {
+      _ = try load()
+    }
+    guard latestRevision.map({ snapshot.revision > $0 }) ?? true else { return }
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     var directory = directory
     var values = URLResourceValues()
@@ -63,6 +82,8 @@ public actor FileProfileRepository: ProfileRepository {
     #else
       try data.write(to: file, options: .atomic)
     #endif
+    // No suspension between comparison and atomic replacement inside this actor.
+    latestRevision = snapshot.revision
   }
 }
 

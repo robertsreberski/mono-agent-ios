@@ -1,0 +1,43 @@
+"""Offline regression tests for the actual-binary fixture gate."""
+import contextlib
+import io
+import pathlib
+import runpy
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+class ReleaseFixtureTests(unittest.TestCase):
+    def check(self, leak_tool=None):
+        (ROOT / ".build").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=ROOT / ".build") as directory:
+            app = pathlib.Path(directory)
+            (app / "MonoAgent").write_bytes(b"synthetic executable stub")
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append(command[1])
+                output = b"ordinary app symbols"
+                if command[1] == leak_tool:
+                    output = b"ScriptedTransport" if leak_tool == "nm" else b"console.example.ts.net"
+                return subprocess.CompletedProcess(command, 0, stdout=output)
+
+            with patch.object(sys, "argv", ["check-release-fixtures", "--app", str(app)]), patch("subprocess.run", side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+                runpy.run_path(str(ROOT / "Tools/check-release-fixtures"), run_name="__main__")
+            self.assertEqual(calls, ["nm", "strings"])
+
+    def test_clean_binary_requires_both_symbol_and_string_checks(self):
+        self.check()
+
+    def test_fixture_symbol_is_rejected(self):
+        with self.assertRaises(SystemExit):
+            self.check("nm")
+
+    def test_fixture_string_is_rejected(self):
+        with self.assertRaises(SystemExit):
+            self.check("strings")

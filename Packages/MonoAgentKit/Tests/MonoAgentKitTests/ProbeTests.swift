@@ -29,7 +29,19 @@ func networkFailures(example: (URLError.Code, ProbeError)) async {
     (HTTPResponse(data: Data(#"{"status":"failed","version":1}"#.utf8)), .unhealthy),
     (HTTPResponse(data: Data("<html>proxy</html>".utf8), contentType: "text/html"), .nonJSON),
     (HTTPResponse(data: Data("{}".utf8)), .invalidResponse),
-    (HTTPResponse(data: Data(#"{"code":"untrusted_host"}"#.utf8), status: 421), .untrustedHost),
+    (
+      HTTPResponse(data: Data(#"{"error":{"code":"untrusted_host"}}"#.utf8), status: 421),
+      .untrustedHost
+    ),
+    (HTTPResponse(data: Data(#"{"code":"untrusted_host"}"#.utf8), status: 421), .http(421)),
+    (
+      HTTPResponse(data: Data(#"{"error":{"code":"misdirected_request"}}"#.utf8), status: 421),
+      .http(421)
+    ),
+    (
+      HTTPResponse(data: Data("Misdirected Request".utf8), status: 421, contentType: "text/html"),
+      .http(421)
+    ),
     (HTTPResponse(data: Data(), status: 503), .http(503)),
     (HTTPResponse(data: Data(), status: 302), .redirect),
   ]

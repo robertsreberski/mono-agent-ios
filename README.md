@@ -55,7 +55,7 @@ The app probes only on Connect/Retry, not when a URL is typed or a saved profile
 Local Network permission must be checked on a real device. A generic connection error
 does not prove permission denial; check Settings, server reachability and the address.
 HTTP 421 means the hostname may need `MONO_AGENT_WEB_ALLOWED_HOSTS` on the console host;
-using its IP or Tailscale Serve URL is another option.
+using its LAN or Tailscale IP address or Tailscale Serve URL is another option.
 
 ## Saved consoles and local data
 
@@ -103,6 +103,10 @@ the device/runtime/scenario/appearance/text size; both image dimensions are ≤ 
 Results are retained as xcresult bundles. Move/remove old `Artifacts` before rerunning.
 Time in the status bar, locale, scenario data and animations are controlled; no real
 console networking is available to a fixture scenario.
+
+CI builds both Debug and Release and checks the Release executable with `nm` and `strings`
+for fixture symbols/hostnames (`./Tools/check-release-fixtures`). TestSupport declarations
+are DEBUG-only, not merely inactive in production.
 
 CI runs on `xcode-27`, explicitly selects/asserts Xcode and Swift, chooses installed
 simulators dynamically, uploads screenshots and xcresults, and gates on **Required verdict**.

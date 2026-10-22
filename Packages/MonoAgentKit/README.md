@@ -18,3 +18,8 @@ Never use Last-Event-ID as replay; reconcile after ready. No SSE implementation 
 Script exhaustion always fails, never accesses the network. FixtureEnvironment provides
 fixed time/identity and caller-owned isolated storage; add byte-stream/clock/random
 protocols when C3 has concrete consumers.
+
+TestSupport declarations are compiled only with DEBUG. The Release product contains no
+scenario transport, fixture hostname or catalog; CI verifies the actual Release binary.
+Local-HTTP classification parses valid IPv6 addresses and only canonical four-octet
+decimal IPv4 literals. DNS lookalikes and legacy numeric spellings require confirmation.

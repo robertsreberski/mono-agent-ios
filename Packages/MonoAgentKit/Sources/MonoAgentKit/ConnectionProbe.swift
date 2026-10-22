@@ -93,7 +93,7 @@ public enum ProbeError: Error, LocalizedError, Sendable, Equatable {
       "The server returned a non-JSON page. Check the URL and reverse-proxy configuration; browser login pages are not supported."
     case .invalidResponse: "The JSON response is not a compatible console response."
     case .untrustedHost:
-      "The console only accepts known hostnames. Add this name with MONO_AGENT_WEB_ALLOWED_HOSTS on the console host, or use its IP address or Tailscale Serve URL."
+      "The console only accepts known hostnames. Add this name with MONO_AGENT_WEB_ALLOWED_HOSTS on the console host, or use its LAN or Tailscale IP address or Tailscale Serve URL."
     case .http(let status): "The console returned HTTP \(status). Check the server and retry."
     case .redirect:
       "The URL redirects. Enter the console's final root URL directly; redirects are not followed."
@@ -142,7 +142,12 @@ public struct ConnectionProbe: Sendable {
 
   private func read<T: Decodable>(_ request: URLRequest) async throws -> T {
     let response = try await transport.send(request)
-    if response.status == 421 { throw ProbeError.untrustedHost }
+    if response.status == 421,
+      let failure = try? JSONDecoder().decode(ServerFailure.self, from: response.data),
+      failure.error.code == "untrusted_host"
+    {
+      throw ProbeError.untrustedHost
+    }
     if (300...399).contains(response.status) { throw ProbeError.redirect }
     guard (200...299).contains(response.status) else { throw ProbeError.http(response.status) }
     guard
@@ -153,4 +158,9 @@ public struct ConnectionProbe: Sendable {
       throw ProbeError.invalidResponse
     }
   }
+}
+
+private struct ServerFailure: Decodable {
+  struct Detail: Decodable { let code: String }
+  let error: Detail
 }

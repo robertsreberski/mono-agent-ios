@@ -7,7 +7,8 @@
 - `Packages/MonoAgentKit`: endpoint policy, request builder, transport and connection DTOs.
   The future API client extends these seams; do not add a second bootstrap/URL client.
 - `Packages/MonoAgentKit/Sources/MonoAgentTestSupport`: fictional per-instance scripts and
-  stable scenario catalog. Production must not select fixtures.
+  stable scenario catalog. TestSupport declarations are DEBUG-only; Release must contain no
+  fixture symbols or strings (verified with nm and strings).
 - `Packages/MonoAgentStore`: MainActor observable connection registry; actor-backed profile
   repository. Future persistence/recovery belongs here, not in views.
 - `Packages/MonoAgentDesign`: iOS-only value-driven tokens/components; no Kit/Store/network.
@@ -49,6 +50,10 @@ swift test --package-path Packages/MonoAgentStore
 xcodebuild -project MonoAgent.xcodeproj -scheme MonoAgent \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath .build/Xcode CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project MonoAgent.xcodeproj -scheme MonoAgent -configuration Release \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath .build/Xcode CODE_SIGNING_ALLOWED=NO build
+./Tools/check-release-fixtures
 ```
 
 Apply formatting with `xcrun swift format format --in-place --recursive App AppTests AppUITests Packages`.
