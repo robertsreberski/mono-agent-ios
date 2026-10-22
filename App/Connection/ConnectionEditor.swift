@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import MonoAgentDesign
 import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
@@ -36,13 +37,15 @@ struct ConnectionEditor: View {
           Text(
             "Use a hostname or IP and optional port, with no path prefix. No request is made until you tap Connect."
           )
-          .font(.caption)
+          .designFont(.caption).foregroundStyle(.secondary)
         }
         if let endpoint, endpoint.isInsecure {
           Section("Insecure HTTP") {
-            Label(
-              "HTTP traffic is not encrypted and can be read or changed by others on the network.",
-              systemImage: "lock.open")
+            StatusIndicator(
+              .insecure,
+              label:
+                "HTTP traffic is not encrypted and can be read or changed by others on the network."
+            )
             if !endpoint.isLocalHost {
               Toggle(
                 "I understand the risk of plaintext HTTP to this non-local host",
@@ -58,16 +61,23 @@ struct ConnectionEditor: View {
             "On a physical device, localhost and loopback point to that device. Use your computer's LAN IP or Tailscale HTTPS URL instead."
           )
         }
-        if let error { Section("Could not save") { Text(error).foregroundStyle(.red) } }
-        Button(saving ? "Saving…" : "Connect") { save() }
-          .disabled(
-            saving
-              || (endpoint?.isInsecure == true && endpoint?.isLocalHost == false && !acknowledged)
-          )
-          .accessibilityIdentifier("connect-console")
+        if let error {
+          Section("Could not save") { StatusIndicator(.failed, label: error) }
+        }
       }
       .navigationTitle(console == nil ? "Add console" : "Edit console")
-      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        // System toolbars supply Liquid Glass; the confirmation action is prominent.
+        ToolbarItem(placement: .confirmationAction) {
+          Button(saving ? "Saving…" : "Connect") { save() }
+            .disabled(
+              saving
+                || (endpoint?.isInsecure == true && endpoint?.isLocalHost == false && !acknowledged)
+            )
+            .accessibilityIdentifier("connect-console")
+        }
+      }
       .onChange(of: address) { _, _ in acknowledged = false }
     }
   }
