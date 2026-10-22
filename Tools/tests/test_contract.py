@@ -14,6 +14,8 @@ MODULE = runpy.run_path(str(ROOT / "Tools/check-contract"))
 
 class ContractTests(unittest.TestCase):
     def sandbox(self):
+        # A fresh CI checkout has no .build directory yet.
+        (ROOT / ".build").mkdir(exist_ok=True)
         temporary = tempfile.TemporaryDirectory(dir=ROOT / ".build")
         self.addCleanup(temporary.cleanup)
         root = pathlib.Path(temporary.name)
