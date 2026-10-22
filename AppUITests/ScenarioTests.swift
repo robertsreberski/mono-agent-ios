@@ -20,7 +20,9 @@ final class ScenarioTests: XCTestCase {
     app.launch()
     XCTAssertTrue(
       app.descendants(matching: .any)[scenario].firstMatch.waitForExistence(timeout: 15))
-    XCTAssertTrue(app.staticTexts["scenario-ready"].firstMatch.waitForExistence(timeout: 15))
+    XCTAssertTrue(
+      app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 15))
+    XCTAssertFalse(app.staticTexts["Ready"].exists, "Test readiness must not add visible text")
     let rendered = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in screenshotHasContent(XCUIScreen.main.screenshot()) },
       object: nil

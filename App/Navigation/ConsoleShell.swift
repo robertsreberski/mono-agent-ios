@@ -109,11 +109,9 @@ struct ConsoleShell: View {
       Button("Add console", systemImage: "plus") { editor = EditorDestination(console: nil) }
         .accessibilityIdentifier("add-console")
         .disabled(!model.registry.isLoaded)
-      if model.isReady {
-        Text("Ready").font(.caption).foregroundStyle(.secondary)
-          .accessibilityIdentifier("scenario-ready")
-      }
     }
+    // Identifier metadata on an existing container adds no visible or spoken content.
+    .accessibilityIdentifier(model.isReady ? "scenario-ready" : "connection-loading")
     .navigationTitle("Consoles")
   }
 
@@ -172,14 +170,11 @@ private struct ConsoleDetail: View {
             .foregroundStyle(.secondary)
           connectButton("Check connection again")
         }
-        if ready {
-          Text("Ready").font(.caption).foregroundStyle(.secondary)
-            .accessibilityIdentifier("scenario-ready")
-        }
       }
       .padding()
       .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .accessibilityIdentifier(ready ? "scenario-ready" : "connection-loading")
     .navigationTitle(console.name.isEmpty ? "Console" : console.name)
   }
 
