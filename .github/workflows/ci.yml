@@ -1,0 +1,73 @@
+name: Foundation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: foundation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: ./Tools/select-xcode
+      - run: xcrun swift format lint --strict --recursive App AppTests AppUITests Packages
+      - run: python3 -m unittest discover -s Tools/tests
+      - run: ./Tools/check-repository
+      - run: ./Tools/check-contract --connection-only
+  host-tests:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: ./Tools/select-xcode
+      - run: swift test --package-path Packages/MonoAgentKit -Xswiftc -warnings-as-errors
+      - run: swift test --package-path Packages/MonoAgentStore -Xswiftc -warnings-as-errors
+  ios-tests:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: ./Tools/select-xcode
+      - name: Build universal simulator app
+        run: xcodebuild -project MonoAgent.xcodeproj -scheme MonoAgent -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/Xcode CODE_SIGNING_ALLOWED=NO build
+      - name: Preferred Pro Max and iPad Pro tests and synthetic screenshots
+        run: ./Tools/screenshots
+      - name: Screenshot index and bounded PNGs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: synthetic-fixture-screenshots
+          path: Artifacts/Screenshots/
+          if-no-files-found: error
+      - name: Test results and device provenance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: simulator-test-results
+          path: |
+            Artifacts/*.xcresult
+            Artifacts/devices.json
+          if-no-files-found: error
+  required:
+    name: Required verdict
+    if: always()
+    needs: [quality, host-tests, ios-tests]
+    runs-on: xcode-27
+    steps:
+      - name: Require every prerequisite to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          assert results and all(job['result'] == 'success' for job in results.values()), results
+          PY
