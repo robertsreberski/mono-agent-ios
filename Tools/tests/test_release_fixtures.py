@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 class ReleaseFixtureTests(unittest.TestCase):
-    def check(self, leak_tool=None):
+    def check(self, leak_tool=None, leak=b"ScriptedTransport"):
         (ROOT / ".build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as directory:
             app = pathlib.Path(directory)
@@ -24,7 +24,7 @@ class ReleaseFixtureTests(unittest.TestCase):
                 calls.append(command[1])
                 output = b"ordinary app symbols"
                 if command[1] == leak_tool:
-                    output = b"ScriptedTransport" if leak_tool == "nm" else b"console.example.ts.net"
+                    output = b"ordinary symbols " + leak
                 return subprocess.CompletedProcess(command, 0, stdout=output)
 
             with patch.object(sys, "argv", ["check-release-fixtures", "--app", str(app)]), patch("subprocess.run", side_effect=run), contextlib.redirect_stdout(io.StringIO()):
@@ -40,4 +40,10 @@ class ReleaseFixtureTests(unittest.TestCase):
 
     def test_fixture_string_is_rejected(self):
         with self.assertRaises(SystemExit):
-            self.check("strings")
+            self.check("strings", b"console.example.ts.net")
+
+    def test_design_catalog_symbols_and_scenarios_are_rejected(self):
+        for tool, leak in (("nm", b"$s9MonoAgent17DesignCatalogViewV"), ("strings", b"design-catalog-ocean"),
+                           ("nm", b"DesignPreviewMatrix")):
+            with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
+                self.check(tool, leak)

@@ -1,0 +1,378 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#if DEBUG
+  import MonoAgentDesign
+  import SwiftUI
+
+  /// DEBUG-only design catalog scenarios (`--scenario design-catalog…`). Release builds
+  /// contain neither these names nor the catalog view (`Tools/check-release-fixtures`).
+  enum DesignCatalogScenario: String, CaseIterable, Sendable {
+    case catalog = "design-catalog"
+    case evergreen = "design-catalog-evergreen"
+    case ocean = "design-catalog-ocean"
+    case plum = "design-catalog-plum"
+    case terracotta = "design-catalog-terracotta"
+    case accessibility = "design-catalog-accessibility"
+    case reduceTransparency = "design-catalog-reduce-transparency"
+
+    var theme: ConsoleTheme {
+      switch self {
+      case .catalog, .evergreen, .accessibility: .evergreen
+      case .ocean: .ocean
+      case .plum, .reduceTransparency: .plum
+      case .terracotta: .terracotta
+      }
+    }
+
+    var largeText: Bool { self == .accessibility }
+    var opaqueSurfaces: Bool { self == .reduceTransparency }
+  }
+
+  /// Every design component in the chosen theme, with toolbar controls for theme, text
+  /// size and the Reduce Transparency fallback. All text is synthetic sample content.
+  struct DesignCatalogView: View {
+    let scenario: DesignCatalogScenario
+    @State private var theme: ConsoleTheme
+    @State private var largeText: Bool
+    @State private var opaque: Bool
+
+    init(scenario: DesignCatalogScenario) {
+      self.scenario = scenario
+      _theme = State(initialValue: scenario.theme)
+      _largeText = State(initialValue: scenario.largeText)
+      _opaque = State(initialValue: scenario.opaqueSurfaces)
+    }
+
+    var body: some View {
+      NavigationStack {
+        DesignCatalogContent(
+          identifier: scenario.rawValue, theme: theme, largeText: largeText, opaque: opaque
+        )
+        .navigationTitle("Design catalog")
+        .toolbar {
+          ToolbarItem(placement: .primaryAction) {
+            Menu("Catalog options", systemImage: "slider.horizontal.3") {
+              Picker("Theme", selection: $theme) {
+                ForEach(ConsoleTheme.allCases) { Text($0.displayName).tag($0) }
+              }
+              Toggle("Accessibility text size", isOn: $largeText)
+              Toggle("Reduce Transparency fallback", isOn: $opaque)
+            }
+          }
+        }
+      }
+      .consoleTheme(theme)
+      .prefersOpaqueSurfaces(opaque)
+      .dynamicTypeSize(
+        largeText ? .accessibility3 ... .accessibility3 : .xSmall ... .accessibility5)
+    }
+  }
+
+  private struct DesignCatalogContent: View {
+    let identifier: String
+    let theme: ConsoleTheme
+    let largeText: Bool
+    let opaque: Bool
+    @Environment(\.colorScheme) private var scheme
+    @State private var draft = ""
+
+    var body: some View {
+      ScrollView {
+        VStack(alignment: .leading, spacing: DesignSpacing.xl) {
+          header
+          catalogSection("Themes") { ThemeRows() }
+          catalogSection("Buttons") { ButtonSpecimens() }
+          catalogSection("Status") { StatusSpecimens() }
+          catalogSection("Unread markers") { UnreadSpecimens() }
+          catalogSection("Banners") { BannerSpecimens() }
+          catalogSection("Section headers") {
+            VStack(alignment: .leading, spacing: DesignSpacing.md) {
+              SectionHeader("Saved consoles")
+              SectionHeader("Agents", detail: "3 active · synthetic") { UnreadMarker(count: 4) }
+            }
+            .contentSurface()
+          }
+          catalogSection("States") { StateSpecimens() }
+          catalogSection("Rich Markdown slot") {
+            RichMarkdownPlaceholder(
+              source: "## Release notes\n- **Bold** and `code` stay raw.\n- Tables render later.")
+          }
+          catalogSection("Composer bar shell") {
+            Text("Pinned below: layout-only glass shell. Content scrolls beneath it.")
+              .designFont(.supporting).foregroundStyle(.secondary)
+          }
+        }
+        .padding(DesignSpacing.lg)
+        .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
+        .frame(maxWidth: .infinity)
+      }
+      .background(theme.palette.canvas.color)
+      .safeAreaBar(edge: .bottom) { composer }
+      .scrollEdgeEffectStyle(.hard, for: .bottom)
+      .accessibilityIdentifier("scenario-ready")
+    }
+
+    private var header: some View {
+      VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+        Label("Synthetic design catalog", systemImage: "swatchpalette")
+          .designFont(.caption).foregroundStyle(.secondary)
+        Text(
+          [
+            theme.displayName, scheme == .dark ? "Dark" : "Light",
+            largeText ? "Accessibility text (AX3)" : "Standard text",
+            opaque ? "Reduce Transparency fallback" : "Liquid Glass",
+          ].joined(separator: " · ")
+        )
+        .designFont(.supporting)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier(identifier)
+    }
+
+    private var composer: some View {
+      ComposerBarShell {
+        Button("Attach", systemImage: "plus") {}
+          .labelStyle(.iconOnly)
+          .designButtonStyle(.secondary, placement: .floating)
+          .buttonBorderShape(.circle)
+          .controlSize(.large)
+      } field: {
+        TextField("Message", text: $draft, axis: .vertical)
+          .lineLimit(1...4)
+      } trailing: {
+        Button("Send", systemImage: "arrow.up") {}
+          .labelStyle(.iconOnly)
+          .designButtonStyle(.primary, placement: .floating)
+          .buttonBorderShape(.circle)
+          .controlSize(.large)
+      }
+    }
+
+    private func catalogSection(
+      _ title: String, @ViewBuilder content: () -> some View
+    ) -> some View {
+      VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+        SectionHeader(title)
+        content()
+      }
+    }
+  }
+
+  /// The same specimens in all four themes, so every screenshot shows each palette.
+  private struct ThemeRows: View {
+    var body: some View {
+      VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+        ForEach(ConsoleTheme.allCases) { theme in
+          FlowLayout {
+            HStack(spacing: DesignSpacing.xs) {
+              swatch(theme.palette.accent.light)
+              swatch(theme.palette.accent.dark)
+              Text(theme.displayName).designFont(.headline)
+            }
+            .accessibilityElement(children: .combine)
+            Button("Connect") {}.designButtonStyle(.primary).controlSize(.small)
+            StatusChip(.online)
+            UnreadMarker(count: 3)
+          }
+          .contentSurface(padding: DesignSpacing.md)
+          .consoleTheme(theme)
+        }
+      }
+    }
+
+    private func swatch(_ colour: RGBColor) -> some View {
+      Circle().fill(colour.color).frame(width: 18, height: 18)
+        .overlay(Circle().stroke(DesignColor.separator))
+        .accessibilityHidden(true)
+    }
+  }
+
+  private struct ButtonSpecimens: View {
+    var body: some View {
+      VStack(alignment: .leading, spacing: DesignSpacing.md) {
+        Text("Inline (on content)").designFont(.caption).foregroundStyle(.secondary)
+        FlowLayout {
+          Button("Connect") {}.designButtonStyle(.primary)
+          Button("Edit") {}.designButtonStyle(.secondary)
+          Button("Remove", role: .destructive) {}.designButtonStyle(.secondary)
+          Button("Disabled") {}.designButtonStyle(.primary).disabled(true)
+        }
+        Text("Floating (glass above content)").designFont(.caption).foregroundStyle(.secondary)
+        GlassBackdrop {
+          GlassEffectContainer(spacing: DesignSpacing.sm) {
+            FlowLayout {
+              Button("Retry") {}.designButtonStyle(.primary, placement: .floating)
+              Button("Details") {}.designButtonStyle(.secondary, placement: .floating)
+              StatusChip(.connecting, label: "Reconnecting", placement: .floating)
+            }
+          }
+        }
+      }
+      .controlSize(.large)
+    }
+  }
+
+  /// Sample content beneath floating glass so refraction is visible in screenshots. The
+  /// controls float over colour blocks, not over the readable lines above them.
+  private struct GlassBackdrop<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @Environment(\.consoleTheme) private var theme
+
+    var body: some View {
+      VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+        Text("Synthetic transcript content scrolls beneath floating controls.")
+          .designFont(.supporting)
+          .foregroundStyle(.secondary)
+          .accessibilityHidden(true)
+        ZStack(alignment: .leading) {
+          HStack(spacing: DesignSpacing.sm) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, colour in
+              RoundedRectangle(cornerRadius: DesignRadius.sm, style: .continuous)
+                .fill(colour.opacity(0.55))
+                .frame(height: 28)
+            }
+          }
+          .accessibilityHidden(true)
+          content().padding(.horizontal, DesignSpacing.sm)
+        }
+      }
+      .padding(DesignSpacing.md)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+        LinearGradient(
+          colors: [theme.palette.accentSoft.color, DesignColor.contentSurface],
+          startPoint: .topLeading, endPoint: .bottomTrailing)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: DesignRadius.md, style: .continuous))
+    }
+
+    private var blocks: [Color] {
+      [
+        theme.palette.accent.color, DesignColor.warning.color, theme.palette.accentSoft.color,
+        DesignColor.success.color, DesignColor.danger.color,
+      ]
+    }
+  }
+
+  private struct StatusSpecimens: View {
+    var body: some View {
+      VStack(alignment: .leading, spacing: DesignSpacing.md) {
+        FlowLayout { ForEach(StatusKind.allCases, id: \.self) { StatusChip($0) } }
+        FlowLayout { ForEach(StatusKind.allCases, id: \.self) { StatusIndicator($0) } }
+          .contentSurface(padding: DesignSpacing.md)
+      }
+    }
+  }
+
+  private struct UnreadSpecimens: View {
+    var body: some View {
+      FlowLayout {
+        specimen("Unread") { UnreadMarker() }
+        specimen("Count") { UnreadMarker(count: 7) }
+        specimen("Capped") { UnreadMarker(count: 250) }
+      }
+      .contentSurface(padding: DesignSpacing.md)
+    }
+
+    private func specimen(_ title: String, marker: () -> UnreadMarker) -> some View {
+      HStack(spacing: DesignSpacing.sm) {
+        marker()
+        Text(title).designFont(.supporting).foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  private struct BannerSpecimens: View {
+    var body: some View {
+      VStack(spacing: DesignSpacing.sm) {
+        ConnectionBanner(
+          .insecureHTTP, title: "Insecure HTTP",
+          message: "Traffic can be read or changed on the network.")
+        ConnectionBanner(
+          .offline, title: "Offline", message: "Showing saved synthetic data.",
+          actionTitle: "Retry", action: {})
+        ConnectionBanner(
+          .storage, title: "Storage warning", message: "Changes are in memory only.")
+        ConnectionBanner(.notice, title: "Connect only to a console you trust")
+      }
+    }
+  }
+
+  private struct StateSpecimens: View {
+    var body: some View {
+      VStack(spacing: DesignSpacing.sm) {
+        EmptyStateView(
+          "No consoles yet", systemImage: "network",
+          message: "Add the root URL of your web console to begin.",
+          actionTitle: "Add console", action: {}
+        )
+        .contentSurface()
+        ErrorStateView(
+          "Connection failed", message: "Could not reach console.example.ts.net.",
+          retryTitle: "Retry", retry: {}
+        )
+        .contentSurface()
+        LoadingStateView("Checking console…").contentSurface()
+      }
+    }
+  }
+
+  /// Minimal wrapping layout for catalog specimens; items are centred within each line.
+  private struct FlowLayout: Layout {
+    var spacing: CGFloat = DesignSpacing.sm
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+      arrange(proposal.width ?? .infinity, subviews).size
+    }
+
+    func placeSubviews(
+      in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    ) {
+      let layout = arrange(bounds.width, subviews)
+      for (index, frame) in layout.frames.enumerated() {
+        subviews[index].place(
+          at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+          proposal: ProposedViewSize(frame.size))
+      }
+    }
+
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> (
+      frames: [CGRect], size: CGSize
+    ) {
+      var lines: [[(index: Int, size: CGSize)]] = [[]]
+      var x: CGFloat = 0
+      for (index, subview) in subviews.enumerated() {
+        let size = subview.sizeThatFits(.init(width: width, height: nil))
+        if x > 0, x + size.width > width {
+          lines.append([])
+          x = 0
+        }
+        lines[lines.count - 1].append((index, size))
+        x += size.width + spacing
+      }
+      var frames = [CGRect](repeating: .zero, count: subviews.count)
+      var y: CGFloat = 0
+      var widest: CGFloat = 0
+      for line in lines where !line.isEmpty {
+        let height = line.map(\.size.height).max() ?? 0
+        var x: CGFloat = 0
+        for item in line {
+          frames[item.index] = CGRect(
+            origin: CGPoint(x: x, y: y + (height - item.size.height) / 2), size: item.size)
+          x += item.size.width + spacing
+        }
+        widest = max(widest, min(x - spacing, width))
+        y += height + spacing
+      }
+      return (frames, CGSize(width: widest, height: max(0, y - spacing)))
+    }
+  }
+
+  #Preview("Catalog — evergreen") { DesignCatalogView(scenario: .evergreen) }
+  #Preview("Catalog — ocean, dark") {
+    DesignCatalogView(scenario: .ocean).preferredColorScheme(.dark)
+  }
+  #Preview("Catalog — accessibility size") { DesignCatalogView(scenario: .accessibility) }
+  #Preview("Catalog — Reduce Transparency") {
+    DesignCatalogView(scenario: .reduceTransparency)
+  }
+#endif
