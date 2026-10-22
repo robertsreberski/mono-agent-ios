@@ -15,19 +15,29 @@ public enum CacheMerge {
         ($0.key, $0.value)
       })
   }
-  public static func rebase(_ local: CacheRecord, onto disk: CacheRecord) -> CacheRecord {
+  public static func rebase(
+    _ local: CacheRecord, onto disk: CacheRecord, authoritativeAt: [String: Date] = [:]
+  ) -> CacheRecord {
     var result = local
     result.bootstrap = local.bootstrap ?? disk.bootstrap
     result.revision = disk.revision + 1
     result.tombstones = disk.tombstones.merging(local.tombstones) { old, new in
-      old.revision > new.revision ? old : new
+      if old.revision != new.revision { return old.revision > new.revision ? old : new }
+      if old.origin != new.origin {
+        if old.origin == .removed { return old }
+        if new.origin == .removed { return new }
+      }
+      return old.removedAt > new.removedAt ? old : new
     }
-    let rows =
-      (local.bootstrap?.threads ?? []) + local.buckets.flatMap(\.threads)
-      + local.conversations.map(\.thread)
-    for row in rows {
+    let rows: [(WebThread, Date?)] =
+      ((local.bootstrap?.threads ?? []) + (local.bootstrap?.activeThreads?.threads ?? [])).map {
+        ($0, nil)
+      }
+      + local.buckets.flatMap { bucket in bucket.threads.map { ($0, bucket.savedAt) } }
+      + local.conversations.map { ($0.thread, $0.savedAt) }
+    for (row, fetchedAt) in rows {
       if local.tombstones[row.id] == nil, let removed = result.tombstones[row.id],
-        row.revision > removed.revision
+        removed.allows(revision: row.revision, fetchedAt: authoritativeAt[row.id] ?? fetchedAt)
       {
         result.tombstones[row.id] = nil
       }

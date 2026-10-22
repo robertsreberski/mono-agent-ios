@@ -32,6 +32,8 @@ Screens must not instantiate API clients or submit directly.
 - `enqueueThreadWrite` serializes pending settings/project edits; `settleThreadWrites`
   completes before a submission POST. Each write has the web's 15-second deadline. A failed
   edit is reported once, a successful later edit clears it, and drained tails are removed.
+  Timeout/cancellation settles the caller but **not** the physical write queue: a transport
+  that ignores cancellation blocks subsequent writes on that thread until it actually completes.
 - `setDataMode(.auto/.lean/.full)` persists per console. Auto uses full unless the app's
   NWPathMonitor adapter reports Low Data Mode. Full publishes applied deltas immediately;
   lean batches only transcript publication for one second, never terminal writes, and halves
@@ -45,7 +47,8 @@ registries. Real gaps revalidate bootstrap once; other buckets stay stale until 
 Overflow is a gap, not a request for a second subscription. Message repair is single-flight
 with a trailing obligation. Generation/selection guards and invalidation clocks protect
 reads and 304s; deletion tombstones prevent late resurrection. Server transcript order,
-message sequences and summary revisions are authoritative. Full tool repairs survive
+message sequences and summary revisions are authoritative. Legacy tombstones without a known
+origin are weak barriers and can also be repaired by a fresh authoritative equal-revision row. Full tool repairs survive
 preview writes only while server digests match.
 
 ## Persistence and recovery
@@ -64,6 +67,9 @@ Each record has independent monotonic revisions; stale/equal saves cannot replac
 ones. Save commands return `RepositorySaveResult.saved` or `.superseded(revision:)`.
 The Store and headless service reload/rebase and retry once; a second superseding write
 remains explicitly non-durable (`PersistenceState.superseded`, `ChangeSummary.persisted == false`).
+Authored rebasing merges drafts by key, version and update time and keeps the highest seen
+revision per thread. A known deleted draft version cannot erase another writer's newer draft.
+Stopped stores cannot flush authored state, including late submission confirmations.
 Corrupt/newer/oversized files are preserved and that record becomes memory-only.
 The Store exposes separate failure states; cache degradation cannot evict authored data.
 Profile removal deletes all its identity namespaces, and late flushes cannot recreate them.
@@ -74,10 +80,10 @@ Bounds per namespace:
 | Record | Bounds |
 |---|---|
 | In-memory detail | 8 conversations, 256 observation clocks |
-| Deletion barriers | 256 tombstones, 30 days; explicit removal or two confirming 404s; newer authoritative revisions lift barriers |
+| Deletion barriers | 256 tombstones, 30 days; explicit removal or two 404s ≥5 s apart; a newer revision lifts an explicit-removal barrier, any authoritative row fetched after removal lifts a not-found barrier |
 | Cache | 24 conversations, 24 buckets, 30 days, 16 MiB total; 2 MiB per conversation |
 | Authored | 40 text drafts, 32,768 characters each, 30 days; 200 LRU seen revisions; 6 MiB |
-| Journal | 1 MiB; dispatched references never age-evicted; prepared references expire after 24 h only after an authoritative 404 |
+| Journal | 1 MiB / 50 entries for new writes; oldest non-active uncertain dispatched references evicted first. A dispatched reference with an authoritative 404 expires 30 days after its latest dispatch checkpoint. Historical prepared identities are never age/count-evicted; if they fill capacity, new sends fail closed |
 
 Drafts flush after 500 ms and on context/background changes. Cache flushes batch at one
 second. Oversized cached history is explicitly `truncated`, with paging disabled until a
@@ -91,16 +97,29 @@ attachment/MCP capability fields. Authored capability links are scrubbed too.
 
 Files are excluded from backup and use complete protection until first authentication on
 iOS. This is OS-protected local data, not application-level encryption. No shared network
-response cache is used. Read/write failure states must remain visible in future feature UI.
+response cache is used. Read/write failure states must remain visible in future feature UI. Backup-exclusion tests run
+on host/simulators. The explicitly named `physicalDeviceOnly…` protection-attribute test is
+excluded on CoreSimulator, is **not CI coverage**, and requires a physical iOS test run.
 
-A submission UUID and payload digest are durably journaled **before POST**. Failure to write
-that reference prevents dispatch. Provably undispatched exits remove the prepared reference
-and re-save; a failed save also rolls it back in memory. Dispatch is marked at the POST call
-boundary, never while waiting on authored state/thread writes. A crash inside POST may leave
-only the prepared checkpoint, which is still recovered exclusively by GET. The journal
-contains no immutable payload, upload bytes or capability URLs; only attachment IDs are retained.
-Attachments move out of visible staging into protected in-flight ownership before POST and
-are not deleted by selection/background cleanup. Known receipts release that ownership.
+A submission UUID and payload digest are durably journaled **before POST**. After settling
+thread writes, a second durable checkpoint marks the reference possibly dispatched; POST is
+strictly gated on that save. A checkpoint is not proof of admission. Only identities prepared
+in this Store lifetime and proven not to have reached POST may be cleaned up as undispatched.
+A historical prepared reference (including legacy references lacking dispatch/age metadata)
+remains uncertain, even after retry/checkpoint/relaunch, unless
+a receipt resolves it. A later failed preflight or rejection cannot erase an earlier ambiguous
+attempt. Historical oversized journals retain those protected identities but cannot grow;
+repository writes reject >50 entries. The 50-entry cap and 30-day dispatched-404 policy are
+explicit retention limits, **not proof of non-admission**: check the transcript before sending
+again after an uncertain identity has been evicted. Recovery never submits automatically.
+The journal contains no immutable payload, upload bytes or capability URLs, only attachment IDs
+and identity/dispatch metadata. Payload IDs are protected before the first submit suspension.
+Files stay staged through preparation and POST; selection/background cannot DELETE owned files.
+All non-admission exits release protection and retain staging. Unchanged uncertain retries keep
+the digest and UUID; a compaction HTTP rejection with absent receipt also keeps an in-memory
+retry identity. A known receipt settles its journal identity. Admission removes staged files
+without DELETE; rejection retains them. Only explicit context abandonment with no active owner
+can DELETE staged files. Recovery rechecks active submissions after every receipt GET.
 Relaunch, foreground and reconnect recover by receipt GET only; there is no offline send
 queue or automatic resend. An explicit unchanged retry reuses the UUID, including across
 relaunch; changed input gets another UUID. Only confirmed admission clears the exact draft

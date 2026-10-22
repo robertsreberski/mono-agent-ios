@@ -10,6 +10,7 @@ extension ConsoleStore {
     let began = observation
     let globalBegan = bootstrapClock
     let selected = selection
+    let fetchedAt = await clock.wallNow()
     do {
       let result = try await api.bootstrap(
         query: .init(
@@ -25,13 +26,13 @@ extension ConsoleStore {
           tags = value.tags
           projects = value.projects
         }
-        if let active = value.activeThreads { applyFleet(active) }
+        if let active = value.activeThreads { applyFleet(active, fetchedAt: fetchedAt) }
         if selection == selected, let source = value.threadsSourceId {
           let key = BucketKey(sourceID: source, archived: selectedBucket?.archived ?? false)
           if selectedBucket == nil { selectedBucket = key }
           mergeBucket(
             key, rows: value.threads, cursor: value.threadsNextCursor, older: false,
-            fresh: observation == began)
+            fresh: observation == began, fetchedAt: fetchedAt)
         }
       }
       freshness = bootstrapClock == globalBegan ? .fresh : .stale
@@ -47,6 +48,7 @@ extension ConsoleStore {
     let began = observation
     let cursor = older ? buckets[key]?.nextCursor : nil
     if older && cursor == nil { return }
+    let fetchedAt = await clock.wallNow()
     do {
       let result = try await api.threads(
         query: .init(
@@ -56,16 +58,19 @@ extension ConsoleStore {
       if case .modified(let value, _) = result {
         mergeBucket(
           key, rows: value.threads, cursor: value.nextCursor, older: older,
-          fresh: observation == began)
+          fresh: observation == began, fetchedAt: fetchedAt)
         scheduleCache()
       }
     } catch {
       if epoch == generation { errorMessage = "Conversation list could not be refreshed." }
     }
   }
-  func mergeBucket(_ key: BucketKey, rows: [WebThread], cursor: String?, older: Bool, fresh: Bool) {
+  func mergeBucket(
+    _ key: BucketKey, rows: [WebThread], cursor: String?, older: Bool, fresh: Bool,
+    fetchedAt: Date? = nil
+  ) {
     let old = buckets[key]?.threads ?? []
-    let mapped = rows.filter { acceptSummary($0) }.map { row -> WebThread in
+    let mapped = rows.filter { acceptSummary($0, fetchedAt: fetchedAt) }.map { row -> WebThread in
       noteSummary(row)
       patchSummary(row, listed: true)
       let held = old.first { $0.id == row.id }
@@ -77,7 +82,7 @@ extension ConsoleStore {
     let tail =
       !older && cursor != nil ? old.dropFirst(pageLimit).filter { !ids.contains($0.id) } : []
     var bucket = ThreadBucket(
-      key: key, threads: combined + tail, nextCursor: cursor, savedAt: Date())
+      key: key, threads: combined + tail, nextCursor: cursor, savedAt: fetchedAt ?? Date())
     bucket.freshness = fresh ? .fresh : .stale
     buckets[key] = bucket
   }
@@ -137,10 +142,18 @@ extension ConsoleStore {
     } catch {
       guard epoch == generation, detailRequests[id] == request else { return }
       if let error = error as? APIError, error.status == 404 {
-        missingReads[id, default: 0] += 1
-        if missingReads[id, default: 0] >= 2 {
-          removeThread(id)
+        let instant = await clock.now()
+        let now = await clock.wallNow()
+        guard epoch == generation, detailRequests[id] == request, !Task.isCancelled else { return }
+        if let first = missingReads[id], instant - first >= ConsoleBounds.notFoundConfirmation {
+          removeThread(id, origin: .notFound, now: now)
         } else {
+          if missingReads[id] == nil { missingReads[id] = instant }
+          if missingReads.count > 256,
+            let oldest = missingReads.min(by: { $0.value < $1.value })?.key
+          {
+            missingReads[oldest] = nil
+          }
           conversations[id]?.freshness = .stale
         }
       } else {
@@ -180,15 +193,16 @@ extension ConsoleStore {
   }
   public func refreshActiveFleet() async {
     let generation = epoch
+    let fetchedAt = await clock.wallNow()
     do {
       let result = try await api.activeThreads(etag: nil)
       guard epoch == generation, !Task.isCancelled else { return }
-      if case .modified(let value, _) = result { applyFleet(value) }
+      if case .modified(let value, _) = result { applyFleet(value, fetchedAt: fetchedAt) }
     } catch { if epoch == generation { errorMessage = "Active fleet could not be refreshed." } }
   }
-  func applyFleet(_ incoming: WebActiveThreads) {
+  func applyFleet(_ incoming: WebActiveThreads, fetchedAt: Date? = nil) {
     var value = incoming
-    value.threads = incoming.threads.filter { acceptSummary($0) }.map { row in
+    value.threads = incoming.threads.filter { acceptSummary($0, fetchedAt: fetchedAt) }.map { row in
       noteSummary(row)
       patchSummary(row, listed: true)
       if let held = activeFleet?.threads.first(where: { $0.id == row.id }),
@@ -246,24 +260,33 @@ extension ConsoleStore {
     }
   }
   func pruneTombstones() { tombstones = CacheMerge.prune(tombstones, now: Date()) }
-  func acceptSummary(_ row: WebThread) -> Bool {
+  func acceptSummary(_ row: WebThread, fetchedAt: Date? = nil) -> Bool {
     pruneTombstones()
     if let removed = tombstones[row.id] {
-      guard row.revision > removed.revision else { return false }
+      guard removed.allows(revision: row.revision, fetchedAt: fetchedAt) else { return false }
       tombstones[row.id] = nil
+    }
+    if let fetchedAt {
+      authoritativeRows[row.id] = fetchedAt
+      if authoritativeRows.count > 256,
+        let oldest = authoritativeRows.min(by: { $0.value < $1.value })?.key
+      {
+        authoritativeRows[oldest] = nil
+      }
     }
     missingReads[row.id] = nil
     return true
   }
-  func removeThread(_ id: String) {
+  func removeThread(_ id: String, origin: ThreadTombstone.Origin = .removed, now: Date = Date()) {
     observe(id)
     let revision = max(
       conversations[id]?.thread.revision ?? 0,
       (buckets.values.flatMap(\.threads) + (bootstrap?.threads ?? []) + (activeFleet?.threads ?? []))
         .filter { $0.id == id }.map(\.revision).max() ?? 0)
-    tombstones[id] = ThreadTombstone(revision: revision, removedAt: Date())
-    tombstones = CacheMerge.prune(tombstones, now: Date())
+    tombstones[id] = ThreadTombstone(revision: revision, removedAt: now, origin: origin)
+    tombstones = CacheMerge.prune(tombstones, now: now)
     missingReads[id] = nil
+    authoritativeRows[id] = nil
     conversations[id] = nil
     lru.removeAll { $0 == id }
     for key in buckets.keys { buckets[key]?.threads.removeAll { $0.id == id } }

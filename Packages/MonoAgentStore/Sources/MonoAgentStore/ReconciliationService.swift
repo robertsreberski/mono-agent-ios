@@ -67,8 +67,15 @@ public actor ReconciliationService {
         summary.changedThreadIDs.insert(row.id)
       }
     }
+    let fetchedAt = await clock.wallNow()
+    guard refreshes[namespace] == request else { return summary }
+    let authoritative = Dictionary(
+      (bootstrap.threads + (bootstrap.activeThreads?.threads ?? [])).map { ($0.id, fetchedAt) },
+      uniquingKeysWith: { first, _ in first })
     for row in bootstrap.threads + (bootstrap.activeThreads?.threads ?? []) {
-      if let removed = record.tombstones[row.id], row.revision > removed.revision {
+      if let removed = record.tombstones[row.id],
+        removed.allows(revision: row.revision, fetchedAt: fetchedAt)
+      {
         record.tombstones[row.id] = nil
       }
     }
@@ -83,7 +90,7 @@ public actor ReconciliationService {
     if case .superseded = result {
       let disk = try await repository.loadCache(namespace)
       guard refreshes[namespace] == request else { return summary }
-      record = CacheMerge.rebase(record, onto: disk)
+      record = CacheMerge.rebase(record, onto: disk, authoritativeAt: authoritative)
       result = try await repository.saveCache(record, namespace: namespace)
     }
     summary.saveResult = result

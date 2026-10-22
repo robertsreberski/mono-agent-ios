@@ -5,7 +5,7 @@ import MonoAgentKit
 public enum SubmissionError: Error {
   case notReady, busy, journalUnavailable, threadWriteFailed, threadWriteTimeout
   case rejected(String)
-  case uncertain
+  case uncertain, journalFull
 }
 extension ConsoleStore {
   /// Thread creation is outside recovery, and is never retried by lifecycle effects.
@@ -35,7 +35,12 @@ extension ConsoleStore {
     guard journalStorage != .memoryOnly else { throw SubmissionError.journalUnavailable }
     if conversations[threadID]?.thread.archivedAt != nil { throw SubmissionError.notReady }
     submitting.insert(threadID)
-    defer { submitting.remove(threadID) }
+    let claim = UUID()
+    attachmentClaims[claim] = Set(input.attachmentIds ?? [])
+    defer {
+      submitting.remove(threadID)
+      attachmentClaims[claim] = nil
+    }
     let generation = epoch
     let key =
       draftContext ?? DraftKey(profileID: profile.id, sourceID: sourceID, threadID: threadID)
@@ -45,19 +50,30 @@ extension ConsoleStore {
     encoder.outputFormatting = [.sortedKeys]
     let digest = ConsoleNamespace.digest(
       String(decoding: try encoder.encode(payload), as: UTF8.self))
-    let pending = journal.pending.last {
-      $0.threadID == threadID && $0.payloadDigest == digest
-        && !completedSubmissions.contains($0.submissionID)
-    }
+    let pending =
+      journal.pending.last {
+        $0.threadID == threadID && $0.payloadDigest == digest
+          && !completedSubmissions.contains($0.submissionID)
+      } ?? retryIdentities[threadID].flatMap { $0.payloadDigest == digest ? $0 : nil }
     payload.submissionId = pending?.submissionID ?? UUID().uuidString.lowercased()
     let now = await clock.wallNow()
     guard epoch == generation, !backgrounded else { throw CancellationError() }
+    let isLocalPreparation =
+      pending == nil || retryIdentities[threadID]?.submissionID == pending?.submissionID
+    if isLocalPreparation {
+      try makeJournalRoom()
+      preparedHere.insert(payload.submissionId)
+      completedSubmissions.remove(payload.submissionId)
+    }
     var reference = SubmissionReference(
       threadID: threadID, submissionID: payload.submissionId,
       payloadDigest: digest, draftKey: key,
       draftVersion: authored.drafts.first { $0.key == key }?.version,
-      dispatched: pending?.dispatched ?? false, createdAt: pending?.createdAt ?? now,
-      attachmentIDs: payload.attachmentIds ?? [])
+      dispatched: pending?.dispatched ?? false,
+      createdAt: isLocalPreparation ? now : pending?.createdAt ?? now,
+      attachmentIDs: payload.attachmentIds ?? [],
+      historicalPreparation: pending?.historicalPreparation ?? false,
+      lastDispatchedAt: pending?.lastDispatchedAt)
     journal.pending.removeAll { $0.submissionID == reference.submissionID }
     journal.pending.append(reference)
     do {
@@ -71,24 +87,26 @@ extension ConsoleStore {
       try await settleThreadWrites(threadID)
       try Task.checkCancellation()
       guard epoch == generation, !backgrounded else { throw CancellationError() }
+      // The durable checkpoint must say "possibly dispatched" before any POST can start.
+      let dispatchTime = await clock.wallNow()
+      try Task.checkCancellation()
+      guard epoch == generation, !backgrounded else { throw CancellationError() }
+      reference.dispatched = true
+      reference.lastDispatchedAt = dispatchTime
+      if let index = journal.pending.firstIndex(where: { $0.submissionID == reference.submissionID }
+      ) {
+        journal.pending[index] = reference
+      }
+      do { try await persistJournal() } catch { throw SubmissionError.journalUnavailable }
+      try Task.checkCancellation()
+      guard epoch == generation, !backgrounded else { throw CancellationError() }
     } catch {
-      // No POST in this attempt. Do not abandon a prior genuinely dispatched attempt on retry.
-      if !reference.dispatched { await retire(reference) }
+      // Only this process can prove that its own fresh identity never reached POST.
+      if preparedHere.contains(reference.submissionID) { await retire(reference, retryable: true) }
       throw error
     }
-    // Dispatch boundary: no suspension between claiming attachments/marking the reference and POST.
-    // If killed inside POST, the durable prepared reference is still recovered by GET (never resend).
-    reference.dispatched = true
-    if let index = journal.pending.firstIndex(where: { $0.submissionID == reference.submissionID })
-    {
-      journal.pending[index] = reference
-      journalRevision &+= 1
-    }
-    let attachments = Set(reference.attachmentIDs)
-    for file in stagedAttachments where attachments.contains(file.id) {
-      inFlightAttachments[file.id] = file
-    }
-    stagedAttachments.removeAll { attachments.contains($0.id) }
+    preparedHere.remove(reference.submissionID)
+    retryIdentities[threadID] = nil
     var definitive = false
     do {
       let receipt: WebSubmissionReceipt
@@ -111,9 +129,9 @@ extension ConsoleStore {
             ![408, 425, 429].contains(rejection.status)
           {
             // A definitive dispatch rejection plus authoritative absent receipt proves no admission.
-            definitive = true
-            await retire(reference)
-            await releaseAttachments(reference, admitted: false)
+            // This rejection says nothing about a previous ambiguous attempt with the same UUID.
+            definitive = pending == nil || isLocalPreparation
+            if definitive { await retire(reference, retryable: true) }
             throw dispatchError
           }
           throw error
@@ -173,13 +191,47 @@ extension ConsoleStore {
     retirementOrder.append(id)
     while retirementOrder.count > 256 { completedSubmissions.remove(retirementOrder.removeFirst()) }
   }
-  func retire(_ reference: SubmissionReference) async {
+  func retire(_ reference: SubmissionReference, retryable: Bool = false) async {
+    preparedHere.remove(reference.submissionID)
+    if retryable {
+      var retry = reference
+      retry.dispatched = false
+      retryIdentities[reference.threadID] = retry
+      if retryIdentities.count > ConsoleBounds.journalCount {
+        let oldest = retryIdentities.min { $0.value.createdAt < $1.value.createdAt }?.key
+        if let oldest { retryIdentities[oldest] = nil }
+      }
+    } else {
+      retryIdentities[reference.threadID] = nil
+    }
     recordRetirement(reference.submissionID)
     journal.pending.removeAll {
       $0.submissionID == reference.submissionID && $0.threadID == reference.threadID
     }
     // Keep the in-memory retirement even if disk is unavailable. The next send must save a new UUID.
     try? await persistJournal()
+  }
+  /// Never evict a historical prepared identity: a previous process may have sent it.
+  func trimJournal(reserving: Int = 0) {
+    while journal.pending.count + reserving > ConsoleBounds.journalCount {
+      guard
+        let oldest = journal.pending.filter({
+          $0.dispatched && !$0.historicalPreparation && !submitting.contains($0.threadID)
+            && !recoveries.contains($0.submissionID)
+        }).min(by: { $0.createdAt < $1.createdAt })
+      else { return }
+      errorMessage =
+        "Recovery history reached its limit. Check the conversation before retrying older uncertain messages."
+      recordRetirement(oldest.submissionID)
+      journal.pending.removeAll { $0.submissionID == oldest.submissionID }
+      journalRevision &+= 1
+    }
+  }
+  func makeJournalRoom() throws {
+    trimJournal(reserving: 1)
+    guard journal.pending.count < ConsoleBounds.journalCount else {
+      throw SubmissionError.journalFull
+    }
   }
   public func recoverSubmissions() async {
     let generation = epoch
@@ -192,24 +244,30 @@ extension ConsoleStore {
         let result = try await api.submissionReceipt(
           id: reference.threadID, submissionId: reference.submissionID, etag: nil)
         guard epoch == generation, !backgrounded, !Task.isCancelled else { return }
-        if case .modified(let receipt, _) = result {
+        if !submitting.contains(reference.threadID),
+          journal.pending.contains(where: { $0.submissionID == reference.submissionID }),
+          case .modified(let receipt, _) = result
+        {
           try await confirm(receipt, reference: reference)
         }
       } catch {
-        if let missing = error as? APIError, missing.status == 404, !reference.dispatched,
-          await clock.wallNow().timeIntervalSince(reference.createdAt)
-            >= ConsoleBounds.preparationAge
+        let now = await clock.wallNow()
+        guard epoch == generation, !backgrounded, !Task.isCancelled else { return }
+        if !submitting.contains(reference.threadID),
+          journal.pending.contains(where: { $0.submissionID == reference.submissionID }),
+          let missing = error as? APIError, missing.status == 404, reference.dispatched,
+          !reference.historicalPreparation,
+          now.timeIntervalSince(reference.lastDispatchedAt ?? reference.createdAt)
+            >= ConsoleBounds.journal404Age
         {
+          // Explicit retention bound, not proof that the server never admitted this identity.
+          errorMessage =
+            "An old uncertain reference expired. Check the conversation before sending again."
           await retire(reference)
-          await releaseAttachments(reference, admitted: false)
         }
       }
       if epoch == generation { recoveries.remove(reference.submissionID) }
     }
-  }
-  func releaseAttachments(_ reference: SubmissionReference, admitted: Bool) async {
-    let files = reference.attachmentIDs.compactMap { inFlightAttachments.removeValue(forKey: $0) }
-    if !admitted { await UploadService(api: api).discard(files) }
   }
   func confirm(_ receipt: WebSubmissionReceipt, reference: SubmissionReference) async throws {
     guard receipt.submissionId == reference.submissionID, receipt.threadId == reference.threadID,
@@ -231,6 +289,7 @@ extension ConsoleStore {
       scheduleCache()
     }
     if admitted, let version = reference.draftVersion {
+      noteDraftRemoval(version)
       authored.drafts.removeAll { $0.key == reference.draftKey && $0.version == version }
       authoredChanged()
       await flushAuthored()
@@ -240,7 +299,10 @@ extension ConsoleStore {
       while draftClearOrder.count > 200 { draftClearStorage[draftClearOrder.removeFirst()] = nil }
     }
     await retire(reference)
-    await releaseAttachments(reference, admitted: admitted)
+    if admitted {
+      let ids = Set(reference.attachmentIDs)
+      stagedAttachments.removeAll { ids.contains($0.id) }
+    }
     if receipt.reason == "compaction_busy" {
       await refreshDetail(receipt.threadId)
       await refreshBootstrap()

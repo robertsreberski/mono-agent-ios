@@ -71,9 +71,12 @@ public final class ConsoleStore {
   @ObservationIgnored let clock: any StreamClock
   @ObservationIgnored let uploads: any UploadReservations
   @ObservationIgnored var authored = AuthoredRecord()
+  @ObservationIgnored var authoredBaseline = AuthoredRecord()
+  @ObservationIgnored var draftRemovals: [UUID] = []
   @ObservationIgnored var journal = JournalRecord()
   @ObservationIgnored var cacheRevision: UInt64 = 0
   @ObservationIgnored var tombstones: [String: ThreadTombstone] = [:]
+  @ObservationIgnored var authoritativeRows: [String: Date] = [:]
   @ObservationIgnored var observedOrder: [String] = []
   @ObservationIgnored var observations: [String: UInt64] = [:]
   @ObservationIgnored var observation: UInt64 = 0
@@ -104,13 +107,26 @@ public final class ConsoleStore {
   @ObservationIgnored var submitting: Set<String> = []
   @ObservationIgnored var writeTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var writeTokens: [String: UUID] = [:]
-  @ObservationIgnored var writeFailures: [String: SubmissionError] = [:]
-  @ObservationIgnored var inFlightAttachments: [String: WebAttachment] = [:]
+  @ObservationIgnored var writeStates: [String: ThreadWriteState] = [:]
+  @ObservationIgnored var writeLifetimes: [UUID: ThreadWriteState] = [:]
+  @ObservationIgnored var attachmentClaims: [UUID: Set<String>] = [:]
+  var protectedAttachmentIDs: Set<String> {
+    attachmentClaims.values.reduce(into: []) { $0.formUnion($1) }
+  }
+  var inFlightAttachments: [String: WebAttachment] {
+    Dictionary(
+      stagedAttachments.filter { protectedAttachmentIDs.contains($0.id) }.map { ($0.id, $0) },
+      uniquingKeysWith: { first, _ in first })
+  }
+  @ObservationIgnored var preparedHere: Set<String> = []
+  @ObservationIgnored var retryIdentities: [String: SubmissionReference] = [:]
   @ObservationIgnored var completedSubmissions: Set<String> = []
   @ObservationIgnored var retirementOrder: [String] = []
   @ObservationIgnored var draftClearOrder: [String] = []
-  @ObservationIgnored var missingReads: [String: Int] = [:]
+  @ObservationIgnored var missingReads: [String: TimeInterval] = [:]
   @ObservationIgnored var enabled = false
+  @ObservationIgnored var stopping = false
+  @ObservationIgnored var stopped = false
   @ObservationIgnored var lru: [String] = []
 
   public init(
@@ -137,7 +153,8 @@ public final class ConsoleStore {
     for task in uploadTasks.values { task.cancel() }
   }
   public func start() async {
-    guard !enabled || !started else { return }
+    guard !stopping, !enabled || !started else { return }
+    stopped = false
     enabled = true
     started = true
     backgrounded = false
@@ -178,6 +195,7 @@ public final class ConsoleStore {
       let record = try await repository.loadAuthored(namespace)
       guard epoch == generation else { return }
       authored = record
+      authoredBaseline = record
       authoredRevision &+= 1
       dataMode = record.dataMode
     } catch {
@@ -195,6 +213,10 @@ public final class ConsoleStore {
     }
     guard epoch == generation else { return }
     hydrated = true
+    // Offline hydration permits authored edits, but never starts live effects (`started` is false).
+    if !stopped { enabled = true }
+    trimJournal()
+    if !completedSubmissions.isEmpty { try? await persistJournal() }
   }
   public func select(sourceID: String, archived: Bool = false, threadID: String? = nil) async {
     pruneTombstones()
@@ -242,6 +264,10 @@ public final class ConsoleStore {
   public func setDraft(sourceID: String, threadID: String? = nil, text: String) async {
     let key = DraftKey(profileID: profile.id, sourceID: sourceID, threadID: threadID)
     let now = await clock.wallNow()
+    for draft in authored.drafts
+    where draft.key == key || now.timeIntervalSince(draft.updatedAt) > ConsoleBounds.maxAge {
+      noteDraftRemoval(draft.version)
+    }
     authored.drafts.removeAll {
       $0.key == key || now.timeIntervalSince($0.updatedAt) > ConsoleBounds.maxAge
     }
@@ -342,24 +368,49 @@ public final class ConsoleStore {
   public func serverNow() async -> Date {
     await clock.wallNow().addingTimeInterval(serverClockOffset)
   }
+  func noteDraftRemoval(_ version: UUID) {
+    draftRemovals.removeAll { $0 == version }
+    draftRemovals.append(version)
+    draftRemovals = Array(draftRemovals.suffix(200))
+  }
   public func flushAuthored() async {
     guard hydrated, authoredStorage != .memoryOnly else { return }
+    guard enabled else {
+      authoredStorage = .superseded
+      return
+    }
+    var changed = authoredRevision
+    let removals = Set(draftRemovals)
     authored.revision &+= 1
-    let record = authored
+    var record = authored
     var savingRevision = record.revision
     do {
       var result = try await repository.saveAuthored(record, namespace: namespace)
-      guard authored.revision == record.revision else { return }
+      guard enabled, authoredRevision == changed, authored.revision == record.revision else {
+        return
+      }
       if case .superseded = result {
         let disk = try await repository.loadAuthored(namespace)
-        guard authored.revision == record.revision else { return }
-        authored.revision = max(authored.revision, disk.revision) + 1
-        savingRevision = authored.revision
-        result = try await repository.saveAuthored(authored, namespace: namespace)
+        guard enabled, authoredRevision == changed, authored.revision == record.revision else {
+          return
+        }
+        record = AuthoredMerge.rebase(
+          authored, onto: disk, baseline: authoredBaseline, removedVersions: removals)
+        authored = record
+        dataMode = record.dataMode
+        authoredRevision &+= 1
+        changed = authoredRevision
+        savingRevision = record.revision
+        result = try await repository.saveAuthored(record, namespace: namespace)
       }
-      guard authored.revision == savingRevision else { return }
+      guard enabled, authoredRevision == changed, authored.revision == savingRevision else {
+        return
+      }
       switch result {
-      case .saved: authoredStorage = .durable
+      case .saved:
+        authoredStorage = .durable
+        authoredBaseline = record
+        draftRemovals.removeAll { removals.contains($0) }
       case .superseded: authoredStorage = .superseded
       }
     } catch {
@@ -386,7 +437,7 @@ public final class ConsoleStore {
       if case .superseded = result {
         let disk = try await repository.loadCache(namespace)
         guard cacheRevision == record.revision else { return }
-        record = CacheMerge.rebase(record, onto: disk)
+        record = CacheMerge.rebase(record, onto: disk, authoritativeAt: authoritativeRows)
         cacheRevision = max(cacheRevision, record.revision)
         bootstrap = record.bootstrap
         result = try await repository.saveCache(record, namespace: namespace)

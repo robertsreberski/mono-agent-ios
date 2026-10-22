@@ -43,25 +43,35 @@ struct SubmissionCorrectionTests {
     #expect(await h.transport.count(submissionPath, method: "POST") == 1)
     await h.store.stop()
   }
-  @Test func hungThreadWriteTimesOutAtFifteenSecondsAndLateCompletionCannotReblock() async throws {
+  @Test func hungThreadWriteReportsDeadlineButRetainsOrderingUntilActualCompletion() async throws {
     let h = Harness()
     let gate = WriteGate()
-    h.store.enqueueThreadWrite(threadID: "thread-example") { await gate.wait() }
-    await eventually { await gate.ready() && h.store.writeTasks.count == 1 }
+    let order = WriteOrder()
+    h.store.enqueueThreadWrite(threadID: "thread-example") {
+      await gate.wait()
+      await order.record("old landed")
+    }
+    await eventually { await gate.ready() }
     let settle = Task { try await h.store.settleThreadWrites("thread-example") }
     await eventually { await h.clock.pending() == 1 }
     await h.clock.advance(14.99)
     #expect(h.store.writeTasks.count == 1)
     await h.clock.advance(0.01)
-    await eventually { h.store.writeTasks.isEmpty }
-    if !h.store.writeTasks.isEmpty { await gate.release() }
     do {
       try await settle.value
       Issue.record("Deadline must fail settlement")
     } catch SubmissionError.threadWriteTimeout {}
-    #expect(h.store.writeTasks.isEmpty)
+    #expect(h.store.writeTasks.count == 1)
+    h.store.enqueueThreadWrite(threadID: "thread-example") { await order.record("new landed") }
+    await h.clock.advance(30)
+    #expect(await order.values.isEmpty)
     await gate.release()
     try await h.store.settleThreadWrites("thread-example")
+    #expect(await order.values == ["old landed", "new landed"])
+    #expect(h.store.writeTasks.isEmpty)
+    h.store.enqueueThreadWrite(threadID: "thread-example") { await order.record("last landed") }
+    try await h.store.settleThreadWrites("thread-example")
+    #expect(await order.values == ["old landed", "new landed", "last landed"])
     await h.store.stop()
   }
   @Test func failedPreDispatchAuthoredFlushLeavesNoDurableGhost() async throws {
@@ -119,28 +129,27 @@ struct SubmissionCorrectionTests {
     #expect(await h.transport.count(submissionPath) == 0)
     await h.store.stop()
   }
-  @Test func undispatched404HasBoundedLifetimeButDispatchedReferencesAreNotExpired() async throws {
+  @Test func historicalPrepared404NeverExpiresButDispatched404HasAnAgeBound() async throws {
     let h = Harness()
     let now = await h.clock.wallNow()
+    let historical = prepared(profileID: h.profile.id, createdAt: .distantPast)
+    let recent = prepared(profileID: h.profile.id, createdAt: now, dispatched: true)
     let expired = prepared(
-      profileID: h.profile.id, createdAt: now.addingTimeInterval(-ConsoleBounds.preparationAge))
-    let recent = prepared(profileID: h.profile.id, createdAt: now)
-    let dispatched = prepared(profileID: h.profile.id, createdAt: .distantPast, dispatched: true)
+      profileID: h.profile.id, createdAt: now.addingTimeInterval(-ConsoleBounds.journal404Age),
+      dispatched: true)
     var journal = JournalRecord()
     journal.revision = 1
-    journal.pending = [expired, recent, dispatched]
+    journal.pending = [historical, recent, expired]
     try await h.repository.saveJournal(journal, namespace: h.store.namespace)
     for reference in journal.pending {
       await h.transport.set(submissionPath + "/" + reference.submissionID, [.response(notFound())])
     }
     await h.store.hydrate()
-    #expect(h.store.pendingSubmissions[1].createdAt == now)
-    #expect(await h.clock.wallNow().timeIntervalSince(h.store.pendingSubmissions[1].createdAt) == 0)
     await h.store.recoverSubmissions()
-    let remaining = h.store.pendingSubmissions
-    #expect(remaining.count == 2)
-    #expect(remaining.map(\.dispatched) == [false, true])
-    #expect(Set(remaining.map(\.submissionID)) == [recent.submissionID, dispatched.submissionID])
+    #expect(
+      Set(h.store.pendingSubmissions.map(\.submissionID)) == [
+        historical.submissionID, recent.submissionID,
+      ])
     #expect(try await h.repository.loadJournal(h.store.namespace).pending.count == 2)
     #expect(await h.transport.count(submissionPath, method: "POST") == 0)
     await h.store.stop()

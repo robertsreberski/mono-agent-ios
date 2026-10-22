@@ -30,10 +30,9 @@ extension ConsoleStore {
   public func discardStagedUploads() async {
     for task in uploadTasks.values { task.cancel() }
     uploadTasks.removeAll()
-    let protected = Set(inFlightAttachments.keys).union(
-      journal.pending.filter(\.dispatched).flatMap(\.attachmentIDs))
+    let protected = protectedAttachmentIDs
     let abandoned = stagedAttachments.filter { !protected.contains($0.id) }
-    stagedAttachments.removeAll()
+    stagedAttachments.removeAll { !protected.contains($0.id) }
     await UploadService(api: api).discard(abandoned)
     await uploads.disposeVisible()
   }

@@ -63,11 +63,24 @@ public struct CachedConversation: Codable, Sendable {
   }
 }
 public struct ThreadTombstone: Codable, Sendable, Equatable {
+  public enum Origin: String, Codable, Sendable { case removed, notFound, legacyUnknown }
   public var revision: Int
   public var removedAt: Date
-  public init(revision: Int, removedAt: Date) {
+  public var origin: Origin
+  public init(revision: Int, removedAt: Date, origin: Origin = .removed) {
     self.revision = revision
     self.removedAt = removedAt
+    self.origin = origin
+  }
+  func allows(revision: Int, fetchedAt: Date?) -> Bool {
+    revision > self.revision || (origin != .removed && fetchedAt.map { $0 > removedAt } == true)
+  }
+  private enum CodingKeys: String, CodingKey { case revision, removedAt, origin }
+  public init(from decoder: any Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    revision = try c.decode(Int.self, forKey: .revision)
+    removedAt = try c.decode(Date.self, forKey: .removedAt)
+    origin = try c.decodeIfPresent(Origin.self, forKey: .origin) ?? .legacyUnknown
   }
 }
 public struct CacheRecord: Codable, Sendable {
@@ -140,11 +153,13 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
   public var draftKey: DraftKey
   public var draftVersion: UUID?
   public var dispatched: Bool
+  public var historicalPreparation: Bool
+  public var lastDispatchedAt: Date?
   public var createdAt: Date
   public var attachmentIDs: [String]
   private enum CodingKeys: String, CodingKey {
     case threadID, submissionID, payloadDigest, draftKey, draftVersion, dispatched, createdAt,
-      attachmentIDs
+      attachmentIDs, historicalPreparation, lastDispatchedAt
   }
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -154,14 +169,20 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
     draftKey = try c.decode(DraftKey.self, forKey: .draftKey)
     draftVersion = try c.decodeIfPresent(UUID.self, forKey: .draftVersion)
     // Legacy references might have reached the server; never assume they were undispatched.
-    dispatched = try c.decodeIfPresent(Bool.self, forKey: .dispatched) ?? true
-    createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? .distantPast
+    let dispatchFlag = try c.decodeIfPresent(Bool.self, forKey: .dispatched)
+    let preparationDate = try c.decodeIfPresent(Date.self, forKey: .createdAt)
+    dispatched = dispatchFlag ?? true
+    let historical = try c.decodeIfPresent(Bool.self, forKey: .historicalPreparation) ?? false
+    historicalPreparation =
+      dispatchFlag == nil || preparationDate == nil || !dispatched || historical
+    lastDispatchedAt = try c.decodeIfPresent(Date.self, forKey: .lastDispatchedAt)
+    createdAt = preparationDate ?? .distantPast
     attachmentIDs = try c.decodeIfPresent([String].self, forKey: .attachmentIDs) ?? []
   }
   public init(
     threadID: String, submissionID: String, payloadDigest: String, draftKey: DraftKey,
     draftVersion: UUID?, dispatched: Bool = false, createdAt: Date = Date(),
-    attachmentIDs: [String] = []
+    attachmentIDs: [String] = [], historicalPreparation: Bool = false, lastDispatchedAt: Date? = nil
   ) {
     self.threadID = threadID
     self.submissionID = submissionID
@@ -169,6 +190,8 @@ public struct SubmissionReference: Codable, Sendable, Equatable {
     self.draftKey = draftKey
     self.draftVersion = draftVersion
     self.dispatched = dispatched
+    self.historicalPreparation = historicalPreparation
+    self.lastDispatchedAt = lastDispatchedAt
     self.createdAt = createdAt
     self.attachmentIDs = attachmentIDs
   }
@@ -189,7 +212,9 @@ public struct ConsoleBounds: Sendable {
   public static let authoredBytes = 6 * 1024 * 1024
   public static let tombstoneCount = 256
   public static let tombstoneAge: TimeInterval = 30 * 24 * 60 * 60
-  public static let preparationAge: TimeInterval = 24 * 60 * 60
+  public static let journalCount = 50
+  public static let journal404Age: TimeInterval = 30 * 24 * 60 * 60
+  public static let notFoundConfirmation: TimeInterval = 5
   public static let threadWriteTimeout: TimeInterval = 15
   public static let journalBytes = 1024 * 1024
 }

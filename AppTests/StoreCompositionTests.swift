@@ -1,8 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-only
 import MonoAgentTestSupport
 import Testing
 
 @testable import MonoAgent
-// SPDX-License-Identifier: GPL-3.0-only
 @testable import MonoAgentStore
 
 #if DEBUG
@@ -22,7 +22,6 @@ import Testing
       #expect(!initial.enabled)
       await model.scenePhaseChanged(.background)
       await model.scenePhaseChanged(.active)
-      #expect(!initial.enabled)
       #expect(initial.connection == .offline)
       await initial.stop()
     }

@@ -80,13 +80,15 @@ struct SyncPersistenceCorrectionTests {
     await h.store.refreshDetail("thread-example")
     #expect(h.store.conversations["thread-example"] != nil)
     #expect(h.store.tombstones.isEmpty)
+    await h.clock.advance(5)
     await h.store.refreshDetail("thread-example")
     #expect(h.store.conversations.isEmpty)
     #expect(h.store.tombstones["thread-example"]?.revision == 5)
+    await h.clock.advance(0.001)
     h.store.mergeBucket(
       .init(sourceID: "agent-example"), rows: [try sampleThread(revision: 5)], cursor: nil,
-      older: false, fresh: true)
-    #expect(h.store.tombstones["thread-example"] != nil)
+      older: false, fresh: true, fetchedAt: await h.clock.wallNow())
+    #expect(h.store.tombstones.isEmpty)
     h.store.mergeBucket(
       .init(sourceID: "agent-example"), rows: [try sampleThread(revision: 6)], cursor: nil,
       older: false, fresh: true)
@@ -238,15 +240,6 @@ struct SyncPersistenceCorrectionTests {
       {
         #expect(
           try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
-        // CoreSimulator exposes no Data Protection attribute; assert it on physical iOS.
-        #if os(iOS) && !targetEnvironment(simulator)
-          if url != directory {
-            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-            #expect(
-              attributes[.protectionKey] as? FileProtectionType
-                == .completeUntilFirstUserAuthentication)
-          }
-        #endif
       }
     }
   }

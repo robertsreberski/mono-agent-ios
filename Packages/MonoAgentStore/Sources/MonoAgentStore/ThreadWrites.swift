@@ -5,24 +5,31 @@ import MonoAgentKit
 enum ThreadWriteOutcome: Sendable { case success, failed, timedOut, cancelled }
 private actor WriteRace {
   var result: ThreadWriteOutcome?
-  var waiter: CheckedContinuation<ThreadWriteOutcome, Never>?
+  var waiters: [CheckedContinuation<ThreadWriteOutcome, Never>] = []
   func finish(_ value: ThreadWriteOutcome) {
     guard result == nil else { return }
     result = value
-    waiter?.resume(returning: value)
-    waiter = nil
+    for waiter in waiters { waiter.resume(returning: value) }
+    waiters.removeAll()
   }
   func value() async -> ThreadWriteOutcome {
     if let result { return result }
-    return await withCheckedContinuation { waiter = $0 }
+    return await withCheckedContinuation { waiters.append($0) }
   }
 }
+@MainActor final class ThreadWriteState {
+  var result: Task<ThreadWriteOutcome, Never>?
+  var completion: Task<Void, Never>?
+  var completionResult: Task<ThreadWriteOutcome, Never>?
+  var cancel: (() -> Void)?
+  var reported = false
+}
 extension ConsoleStore {
-  /// The deadline is independent of transport cooperation. Late completion cannot mutate the chain.
-  static func boundedWrite(
-    clock: any StreamClock, operation: @escaping @Sendable () async throws -> Void
+  /// Caller deadlines do not release the queue: cancellation cannot un-send a mutation.
+  private static func boundedWrite(
+    clock: any StreamClock, race: WriteRace,
+    operation: @escaping @Sendable () async throws -> Void
   ) async -> ThreadWriteOutcome {
-    let race = WriteRace()
     let operationTask = Task {
       do {
         try Task.checkCancellation()
@@ -35,8 +42,8 @@ extension ConsoleStore {
     let timeout = Task {
       do {
         try await clock.sleep(seconds: ConsoleBounds.threadWriteTimeout)
-        operationTask.cancel()
         await race.finish(.timedOut)
+        operationTask.cancel()
       } catch {}
     }
     let result = await withTaskCancellationHandler {
@@ -47,6 +54,8 @@ extension ConsoleStore {
     }
     timeout.cancel()
     operationTask.cancel()
+    // The request may ignore cancellation. Keep this thread's physical queue occupied.
+    await operationTask.value
     return result
   }
   public func enqueueThreadWrite(
@@ -55,28 +64,65 @@ extension ConsoleStore {
     let previous = writeTasks[threadID]
     let token = UUID()
     let generation = epoch
+    let race = WriteRace()
+    let completionRace = WriteRace()
+    let state = ThreadWriteState()
+    state.result = Task { await race.value() }
+    state.completionResult = Task { await completionRace.value() }
+    writeLifetimes[token] = state
+    writeStates[threadID] = state
     writeTokens[threadID] = token
-    writeTasks[threadID] = Task { [weak self, clock] in
+    let completion = Task { [weak self, clock] in
       await previous?.value
-      guard let self, self.epoch == generation, !Task.isCancelled else { return }
-      let outcome = await Self.boundedWrite(clock: clock, operation: operation)
-      guard self.epoch == generation else { return }
-      switch outcome {
-      case .success: self.writeFailures[threadID] = nil
-      case .failed: self.writeFailures[threadID] = .threadWriteFailed
-      case .timedOut: self.writeFailures[threadID] = .threadWriteTimeout
-      case .cancelled: break
+      let outcome: ThreadWriteOutcome
+      if let self, self.epoch == generation, !Task.isCancelled {
+        outcome = await Self.boundedWrite(clock: clock, race: race, operation: operation)
+      } else {
+        await race.finish(.cancelled)
+        outcome = .cancelled
       }
-      if self.writeTokens[threadID] == token {
-        self.writeTasks[threadID] = nil
-        self.writeTokens[threadID] = nil
+      if let self {
+        self.writeLifetimes[token] = nil
+        if self.writeTokens[threadID] == token {
+          self.writeTasks[threadID] = nil
+          self.writeTokens[threadID] = nil
+          if self.epoch != generation || state.reported || outcome == .success
+            || outcome == .cancelled
+          {
+            self.writeStates[threadID] = nil
+          }
+        }
+      }
+      state.cancel = nil
+      await completionRace.finish(.success)
+    }
+    state.completion = completion
+    state.cancel = {
+      completion.cancel()
+      Task {
+        await race.finish(.cancelled)
+        await completionRace.finish(.cancelled)
       }
     }
+    writeTasks[threadID] = completion
   }
   public func settleThreadWrites(_ threadID: String) async throws {
-    let tail = writeTasks[threadID]
-    await tail?.value
+    guard let state = writeStates[threadID] else {
+      await writeTasks[threadID]?.value
+      try Task.checkCancellation()
+      return
+    }
+    let outcome = await state.result?.value
     try Task.checkCancellation()
-    if let failure = writeFailures.removeValue(forKey: threadID) { throw failure }
+    if outcome == .cancelled { throw CancellationError() }
+    if !state.reported {
+      state.reported = true
+      if writeTasks[threadID] == nil { writeStates[threadID] = nil }
+      if outcome == .failed { throw SubmissionError.threadWriteFailed }
+      if outcome == .timedOut { throw SubmissionError.threadWriteTimeout }
+    }
+    if await state.completionResult?.value == .cancelled { throw CancellationError() }
+    await state.completion?.value
+    try Task.checkCancellation()
   }
 }

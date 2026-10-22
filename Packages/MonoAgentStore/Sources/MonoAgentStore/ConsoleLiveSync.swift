@@ -15,7 +15,7 @@ extension ConsoleStore {
     }
   }
   func connectStream() async {
-    guard enabled, started, !backgrounded else { return }
+    guard enabled, started, !stopping, !backgrounded else { return }
     subscriptionRevision &+= 1
     let subscription = subscriptionRevision
     streamTask?.cancel()
@@ -294,7 +294,7 @@ extension ConsoleStore {
       await flushAuthored()
       await flushCache()
     case .active:
-      guard backgrounded, enabled, started else { return }
+      guard backgrounded, enabled, started, !stopping else { return }
       backgrounded = false
       if !hydrated {
         await initialize()
@@ -307,10 +307,15 @@ extension ConsoleStore {
     }
   }
   public func stop() async {
-    enabled = false
+    guard !stopping else { return }
+    stopping = true
+    stopped = true
     backgrounded = true
     await stopEffects()
+    // Finish the last authored checkpoint before this lifetime becomes disabled.
     await flushAuthored()
+    enabled = false
+    stopping = false
     await flushCache()
     await discardStagedUploads()
   }
@@ -333,10 +338,9 @@ extension ConsoleStore {
     recoveries.removeAll()
     repairDirty.removeAll()
     repairWanted.removeAll()
-    for task in writeTasks.values { task.cancel() }
-    writeTasks.removeAll()
-    writeTokens.removeAll()
-    writeFailures.removeAll()
+    for state in writeLifetimes.values { state.cancel?() }
+    // Cancel callers (including queued ones), never the physical ordering barrier.
+    writeStates = writeStates.filter { writeTasks[$0.key] != nil }
     connection = .offline
     pendingDiscontinuity = false
     markGap(bootstrap: true)

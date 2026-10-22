@@ -111,6 +111,9 @@ public actor FileConsoleRepository: ConsoleRepository {
     guard !deletedProfiles.contains(namespace.profileID) else {
       throw ConsoleStorageError.unavailable
     }
+    guard record.pending.count <= ConsoleBounds.journalCount else {
+      throw ConsoleStorageError.byteBudget
+    }
     let url = file(namespace, "journal")
     _ = try loadJournal(namespace)
     return try write(record, at: url, revision: record.revision, budget: ConsoleBounds.journalBytes)

@@ -4,7 +4,8 @@ import MonoAgentKit
 import MonoAgentStore
 import Testing
 
-@Test func replacedConsoleRecordsRetainFirstUnlockProtectionAndBackupExclusion() async throws {
+@MainActor
+private func verifyReplacedRecords(_ verify: (URL, URL) throws -> Void) async throws {
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   defer { try? FileManager.default.removeItem(at: directory) }
   let repository = FileConsoleRepository(directory: directory)
@@ -23,21 +24,30 @@ import Testing
     try await repository.saveJournal(journal, namespace: namespace)
     let folder = directory.appendingPathComponent(profile.id.uuidString).appendingPathComponent(
       namespace.identity)
-    #expect(
-      try folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
     for name in ["cache", "authored", "journal"] {
-      let file = folder.appendingPathComponent(name + "-v1.json")
-      #expect(
-        try file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
-      // CoreSimulator exposes no Data Protection attribute; assert it on physical iOS.
-      #if os(iOS) && !targetEnvironment(simulator)
-        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-        #expect(
-          (attributes[.protectionKey] as? FileProtectionType
-            ?? (attributes[.protectionKey] as? String).map(FileProtectionType.init(rawValue:)))
-            == .completeUntilFirstUserAuthentication
-        )
-      #endif
+      try verify(folder, folder.appendingPathComponent(name + "-v1.json"))
     }
   }
 }
+@MainActor @Test func replacedConsoleRecordsRetainBackupExclusion() async throws {
+  try await verifyReplacedRecords { folder, file in
+    let folderValues = try folder.resourceValues(forKeys: [.isExcludedFromBackupKey])
+    let fileValues = try file.resourceValues(forKeys: [.isExcludedFromBackupKey])
+    #expect(folderValues.isExcludedFromBackup == true)
+    #expect(fileValues.isExcludedFromBackup == true)
+  }
+}
+#if os(iOS) && !targetEnvironment(simulator)
+  // Physical-device-only: CoreSimulator exposes no Data Protection attribute. Not CI coverage.
+  @MainActor @Test func physicalDeviceOnlyReplacedConsoleRecordsRetainFirstUnlockProtection()
+    async throws
+  {
+    try await verifyReplacedRecords { _, file in
+      let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+      #expect(
+        (attributes[.protectionKey] as? FileProtectionType
+          ?? (attributes[.protectionKey] as? String).map(FileProtectionType.init(rawValue:)))
+          == .completeUntilFirstUserAuthentication)
+    }
+  }
+#endif
