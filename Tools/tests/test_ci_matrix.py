@@ -25,6 +25,7 @@ raise unless j['required']['if'] == 'always()'
 
     def test_merge_requires_complete_family_indexes(self):
         matrix = json.loads((ROOT / "Tools/screenshot-matrix.json").read_text())["entries"]
+        (ROOT / ".build").mkdir(exist_ok=True)  # fresh CI checkouts have no .build
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as directory:
             output = pathlib.Path(directory)
             for family in ("iPhone", "iPad"):
