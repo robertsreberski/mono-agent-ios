@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 import MonoAgentKit
+import MonoAgentStore
 import Testing
 
 @testable import MonoAgent
@@ -98,16 +99,19 @@ struct TranscriptPresentationTests {
   }
   @Test func scrollFollowRequiresUserProximityAndPagingNeverFollows() {
     var policy = TranscriptFollowPolicy()
-    policy.scrolled(distanceFromBottom: 1000, userDriven: false)
+    policy.update(
+      .init(contentHeight: 2000, viewportHeight: 1000, contentOffset: 0), userDriven: false)
     #expect(policy.shouldFollowWrite)
-    policy.scrolled(distanceFromBottom: 1000, userDriven: true)
+    policy.update(
+      .init(contentHeight: 2000, viewportHeight: 1000, contentOffset: 0), userDriven: true)
     #expect(!policy.shouldFollowWrite)
     policy.jump()
     policy.paging = true
     #expect(!policy.shouldFollowWrite)
     policy.paging = false
     #expect(policy.shouldFollowWrite)
-    policy.scrolled(distanceFromBottom: 40, userDriven: true)
+    policy.update(
+      .init(contentHeight: 2000, viewportHeight: 1000, contentOffset: 960), userDriven: true)
     #expect(policy.following)
   }
   @Test func unreadablePartsAndFixtureDeltasDecodeWithoutWholeMessageFailure() throws {

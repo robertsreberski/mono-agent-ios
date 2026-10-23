@@ -95,7 +95,7 @@
     func send(_ request: URLRequest) throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let scenario, scenario.isTranscript,
-        let response = try TranscriptFixture.response(request, scenario: scenario)
+        let response = try TranscriptFixture.response(request, scenario: scenario, theme: theme)
       {
         return response
       }

@@ -91,14 +91,17 @@ struct ConversationScreen: View {
 
   private var runStatus: (kind: StatusKind, label: String)? {
     guard let thread else { return nil }
-    if thread.runState.status == "running" {
-      let confirmed =
-        store.conversations[thread.id]?.runningConfirmed == true
-        || store.isRunningConfirmed(threadID: thread.id)
-      return confirmed ? (.connecting, "Running") : (.stale, "Last known running")
-    }
-    if let error = DashboardModel.outcomeError(thread) { return (.failed, error) }
-    return (.disconnected, "Idle")
+    return ConversationHeaderModel.status(
+      thread, confirmed: store.isRunningConfirmed(threadID: thread.id))
+  }
+
+  private var knownRoute: ConversationHeaderModel.Route? {
+    guard let thread else { return nil }
+    let state = store.conversations[thread.id]
+    let latest = state?.orderedMessageIDs.reversed().lazy.compactMap {
+      state?.messageStates[$0]?.message.attribution
+    }.first(where: ConversationHeaderModel.hasReportedModel)
+    return ConversationHeaderModel.route(thread, agent: agent, latest: latest)
   }
 
   private var header: some View {
@@ -111,15 +114,8 @@ struct ConversationScreen: View {
         HStack(spacing: DesignSpacing.md) { facts }
         VStack(alignment: .leading, spacing: DesignSpacing.sm) { facts }
       }
-      if let thread {
-        let routeModel = thread.runModel ?? agent?.runSettings.effective.model
-        let effort = thread.runEffort ?? agent?.runSettings.effective.effort
-        RouteBadge(
-          model: routeModel ?? "Model not reported", effort: effort ?? "",
-          detail: "Current settings · " + TranscriptPresentation.route(routeModel, effort)
-            + (thread.runModel != nil || thread.runEffort != nil
-              ? " · conversation override" : " · inherited agent defaults")
-            + (agent == nil ? " · agent unavailable" : ""))
+      if let route = knownRoute {
+        RouteBadge(model: route.label, effort: route.effort ?? "", detail: route.detail)
       }
       if let thread, let project = DashboardModel.projectLabel(thread, projects: store.projects) {
         ProjectChip(project.name, color: LabelColor(serverValue: project.color))

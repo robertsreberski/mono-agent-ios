@@ -33,8 +33,7 @@ struct ConversationTranscript<Header: View>: View {
               state.orderedMessageIDs.first { visibleIDs.contains($0) }
               ?? state.orderedMessageIDs.first
             paging = true
-            policy.following = false
-            policy.paging = true
+            policy.beginPaging()
             Task {
               await store.loadOlder()
               if let anchor { scrollPosition.scrollTo(id: anchor, anchor: .top) }
@@ -65,29 +64,26 @@ struct ConversationTranscript<Header: View>: View {
       .frame(maxWidth: DesignMetrics.readableWidth)
       .frame(maxWidth: .infinity)
     }
-    .environment(\.transcriptFollowing, $policy.following)
     .scrollPosition($scrollPosition)
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     .onScrollPhaseChange { _, next in phase = next }
     .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { visibleIDs = $0 }
-    .onScrollGeometryChange(for: ScrollMeasure.self) { geometry in
-      ScrollMeasure(
-        height: geometry.contentSize.height,
-        bottom: max(
-          0,
-          geometry.contentSize.height + geometry.contentInsets.bottom - geometry.contentOffset.y
-            - geometry.containerSize.height))
+    .onScrollGeometryChange(for: TranscriptScrollMetrics.self) { geometry in
+      TranscriptScrollMetrics(
+        contentHeight: geometry.contentSize.height,
+        viewportHeight: geometry.containerSize.height, contentOffset: geometry.contentOffset.y,
+        topInset: geometry.contentInsets.top, bottomInset: geometry.contentInsets.bottom)
     } action: { old, next in
-      policy.scrolled(
-        distanceFromBottom: next.bottom, userDriven: phase == .interacting || phase == .decelerating
-      )
-      if old.height != next.height && policy.shouldFollowWrite && phase == .idle {
+      policy.update(next, userDriven: phase == .interacting || phase == .decelerating)
+      if old.contentHeight != next.contentHeight && policy.shouldScrollAfterWrite(next)
+        && phase == .idle
+      {
         scrollPosition.scrollTo(edge: .bottom)
       }
     }
     .accessibilityIdentifier("conversation-transcript")
     .safeAreaBar(edge: .bottom) {
-      if !policy.following {
+      if policy.shouldShowJump {
         HStack {
           Spacer()
           Button("Jump to latest", systemImage: "arrow.down") {
@@ -146,13 +142,4 @@ struct ConversationTranscript<Header: View>: View {
     }
   }
 
-  private struct ScrollMeasure: Equatable {
-    let height: Double
-    let bottom: Double
-  }
-}
-
-/// User inspection is a scroll owner too: disclosure/repair layout must not pull it away.
-extension EnvironmentValues {
-  @Entry var transcriptFollowing: Binding<Bool> = .constant(true)
 }

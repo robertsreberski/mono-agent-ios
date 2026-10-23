@@ -209,11 +209,11 @@ enum DashboardModel {
       if byID[thread.id] == nil { order.append(thread.id) }
       byID[thread.id] = thread
     }
-    for thread in cached {
+    for thread in cached where byID[thread.id] != nil || presentation(thread).active {
       if byID[thread.id] == nil { order.append(thread.id) }
       byID[thread.id] = thread
     }
-    return order.compactMap { byID[$0] }
+    return order.compactMap { byID[$0] }.filter { presentation($0).active }
   }
 
   /// Grouped into console agent order, most recent first; unknown agents drop out.
@@ -279,13 +279,17 @@ enum DashboardModel {
     agents: [WebAgentSummary]
   ) -> RunningProjection {
     if authoritative, let fleet {
-      let groups = groupRunning(fleet.threads, agents: agents)
+      let settled = fleet.threads.filter { !presentation($0).active }
+      let groups = groupRunning(fleet.threads.filter { presentation($0).active }, agents: agents)
+      var counts = fleet.runningCounts
+      for thread in settled { counts[thread.sourceId] = max(0, (counts[thread.sourceId] ?? 0) - 1) }
       return RunningProjection(
-        groups: groups, authoritative: true, total: fleet.total, truncated: fleet.truncated,
-        counts: fleet.runningCounts)
+        groups: groups, authoritative: true, total: max(0, fleet.total - settled.count),
+        truncated: fleet.truncated,
+        counts: counts)
     }
     let merged = mergeRunning(
-      cached: cached.filter { presentation($0).active }, listed: (fleet?.threads ?? []) + listed)
+      cached: cached, listed: (fleet?.threads ?? []) + listed)
     let groups = groupRunning(merged, agents: agents)
     return RunningProjection(
       groups: groups, authoritative: false, total: runningCount(groups), truncated: false,

@@ -260,14 +260,3 @@ enum TranscriptPresentation {
     }
   }
 }
-
-struct TranscriptFollowPolicy: Equatable {
-  var following = true
-  var paging = false
-  mutating func scrolled(distanceFromBottom: Double, userDriven: Bool) {
-    guard userDriven, !paging else { return }
-    following = distanceFromBottom <= 80
-  }
-  var shouldFollowWrite: Bool { following && !paging }
-  mutating func jump() { following = true }
-}

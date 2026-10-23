@@ -186,7 +186,6 @@ struct ReasoningDisclosure: View {
   let text: String
   let message: WebMessage
   let store: ConsoleStore
-  @Environment(\.transcriptFollowing) private var following
   @State private var userOpen: Bool?
   private var running: Bool { message.status == "running" }
   var body: some View {
@@ -200,7 +199,6 @@ struct ReasoningDisclosure: View {
         expanded: Binding(
           get: { userOpen ?? running },
           set: {
-            following.wrappedValue = false
             userOpen = $0
           })
       ) {
@@ -215,7 +213,6 @@ struct ToolClusterView: View {
   let calls: [WebToolCall]
   let message: WebMessage
   let store: ConsoleStore
-  @Environment(\.transcriptFollowing) private var following
   @State private var expanded = false
   var body: some View {
     let failures = calls.filter(TranscriptPresentation.failed).count
@@ -233,7 +230,6 @@ struct ToolClusterView: View {
       expanded: Binding(
         get: { expanded },
         set: {
-          following.wrappedValue = false
           expanded = $0
         })
     ) {
@@ -248,7 +244,6 @@ struct ToolCallView: View {
   let call: WebToolCall
   let message: WebMessage
   let store: ConsoleStore
-  @Environment(\.transcriptFollowing) private var following
   @State private var expanded = false
   @State private var loading = false
   @State private var failedRepair = false
@@ -266,7 +261,6 @@ struct ToolCallView: View {
       expanded: Binding(
         get: { expanded },
         set: {
-          following.wrappedValue = false
           expanded = $0
         })
     ) {
@@ -286,7 +280,6 @@ struct ToolCallView: View {
         Text("Preview only" + (call.resultBytes ?? call.argsBytes).map { " · \($0) chars" }.orEmpty)
           .designFont(.caption)
         Button(loading ? "Loading…" : "Show full output") {
-          following.wrappedValue = false
           loading = true
           failedRepair = false
           Task {

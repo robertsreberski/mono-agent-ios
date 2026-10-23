@@ -36,8 +36,11 @@
         $0.id == DashboardFixture.openThreadID
       }!
       thread.title = "Native transcript sample"
+      thread.runModel = "sample:large"
+      thread.runEffort = "high"
       thread.runState = try decode(
-        #"{"id":"turn-transcript","status":"running","startedAt":"2030-01-02T11:59:00Z"}"#)
+        #"{"id":"turn-transcript","status":"running","model":"sample:large","effort":"high","startedAt":"2030-01-02T11:59:00Z"}"#
+      )
       if scenario != .conversationStreaming { thread.runState.status = "complete" }
       thread.messageCount = scenario == .conversationLong ? 540 : 2
       return thread
@@ -130,11 +133,47 @@
         nextCursor: scenario == .conversationLong ? "transcript-older" : nil,
         savedAt: DashboardFixture.now)
     }
-    static func response(_ request: URLRequest, scenario: StoreScenario) throws -> HTTPResponse? {
+    static func replacingSummary(_ rows: [WebThread], scenario: StoreScenario) throws -> [WebThread]
+    {
+      try rows.map { $0.id == DashboardFixture.openThreadID ? try thread(scenario) : $0 }
+    }
+    static func fleet(_ scenario: StoreScenario) throws -> WebActiveThreads {
+      var value = try DashboardFixture.fleet()
+      value.threads = try replacingSummary(value.threads, scenario: scenario).filter {
+        $0.runState.status == "running"
+      }
+      value.total = value.threads.count
+      value.runningCounts = Dictionary(grouping: value.threads, by: \.sourceId).mapValues(\.count)
+      return value
+    }
+    static func bootstrap(_ scenario: StoreScenario, theme: String) throws -> ApiBootstrap {
+      var value = try DashboardFixture.bootstrap(theme: theme)
+      value.threads = try replacingSummary(value.threads, scenario: scenario)
+      let active = try fleet(scenario)
+      value.activeThreads = active
+      for index in value.agents.indices {
+        value.agents[index].runningCount =
+          active.runningCounts[value.agents[index].sourceId] ?? 0
+      }
+      return value
+    }
+    static func response(_ request: URLRequest, scenario: StoreScenario, theme: String) throws
+      -> HTTPResponse?
+    {
       guard let url = request.url else { return nil }
       let base = "/api/v1/threads/" + DashboardFixture.openThreadID
       let value: JSONValue
-      if url.path == base {
+      if url.path == "/api/v1/bootstrap" {
+        value = try json(bootstrap(scenario, theme: theme))
+      } else if url.path == "/api/v1/threads/active" {
+        value = try json(fleet(scenario))
+      } else if url.path == "/api/v1/threads",
+        let response = try DashboardFixture.response(for: request, empty: false, theme: theme)
+      {
+        var page = try JSONDecoder().decode(ApiThreadPage.self, from: response.data)
+        page.threads = try replacingSummary(page.threads, scenario: scenario)
+        value = try json(page)
+      } else if url.path == base {
         value = .object([
           "thread": try json(thread(scenario)), "messages": try json(messages(scenario)),
           "messagesNextCursor": scenario == .conversationLong ? .string("transcript-older") : .null,
@@ -152,7 +191,7 @@
     }
     static func terminalTurn() throws -> ApiEvent {
       try decode(
-        #"{"id":"sample-terminal-turn","version":1,"type":"turn.changed","at":"2030-01-02T12:00:00Z","threadId":"t-atlas-launch","payload":{"turn":{"id":"turn-transcript","status":"complete","startedAt":"2030-01-02T11:59:00Z","finishedAt":"2030-01-02T12:00:00Z"}}}"#
+        #"{"id":"sample-terminal-turn","version":1,"type":"turn.changed","at":"2030-01-02T12:00:00Z","threadId":"t-atlas-launch","payload":{"turn":{"id":"turn-transcript","status":"complete","model":"sample:large","effort":"high","startedAt":"2030-01-02T11:59:00Z","finishedAt":"2030-01-02T12:00:00Z"}}}"#
       )
     }
     static func delta(_ index: Int) throws -> ApiEvent {

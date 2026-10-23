@@ -43,6 +43,8 @@ import XCTest
     } else if scenario == "conversation-tools" {
       XCTAssertTrue(element(app, "tool-cluster").waitForExistence(timeout: 10))
       element(app, "tool-cluster").tap()
+      XCTAssertFalse(
+        element(app, "jump-to-latest").exists, "Expanding activity is not scrolling away")
       let call = element(app, "tool-call-sample-tool-1")
       XCTAssertTrue(call.waitForExistence(timeout: 5))
       call.tap()
@@ -65,6 +67,21 @@ import XCTest
     } else {
       XCTAssertTrue(element(app, "tool-cluster").waitForExistence(timeout: 10))
     }
+    if scenario == "conversation-tools" {
+      XCTAssertFalse(
+        element(app, "jump-to-latest").exists, "Tools at the bottom must not offer Jump to latest")
+    }
+    if scenario == "conversation-transcript" || scenario == "conversation-streaming" {
+      let idle = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in
+          self.element(app, "conversation-run-state").label.contains("Idle")
+        }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 5), .completed)
+      XCTAssertTrue(element(app, "route-badge").label.contains("sample:large"))
+    }
+    XCTAssertFalse(
+      element(app, "running-row-t-atlas-launch").exists, "Settled detail must not remain in Running"
+    )
     let rendered = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in screenshotHasContent(XCUIScreen.main.screenshot()) },
       object: nil)

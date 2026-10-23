@@ -98,7 +98,7 @@
           catalogSection("Rich documents") {
             RichTextDocumentView(
               source:
-                "## Release notes\n- [x] **Bold** and `code`\n\n| Item | Status |\n| --- | --- |\n| Sample | Ready |"
+                "## Release notes\n- [x] **Bold** and `code`\n\n| Item | Status |\n| --- | --- |\n| Sample | Complete |"
             )
           }
           catalogSection("Route badge") {

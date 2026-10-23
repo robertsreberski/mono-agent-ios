@@ -73,6 +73,9 @@ extension ConsoleStore {
     let mapped = rows.filter { acceptSummary($0, fetchedAt: fetchedAt) }.map { row -> WebThread in
       noteSummary(row)
       patchSummary(row, listed: true)
+      if let detail = conversations[row.id]?.record.thread, detail.revision >= row.revision {
+        return detail
+      }
       let held = old.first { $0.id == row.id }
       return held.map { $0.revision >= row.revision ? $0 : row } ?? row
     }
@@ -109,6 +112,7 @@ extension ConsoleStore {
         if let state = conversations[id], began == (observations[id] ?? 0) {
           state.freshness = .fresh
           state.runningConfirmed = true
+          noteSummary(state.thread)
         }
       case .modified(let value, let validator):
         let now = await clock.wallNow()
@@ -134,6 +138,7 @@ extension ConsoleStore {
           !wasSelected || selection == selected
         else { return }
         hold(record)
+        patchSummary(record.thread)
         conversations[id]?.etag = validator
         conversations[id]?.freshness = began == (observations[id] ?? 0) ? .fresh : .stale
         noteSummary(record.thread)
@@ -205,6 +210,9 @@ extension ConsoleStore {
     value.threads = incoming.threads.filter { acceptSummary($0, fetchedAt: fetchedAt) }.map { row in
       noteSummary(row)
       patchSummary(row, listed: true)
+      if let detail = conversations[row.id]?.record.thread, detail.revision >= row.revision {
+        return detail
+      }
       if let held = activeFleet?.threads.first(where: { $0.id == row.id }),
         held.revision >= row.revision
       {

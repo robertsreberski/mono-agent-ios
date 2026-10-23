@@ -54,7 +54,9 @@ import Testing
         #expect(store.agents.count == 4)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.count == 8)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.nextCursor != nil)
-        #expect(store.activeFleet?.runningCounts[DashboardFixture.atlas] == 3)
+        #expect(
+          store.activeFleet?.runningCounts[DashboardFixture.atlas]
+            == (scenario.isTranscript && scenario != .conversationStreaming ? 2 : 3))
         #expect(store.isRunningConfirmed(threadID: "t-atlas-launch"))
         let notes = try #require(
           store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.first {

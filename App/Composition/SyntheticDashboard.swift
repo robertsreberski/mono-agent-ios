@@ -305,7 +305,9 @@
       let saved = now.addingTimeInterval(-15 * 60)
       var cache = CacheRecord()
       cache.revision = 1
-      cache.bootstrap = try bootstrap(empty: empty, theme: theme)
+      cache.bootstrap =
+        try transcript.map { try TranscriptFixture.bootstrap($0, theme: theme) }
+        ?? bootstrap(empty: empty, theme: theme)
       if !empty {
         cache.buckets = [
           .init(
@@ -315,7 +317,13 @@
           .init(key: .init(sourceID: quill), threads: try threads(source: quill), savedAt: saved),
         ]
       }
-      if let transcript { cache.conversations = [try TranscriptFixture.cached(transcript)] }
+      if let transcript {
+        cache.conversations = [try TranscriptFixture.cached(transcript)]
+        for index in cache.buckets.indices {
+          cache.buckets[index].threads = try TranscriptFixture.replacingSummary(
+            cache.buckets[index].threads, scenario: transcript)
+        }
+      }
       try await repository.saveCache(cache, namespace: store.namespace)
       var authored = AuthoredRecord()
       authored.revision = 1
