@@ -35,6 +35,10 @@ public final class ConversationState {
         runState: thread.runState.id == id ? thread.runState : nil)
     }
   }
+  /// Ephemeral server aggregate; never fabricate a total from a partial transcript.
+  public internal(set) var usage: WebThreadUsage?
+  public internal(set) var usageRevision: Int?
+  @ObservationIgnored var usageRequest: UUID?
   @ObservationIgnored var record: CachedConversation
   @ObservationIgnored var etag: String?
   init(_ record: CachedConversation) {

@@ -23,6 +23,7 @@ Screens must not instantiate API clients or submit directly.
 - Commands: `start`, `hydrate`, `select(sourceID:archived:threadID:)`, `loadOlder`,
   `refreshBucket(_:older:)`, `markVisible`, `reconcile`, `repairMessage`,
   `repairToolOutput`, `cancel(threadID:)`, `scenePhaseChanged`, `clearErrorMessage`, and `stop`.
+- Activity: `refreshJob(threadID:jobID:)` refreshes a held job with monotonic lifecycle merging; `refreshUsage(threadID:)` publishes ephemeral `ConversationState.usage` and its summary revision. Both refuse offline/background/stopped calls and discard late results. `JobPresentation`, `JobShelf` and `UsagePresentation` are pure presentation decisions. The pinned API has no per-job stop or full-log route; output references are not URLs.
 - Search: `searchThreads(sourceID:query:) -> ThreadSearchResult` is the web console's
   server-side `chats`-scope search. Trimmed queries shorter than `minimumSearchQuery` (2)
   return an empty result without a request; an offline-hydrated, stopped or backgrounded
