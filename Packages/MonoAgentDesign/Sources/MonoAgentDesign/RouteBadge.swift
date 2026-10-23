@@ -12,11 +12,11 @@ public struct RouteBadge: View {
     self.detail = detail
   }
   public var body: some View {
-    Label(
-      [model, effort == "none" ? "off" : effort].filter { !$0.isEmpty }.joined(separator: " · "),
-      systemImage: "sparkles"
+    // Web `.route-badge`: `model · effort` in soft 10 pt text, no fill.
+    Text(
+      [model, effort.isEmpty ? "—" : effort == "none" ? "off" : effort].joined(separator: " · ")
     )
-    .designFont(.caption).foregroundStyle(.secondary)
+    .webFont(.rowSubtitle).foregroundStyle(WebColor.textSoft.color).lineLimit(1)
     .accessibilityLabel(detail).help(detail).accessibilityIdentifier("route-badge")
   }
 }

@@ -340,15 +340,31 @@ import XCTest
     return XCTWaiter.wait(for: [expectation], timeout: 15) == .completed
   }
   private func scrollTo(_ app: XCUIApplication, _ target: XCUIElement) -> Bool {
+    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    let composer = element(app, "composer")
     for _ in 0..<6 {
-      if target.waitForExistence(timeout: 1) && target.isHittable { return true }
+      // Hittable, inside the transcript and not under the floating composer bar.
+      if target.waitForExistence(timeout: 1) && target.isHittable
+        && (!transcript.exists || transcript.frame.contains(target.frame.center))
+        && !(composer.exists && composer.frame.contains(target.frame.center))
+      {
+        return true
+      }
       app.scrollViews.matching(identifier: "conversation-transcript").firstMatch.swipeUp()
     }
     return target.exists
   }
+  /// The keyboard lowers by dragging the transcript (`scrollDismissesKeyboard`), as there is
+  /// no separate dismiss button any more.
   private func dismissKeyboard(_ app: XCUIApplication) {
-    let hide = app.buttons["composer-hide-keyboard"].firstMatch
-    if app.keyboards.firstMatch.exists, hide.exists { hide.tap() }
+    guard app.keyboards.firstMatch.exists else { return }
+    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    let target = transcript.exists ? transcript : app.scrollViews.firstMatch
+    // A downward drag always scrolls a transcript resting at its end, which lowers the keyboard.
+    let from = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+    from.press(
+      forDuration: 0.05,
+      thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
   }
   private func capture(
     _ app: XCUIApplication, _ scenario: String, _ appearance: String, variant: String?
@@ -373,4 +389,8 @@ import XCTest
     from.press(forDuration: 0.05, thenDragTo: to)
   }
 
+}
+
+extension CGRect {
+  fileprivate var center: CGPoint { CGPoint(x: midX, y: midY) }
 }

@@ -8,28 +8,44 @@ struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
   let startsTurn: Bool
+  private var isUser: Bool { row.message.role == "user" }
+  private var role: String {
+    isUser ? "You" : row.message.role == "assistant" ? "Assistant" : "System"
+  }
+  /// Web message layout: the user's turn is a neutral bubble on the trailing edge with its
+  /// actions below; assistant prose sits directly on the panel (no bubble, card or avatar).
   var body: some View {
     let message = row.message
-    VStack(alignment: .leading, spacing: DesignSpacing.md) {
-      if startsTurn { Divider().accessibilityLabel("New turn") }
-      HStack(alignment: .firstTextBaseline) {
-        Text(message.role == "user" ? "You" : message.role == "assistant" ? "Assistant" : "System")
-          .designFont(.headline)
-        Spacer()
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-          Text(
-            DashboardModel.relativeTime(
-              message.createdAt, now: context.date.addingTimeInterval(store.serverClockOffset))
-          )
-          .designFont(.caption).foregroundStyle(.secondary)
-          .accessibilityLabel(
-            TranscriptPresentation.date(message.createdAt)?.formatted() ?? "Time unavailable")
-        }
-      }.accessibilityElement(children: .combine)
+    VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
+      if isUser {
+        UserBubble { messageContent(message) }
+      } else {
+        messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
+      }
+      // Web: the action row belongs to a settled message, not one still being written.
+      if message.status != "running" { actions(message) }
+    }
+    .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    // The whole row (not only its glyphs) opens the message menu, as hovering it does on the web.
+    .contentShape(Rectangle())
+    .quotable(message)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("message-" + message.id)
+  }
+
+  @ViewBuilder private func messageContent(_ message: WebMessage) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
       if let quote = message.quote {
-        Label(quote.text, systemImage: "quote.opening").designFont(.supporting).foregroundStyle(
-          .secondary
-        ).textSelection(.enabled)
+        Text(quote.text)
+          .font(.system(size: 11)).lineSpacing(3).lineLimit(4)
+          .foregroundStyle(WebColor.textSoft.color)
+          .padding(.vertical, 8).padding(.horizontal, 10)
+          .background(WebColor.surface.color.opacity(0.68), in: RoundedRectangle(cornerRadius: 7))
+          .overlay(alignment: .leading) {
+            Rectangle().fill(WebColor.lineStrong.color).frame(width: 2)
+          }
+          .textSelection(.enabled)
+          .accessibilityLabel("Quote: " + quote.text)
       }
       ForEach(TranscriptPresentation.clusters(message.parts)) { entry in
         if entry.parts.count > 1 {
@@ -48,10 +64,12 @@ struct TranscriptMessageView: View {
           feature: "File viewer")
       }
       if message.parts.isEmpty && message.status == "running" {
-        Label("Thinking…", systemImage: "sparkles").designFont(.supporting)
+        Label("Thinking…", systemImage: "sparkles").webFont(.reasoningTrigger)
+          .foregroundStyle(WebColor.textMuted.color)
       }
       if let status = message.liveInputStatus {
-        Text("Follow-up · " + status).designFont(.caption).foregroundStyle(.secondary)
+        Text("Follow-up · " + status).webFont(.messageAction)
+          .foregroundStyle(WebColor.textMuted.color)
       }
       if message.role == "assistant" {
         RunAttributionView(message: message, store: store)
@@ -60,15 +78,35 @@ struct TranscriptMessageView: View {
         StatusIndicator(.failed, label: "Response " + message.status)
       }
     }
-    .padding(DesignSpacing.md)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(
-      message.role == "user" ? DesignColor.contentSurface : .clear,
-      in: RoundedRectangle(cornerRadius: DesignRadius.md)
-    )
-    .quotable(message)
-    .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("message-" + message.id)
+  }
+
+  /// Web `.message-actions`: always visible on touch, Copy plus the message time.
+  private func actions(_ message: WebMessage) -> some View {
+    HStack(spacing: 4) {
+      if isUser { Spacer(minLength: 0) }
+      TimelineView(.periodic(from: .now, by: 60)) { context in
+        Text(
+          DashboardModel.relativeTime(
+            message.createdAt, now: context.date.addingTimeInterval(store.serverClockOffset))
+        )
+        .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
+        // The role is spoken with the time, as the old visible "You"/"Assistant" header was.
+        .accessibilityLabel(
+          role + ", "
+            + (TranscriptPresentation.date(message.createdAt)?.formatted() ?? "time unavailable"))
+      }
+      .padding(.horizontal, isUser ? 0 : 7)
+      .opacity(message.parts.isEmpty ? 0 : 1)
+      if !QuoteFormatting.text(of: message).isEmpty {
+        MessageActionButton("Copy", systemImage: "doc.on.doc") {
+          UIPasteboard.general.string = QuoteFormatting.text(of: message)
+        }
+        .accessibilityIdentifier("message-copy")
+      }
+      if !isUser { Spacer(minLength: 0) }
+    }
+    .padding(.top, 5)
+    .padding(.leading, isUser ? 0 : -7)
   }
 }
 
@@ -78,7 +116,7 @@ struct TranscriptPartView: View {
   let store: ConsoleStore
   var body: some View {
     switch part {
-    case .text(let value): RichTextDocumentView(source: value.text)
+    case .text(let value): RichTextDocumentView(source: value.text, fill: message.role != "user")
     case .reasoning(let value):
       ReasoningDisclosure(text: value.text, message: message, store: store)
     case .toolCall(let call):
@@ -88,11 +126,11 @@ struct TranscriptPartView: View {
         ToolCallView(call: call, message: message, store: store)
       }
     case .conversationMarker(let value):
-      Label(
+      TranscriptMarkerRow(
         TranscriptPresentation.marker(value),
         systemImage: value.kind == "project" ? "folder" : "sparkles"
       )
-      .designFont(.supporting).foregroundStyle(.secondary).textSelection(.enabled)
+      .opacity(value.kind == "project" ? 0.62 : 1)
       .accessibilityIdentifier("conversation-marker")
     case .steer(let value):
       VStack(alignment: .leading) {
@@ -144,7 +182,7 @@ struct TranscriptPartView: View {
     case .telemetry(let value):
       if let marker = TranscriptPresentation.compaction(value, running: message.status == "running")
       {
-        Text(marker).designFont(.supporting).foregroundStyle(.secondary)
+        TranscriptMarkerRow(marker, systemImage: "arrow.triangle.2.circlepath")
       } else if value.event == "context_usage"
         || UsagePresentation.layers(value.data).contains(where: {
           $0["kind"] == .string("context_usage")
@@ -193,7 +231,7 @@ struct ReasoningDisclosure: View {
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { context in
       ActivityDisclosure(
-        running ? "Thinking…" : "Reasoning", summary: String(text.prefix(52)),
+        running ? "Thinking…" : "Reasoning",
         status: running ? .connecting : .disconnected,
         detail: TranscriptPresentation.elapsed(
           message, now: context.date.addingTimeInterval(store.serverClockOffset)),
@@ -204,7 +242,12 @@ struct ReasoningDisclosure: View {
             userOpen = $0
           })
       ) {
-        Text(text).designFont(.body).textSelection(.enabled)
+        Text(text).webFont(.reasoningText).foregroundStyle(WebColor.textSoft.color)
+          .textSelection(.enabled)
+          .padding(.vertical, 4).padding(.leading, 11)
+          .overlay(alignment: .leading) {
+            Rectangle().fill(WebColor.lineStrong.color).frame(width: 1)
+          }
       }
     }.onChange(of: running) { _, current in if !current { userOpen = false } }
 
@@ -308,7 +351,14 @@ struct RunAttributionView: View {
   let message: WebMessage
   let store: ConsoleStore
   var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+    if message.attribution != nil {
+      AttributionBox { lines }
+    } else {
+      lines.webFont(.runAttribution).foregroundStyle(WebColor.textMuted.color)
+    }
+  }
+  @ViewBuilder private var lines: some View {
+    VStack(alignment: .leading, spacing: 6) {
       if let value = message.attribution {
         Text(TranscriptPresentation.attribution(value, status: message.status)).textSelection(
           .enabled
@@ -352,7 +402,7 @@ struct RunAttributionView: View {
               message, now: context.date.addingTimeInterval(store.serverClockOffset)),
           ].compactMap { $0 }.joined(separator: " · "))
       }
-    }.designFont(.caption).foregroundStyle(.secondary)
+    }
   }
   private var cost: CostAmount {
     // Never apply today's cumulative run cost to a historical turn.

@@ -108,6 +108,40 @@ final class ScenarioTests: XCTestCase {
     app.terminate()
   }
 
+  /// iPhone: the web header's bare back chevron and the left-edge swipe both pop the
+  /// conversation (the system bar, and with it the system back button, is hidden).
+  func testConversationBackTapAndEdgeSwipeReturnToTheDashboard() throws {
+    try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPad keeps the split view")
+    let app = launch("dashboard-populated")
+    XCTAssertTrue(element(app, "running-row-t-atlas-launch").waitForExistence(timeout: 10))
+    element(app, "running-row-t-atlas-launch").tap()
+    let back = element(app, "conversation-back")
+    XCTAssertTrue(back.waitForExistence(timeout: 10))
+    XCTAssertEqual(back.label, "Back")
+    XCTAssertTrue(back.isHittable)
+    XCTAssertFalse(app.navigationBars.buttons["Back"].exists, "No system back button")
+    back.tap()
+    XCTAssertTrue(waitUntilHittable(element(app, "new-conversation")), "tap back pops")
+    XCTAssertFalse(element(app, "conversation-transcript").exists)
+
+    element(app, "running-row-t-atlas-launch").tap()
+    XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
+    // An edge-anchored drag from the screen's leading edge: the interactive pop gesture.
+    let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+    edge.press(
+      forDuration: 0.05,
+      thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
+    XCTAssertTrue(waitUntilHittable(element(app, "new-conversation")), "edge swipe pops")
+    XCTAssertFalse(element(app, "conversation-transcript").exists)
+    app.terminate()
+  }
+
+  private func waitUntilHittable(_ target: XCUIElement) -> Bool {
+    let expectation = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in target.exists && target.isHittable }, object: nil)
+    return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
+  }
+
   func testConsolesRemainReachableFromTheDashboard() {
     let app = launch("dashboard-populated")
     XCTAssertTrue(element(app, "consoles-button").waitForExistence(timeout: 10))
@@ -154,7 +188,7 @@ final class ScenarioTests: XCTestCase {
     for _ in 0..<8 {
       if element(app, id).waitForExistence(timeout: 1) { return true }
       // The dashboard list (the iPad sidebar, not the detail column under the screen centre).
-      let list = app.collectionViews.firstMatch
+      let list = app.scrollViews.matching(identifier: "dashboard-list").firstMatch
       if list.exists { list.swipeUp() } else { app.swipeUp() }
     }
     return element(app, id).exists
@@ -163,7 +197,9 @@ final class ScenarioTests: XCTestCase {
   /// iPhone pops the pushed destination; iPad keeps the dashboard in the sidebar.
   private func returnToDashboard(_ app: XCUIApplication) {
     if !element(app, "new-conversation").isHittable {
-      app.navigationBars.buttons.element(boundBy: 0).tap()
+      // Phones draw the web chat header with its own bare back chevron.
+      let back = element(app, "conversation-back")
+      if back.exists { back.tap() } else { app.navigationBars.buttons.element(boundBy: 0).tap() }
     }
     XCTAssertTrue(element(app, "new-conversation").waitForExistence(timeout: 10))
   }

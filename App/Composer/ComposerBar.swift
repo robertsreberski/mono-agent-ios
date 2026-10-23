@@ -32,22 +32,25 @@ struct ComposerBar: View {
   private var limits: UploadLimits? { store.bootstrap?.limits }
   private var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
 
+  @Environment(\.consoleTheme) private var theme
+
+  /// Web `.thread-footer` dock: the job shelf first, then the composer, on a fade from the
+  /// transcript into the panel; 8 pt gutters on phones, 24 on tablets, column ≤ 820.
   var body: some View {
-    VStack(spacing: DesignSpacing.xs) {
+    let regular = sizeClass == .regular
+    VStack(spacing: 6) {
       if let state = conversation {
         ComposerJobDock(state: state, store: store) { peerQuestion = .init(question: $0) }
       }
       ComposerOverlay(
         controller: controller, onCommand: perform,
         onSkill: { controller.insertSkill($0) })
-      ComposerBarShell {
-        attachMenu
-      } field: {
-        field
-      } trailing: {
-        trailing
-      }
+      composerRoot
     }
+    .padding(.horizontal, regular ? WebSpace.dockGutterRegular : WebSpace.dockGutter)
+    .padding(.bottom, regular ? 12 : 0)
+    .frame(maxWidth: WebMetrics.composerWidth + 2 * WebSpace.dockGutterRegular)
+    .frame(maxWidth: .infinity)
     .photosPicker(
       isPresented: $showPhotos, selection: $photoItems,
       maxSelectionCount: max(1, (limits?.maxFilesPerTurn ?? 10) - store.stagedAttachments.count),
@@ -126,12 +129,10 @@ struct ComposerBar: View {
       Divider()
       Button("Browse Skills", systemImage: "book.closed") { openSkills() }
     } label: {
-      Label("Attach", systemImage: "plus")
+      composerTool("Attach", systemImage: "paperclip")
     }
-    .labelStyle(.iconOnly)
-    .designButtonStyle(.secondary, placement: .floating)
-    .buttonBorderShape(.circle)
-    .controlSize(.large)
+    .menuStyle(.button)
+    .buttonStyle(.plain)
     .accessibilityLabel("Attach files or browse skills")
     .accessibilityIdentifier("composer-attach")
   }
@@ -143,88 +144,129 @@ struct ComposerBar: View {
     return "Attachments are unavailable while offline"
   }
 
-  // MARK: Field
+  // MARK: Composer root (web `.composer-root`)
 
-  private var field: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+  /// Radius 14 on phones / 16 on tablets, 1 px line-strong edge, subtle fill; focus raises it
+  /// with an accent edge and the 3 px accent glow. It floats above the transcript, so the fill
+  /// is Liquid Glass tinted with the web surface (opaque web fill under Reduce Transparency).
+  private var composerRoot: some View {
+    let regular = sizeClass == .regular
+    let shape = RoundedRectangle(
+      cornerRadius: regular ? WebRadius.composerRegular : WebRadius.composer, style: .continuous)
+    let fill = focused ? WebColor.surfaceRaised : WebColor.surfaceSubtle
+    return VStack(alignment: .leading, spacing: 0) {
       if let quote = controller.quote {
         QuotePreview(QuoteFormatting.preview(quote)) { controller.quote = nil }
           .accessibilityIdentifier("quote-preview")
+          .padding(.bottom, 6)
       }
-      ComposerAttachments(controller: controller)
-      TextField(
-        "Message", text: $controller.text, selection: $controller.selection,
-        prompt: Text(affordances.placeholder), axis: .vertical
-      )
-      .lineLimit(1...8)
-      .designFont(.body)
-      .focused($focused)
-      .accessibilityLabel("Message")
-      .accessibilityIdentifier("composer-field")
-      .onKeyPress(.upArrow) { moveHighlight(-1) }
-      .onKeyPress(.downArrow) { moveHighlight(1) }
-      .onKeyPress(.escape) {
-        guard let trigger = controller.trigger else { return .ignored }
-        controller.dismissedTrigger = trigger
-        return .handled
-      }
-      .onKeyPress(.return, phases: .down) { press in
-        // Return inserts a newline (web submitMode="ctrlEnter"); with suggestions open it
-        // accepts the highlighted one. ⌘Return is the Send button's shortcut.
-        guard !press.modifiers.contains(.command), acceptHighlighted() else { return .ignored }
-        return .handled
-      }
-      .onKeyPress(.tab) { acceptHighlighted() ? .handled : .ignored }
-
-      // The keyboard hint only appears when it fits beside the controls (web hides it on
-      // phones); the model summary falls back to its icon before it truncates.
-      ViewThatFits(in: .horizontal) {
-        toolRow(compactModel: false, hint: sizeClass == .regular)
-        toolRow(compactModel: false, hint: false)
-        // Phones: keep the model name readable and give context its own line.
-        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-          toolRow(compactModel: false, hint: false, context: false)
-          if let state = conversation { ComposerContextControl(state: state, store: store) }
-        }
-        toolRow(compactModel: true, hint: false)
-        // Accessibility sizes: context moves to its own line and may wrap.
-        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-          toolRow(compactModel: true, hint: false, context: false)
-          if let state = conversation {
-            ComposerContextControl(state: state, store: store, fixed: false)
-          }
-        }
-      }
-    }
-  }
-
-  private func toolRow(compactModel: Bool, hint: Bool, context: Bool = true) -> some View {
-    HStack(spacing: DesignSpacing.sm) {
-      ModelSelectorMenu(controller: controller, compact: compactModel)
-      if context, let state = conversation {
-        ComposerContextControl(state: state, store: store)
-      }
-      Button {
-        openSkills()
-      } label: {
-        Image(systemName: "book.closed")
-          .frame(
-            minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget
-          )
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.borderless)
-      .accessibilityLabel("Browse skills")
-      .accessibilityIdentifier("composer-skills")
-      Spacer(minLength: 0)
-      if hint {
+      ComposerAttachments(controller: controller).padding(.bottom, 6)
+      field
+      toolbar
+      if regular {
         Text("⌘↩ to send · / commands · $ skills")
-          .designFont(.caption).foregroundStyle(.secondary)
+          .webFont(.composerHint).foregroundStyle(WebColor.textMuted.color)
           .lineLimit(1)
-          .fixedSize()
+          .padding(.horizontal, 2)
           .accessibilityHidden(true)
       }
     }
+    .padding(.top, regular ? 10 : 8)
+    .padding(.horizontal, regular ? 10 : 8)
+    .padding(.bottom, regular ? 8 : 6)
+    .floatingGlass(in: shape, tint: fill.color.opacity(0.55), opaqueFill: fill.color)
+    .overlay(
+      shape.strokeBorder(
+        focused ? theme.palette.accent.color : WebColor.lineStrong.color, lineWidth: 1)
+    )
+    .background { if focused { shape.inset(by: -3).fill(theme.palette.accentGlow) } }
+  }
+
+  private var field: some View {
+    TextField(
+      "Message", text: $controller.text, selection: $controller.selection,
+      prompt: Text(affordances.placeholder).foregroundStyle(WebColor.textMuted.color),
+      axis: .vertical
+    )
+    .lineLimit(1...8)
+    .webFont(.composerInput)
+    .foregroundStyle(WebColor.text.color)
+    .padding(.vertical, 7)
+    .padding(.horizontal, 5)
+    .frame(minHeight: 37, alignment: .leading)
+    .focused($focused)
+    .accessibilityLabel("Message")
+    .accessibilityIdentifier("composer-field")
+    .onKeyPress(.upArrow) { moveHighlight(-1) }
+    .onKeyPress(.downArrow) { moveHighlight(1) }
+    .onKeyPress(.escape) {
+      guard let trigger = controller.trigger else { return .ignored }
+      controller.dismissedTrigger = trigger
+      return .handled
+    }
+    .onKeyPress(.return, phases: .down) { press in
+      // Return inserts a newline (web submitMode="ctrlEnter"); with suggestions open it
+      // accepts the highlighted one. ⌘Return is the Send button's shortcut.
+      guard !press.modifiers.contains(.command), acceptHighlighted() else { return .ignored }
+      return .handled
+    }
+    .onKeyPress(.tab) { acceptHighlighted() ? .handled : .ignored }
+  }
+
+  /// Web `.composer-toolbar`: attach and skills on the left; context, model/effort, send and
+  /// (while running) stop on the right. At accessibility sizes the right group wraps below.
+  @ViewBuilder private var toolbar: some View {
+    if typeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 5) {
+          tools
+          Spacer(minLength: 0)
+          actions
+        }
+        HStack(spacing: 4) {
+          if let state = conversation {
+            ComposerContextControl(state: state, store: store, fixed: false)
+          }
+          ModelSelectorMenu(controller: controller)
+        }
+      }
+    } else {
+      HStack(spacing: 10) {
+        tools
+        HStack(spacing: 4) {
+          if let state = conversation { ComposerContextControl(state: state, store: store) }
+          ModelSelectorMenu(controller: controller)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          actions
+        }
+      }
+      .frame(minHeight: 34)
+    }
+  }
+
+  private var tools: some View {
+    HStack(spacing: 5) {
+      attachMenu
+      Button {
+        openSkills()
+      } label: {
+        composerTool("Browse skills", systemImage: "book")
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Browse skills")
+      .accessibilityIdentifier("composer-skills")
+    }
+  }
+
+  /// A 32 pt composer tool glyph (`.composer-tool`) in a 44 pt hit target.
+  private func composerTool(_ title: String, systemImage: String) -> some View {
+    Label(title, systemImage: systemImage)
+      .labelStyle(.iconOnly)
+      .font(.system(size: 15, weight: .regular))
+      .foregroundStyle(WebColor.textSoft.color)
+      .frame(width: WebMetrics.quietControl, height: WebMetrics.quietControl)
+      .frame(minWidth: 36, minHeight: DesignMetrics.minimumHitTarget)
+      .contentShape(Rectangle())
   }
 
   private func openSkills() {
@@ -232,36 +274,51 @@ struct ComposerBar: View {
     showSkills = true
   }
 
-  // MARK: Trailing
+  // MARK: Actions
 
-  private var trailing: some View {
-    // At accessibility sizes the two round buttons stack, leaving the field its width.
-    let layout =
-      typeSize.isAccessibilitySize
-      ? AnyLayout(VStackLayout(spacing: DesignSpacing.sm))
-      : AnyLayout(HStackLayout(spacing: DesignSpacing.sm))
-    return layout {
-      if affordances.showsStop {
-        Button("Stop response", systemImage: "stop.fill") { Task { await controller.stop() } }
-          .labelStyle(.iconOnly)
-          .designButtonStyle(.secondary, placement: .floating)
-          .buttonBorderShape(.circle)
-          .controlSize(.large)
-          .disabled(controller.stopping)
-          .keyboardShortcut(".", modifiers: .command)
-          .accessibilityLabel(controller.stopping ? "Stopping response" : "Stop response")
-          .accessibilityIdentifier("composer-stop")
+  /// Web `.composer-send` (34 pt soft-accent square) and `.composer-stop` (surface-hover).
+  /// Send and stop coexist while a reply runs; stop never replaces send.
+  private var actions: some View {
+    let palette = theme.palette
+    let tile = RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+    return HStack(spacing: 6) {
+      Button {
+        Task { await controller.send() }
+      } label: {
+        Image(systemName: affordances.primary == .queue ? "text.append" : "paperplane")
+          .font(.system(size: 14, weight: .medium))
+          .foregroundStyle(palette.accent.color)
+          .frame(width: WebMetrics.send, height: WebMetrics.send)
+          .background(palette.accentSoft.color, in: tile)
+          .opacity(affordances.primaryEnabled ? 1 : 0.45)
+          .frame(minWidth: 40, minHeight: DesignMetrics.minimumHitTarget)
+          .contentShape(Rectangle())
       }
-      Button(primaryTitle, systemImage: primaryImage) { Task { await controller.send() } }
-        .labelStyle(.iconOnly)
-        .designButtonStyle(.primary, placement: .floating)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        .disabled(!affordances.primaryEnabled)
-        .keyboardShortcut(.return, modifiers: .command)
-        .accessibilityLabel(primaryTitle)
-        .accessibilityHint(affordances.unavailableReason ?? "")
-        .accessibilityIdentifier(affordances.primary == .queue ? "composer-queue" : "composer-send")
+      .buttonStyle(.plain)
+      .disabled(!affordances.primaryEnabled)
+      .keyboardShortcut(.return, modifiers: .command)
+      .accessibilityLabel(primaryTitle)
+      .accessibilityHint(affordances.unavailableReason ?? "")
+      .accessibilityIdentifier(affordances.primary == .queue ? "composer-queue" : "composer-send")
+      if affordances.showsStop {
+        Button {
+          Task { await controller.stop() }
+        } label: {
+          Image(systemName: "stop")
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(WebColor.text.color)
+            .frame(width: WebMetrics.send, height: WebMetrics.send)
+            .background(WebColor.surfaceHover.color, in: tile)
+            .opacity(controller.stopping ? 0.45 : 1)
+            .frame(minWidth: 40, minHeight: DesignMetrics.minimumHitTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(controller.stopping)
+        .keyboardShortcut(".", modifiers: .command)
+        .accessibilityLabel(controller.stopping ? "Stopping response" : "Stop response")
+        .accessibilityIdentifier("composer-stop")
+      }
     }
   }
 
@@ -460,9 +517,22 @@ struct ComposerOverlay: View {
             }
           }
         }
-        .frame(maxHeight: 220)
+        .frame(maxHeight: 310)
         .fixedSize(horizontal: false, vertical: true)
-        .contentSurface(padding: DesignSpacing.xs)
+        // Web `.composer-trigger-popover`: raised, 1 px line-strong, radius 12, shadow-lg,
+        // padding 5, at most 320 pt wide, anchored 9 pt in from the composer's leading edge.
+        .padding(5)
+        .background(
+          WebColor.surfaceRaised.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(WebColor.lineStrong.color, lineWidth: 1)
+        )
+        .webShadow(.large)
+        .frame(maxWidth: 320)
+        .padding(.leading, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
           "\(skills.count + commands.count) suggestion\(skills.count + commands.count == 1 ? "" : "s")"
@@ -471,9 +541,6 @@ struct ComposerOverlay: View {
       }
       ComposerStatusLine(controller: controller)
     }
-    .padding(.horizontal, DesignSpacing.md)
-    .frame(maxWidth: DesignMetrics.readableWidth + 2 * DesignSpacing.md)
-    .frame(maxWidth: .infinity)
   }
 }
 

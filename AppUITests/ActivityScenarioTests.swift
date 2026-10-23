@@ -31,7 +31,9 @@ import XCTest
   {
     let target = element(app, id)
     for _ in 0..<24 {
-      let top = app.navigationBars.firstMatch.frame.maxY + 8
+      // Phones: the web chat header replaces the system bar; iPad keeps the system bar.
+      let bar = element(app, "conversation-top-bar")
+      let top = (bar.exists ? bar.frame.maxY : app.navigationBars.firstMatch.frame.maxY) + 8
       let jump = element(app, "jump-to-latest")
       let bottom = jump.exists ? jump.frame.minY - 8 : scroll(app).frame.maxY - 34
       if target.exists {
@@ -100,6 +102,13 @@ import XCTest
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "84k / 200k tokens"))
           .firstMatch.exists)
     } else {
+      if scenario == "conversation-job-stack" && variant == nil {
+        // The closed shelf (current jobs inline, count chips) before it opens.
+        let closed = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        closed.name = "synthetic-fixture__\(scenario)__\(appearance)__closed"
+        closed.lifetime = .keepAlways
+        add(closed)
+      }
       element(app, "job-stack").tap()
       if scenario == "conversation-jobs" {
         dockReveal(app, "job-card-running").tap()

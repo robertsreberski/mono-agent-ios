@@ -370,6 +370,22 @@
       "variant": "ax3"
     },
     {
+      "scenario": "conversation-job-stack",
+      "appearance": "light",
+      "variant": "closed",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "dark",
+      "variant": "closed",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
       "scenario": "conversation-subagents",
       "appearance": "light",
       "textSize": "standard",

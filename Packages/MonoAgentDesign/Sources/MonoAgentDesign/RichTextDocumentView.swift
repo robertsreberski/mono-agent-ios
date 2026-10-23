@@ -3,26 +3,41 @@ import SwiftUI
 import UIKit
 
 /// The application owns this boundary; no dependency-specific types reach feature views.
+///
+/// Styled as the web `.markdown` block: 13.5/1.62 prose (phones), .85em block rhythm, 1.45em
+/// list indent, bold UA heading scale, framed tables and rail-coloured code blocks.
 public struct RichTextDocumentView: View {
   private let source: String
+  private let fill: Bool
   @State private var document: RichDocument?
-  public init(source: String) { self.source = source }
+  @Environment(\.consoleTheme) private var theme
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  @ScaledMetric(relativeTo: .body) private var proseSize: CGFloat = 13.5
+  /// `fill: false` sizes the document to its text (the user bubble); content fills the column.
+  public init(source: String, fill: Bool = true) {
+    self.source = source
+    self.fill = fill
+  }
+  private var em: CGFloat { proseSize }
   public var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.md) {
+    VStack(alignment: .leading, spacing: 0) {
       if let document {
-        ForEach(document.blocks) { block in
-          blockView(block).padding(.leading, CGFloat(min(block.depth, 6)) * DesignSpacing.sm)
+        ForEach(Array(document.blocks.enumerated()), id: \.element.id) { index, block in
+          blockView(block)
+            .padding(.top, index == 0 ? 0 : gap(before: block, after: document.blocks[index - 1]))
         }
         if document.limited {
           Label("Large or complex document · bounded text preview", systemImage: "info.circle")
-            .designFont(.caption).foregroundStyle(.secondary)
+            .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
+            .padding(.top, 0.85 * em)
         }
       } else {
-        Text(verbatim: String(decoding: source.utf8.prefix(1000), as: UTF8.self)).designFont(.body)
+        Text(verbatim: String(decoding: source.utf8.prefix(1000), as: UTF8.self))
+          .webFont(.prose).foregroundStyle(WebColor.text.color)
           .textSelection(.enabled)
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
     .task(id: source) {
       let input = source
       let parsed = await Task.detached(priority: .userInitiated) { RichDocument.parse(input) }.value
@@ -30,47 +45,69 @@ public struct RichTextDocumentView: View {
       document = parsed
     }
   }
+  /// `.markdown p, ul, pre { margin-bottom: .85em }`, `li + li { margin-top: .3em }`.
+  private func gap(before block: RichDocument.Block, after previous: RichDocument.Block) -> CGFloat
+  {
+    if !block.prefix.isEmpty && !previous.prefix.isEmpty { return 0.3 * em }
+    if !previous.prefix.isEmpty && block.prefix.isEmpty && block.depth > 0 { return 0.3 * em }
+    if case .heading(let level) = block.kind { return level <= 2 ? 1.1 * em : 0.95 * em }
+    return 0.85 * em
+  }
+  private func headingSize(_ level: Int) -> CGFloat {
+    switch level {
+    case 1: 2 * em
+    case 2: 1.5 * em
+    case 3: 1.17 * em
+    case 4: em
+    case 5: 0.83 * em
+    default: 0.67 * em
+    }
+  }
   @ViewBuilder private func blockView(_ block: RichDocument.Block) -> some View {
     switch block.kind {
     case .code(let language):
-      CodeDocumentView(source: block.runs.map(\.text).joined(), language: language)
-    case .rule: Divider()
+      CodeDocumentView(
+        source: block.runs.map(\.text).joined(), language: language, style: .block)
+    case .rule:
+      Rectangle().fill(WebColor.line.color).frame(height: 1)
     case .table:
-      ScrollView(.horizontal) {
-        Grid(
-          alignment: .topLeading, horizontalSpacing: DesignSpacing.lg,
-          verticalSpacing: DesignSpacing.sm
-        ) {
-          ForEach(Array(block.rows.enumerated()), id: \.offset) { index, row in
-            GridRow {
-              ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                Text(attributed(cell)).designFont(.body).fontWeight(
-                  index == 0 ? .semibold : .regular
-                )
-                .frame(minWidth: 90, maxWidth: 260, alignment: .leading).textSelection(.enabled)
-              }
-            }
-            if index == 0 { Divider() }
-          }
-        }.padding(DesignSpacing.sm)
-      }
-      .accessibilityLabel("Table").accessibilityIdentifier("markdown-table")
+      MarkdownTableView(rows: block.rows, attributed: attributed, compact: sizeClass != .regular)
     case .heading(let level):
-      Text(attributed(block.runs)).designFont(level < 3 ? .sectionTitle : .headline)
+      Text(attributed(block.runs))
+        .font(.system(size: headingSize(level), weight: .bold))
+        .tracking(level <= 2 ? -0.01 * headingSize(level) : 0)
+        .foregroundStyle(WebColor.text.color)
         .accessibilityAddTraits(.isHeader).textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
     case .paragraph, .quote:
-      HStack(alignment: .top, spacing: DesignSpacing.sm) {
+      let indent = CGFloat(max(0, min(block.depth, 6) - 1)) * 1.45 * em
+      HStack(alignment: .firstTextBaseline, spacing: 0) {
         if !block.prefix.isEmpty {
-          Text(block.prefix).accessibilityLabel(
-            block.prefix == "☑" ? "Completed" : block.prefix == "☐" ? "Not completed" : block.prefix
-          )
+          Text(block.prefix)
+            .webFont(.prose)
+            .foregroundStyle(WebColor.text.color)
+            .frame(width: 1.45 * em, alignment: block.prefix.count > 1 ? .leading : .center)
+            .accessibilityLabel(
+              block.prefix == "☑"
+                ? "Completed" : block.prefix == "☐" ? "Not completed" : block.prefix
+            )
+        } else if block.depth > 0 && block.kind != .quote {
+          Color.clear.frame(width: 1.45 * em, height: 1)
         }
-        if block.kind == .quote {
-          Image(systemName: "quote.opening").foregroundStyle(.secondary).accessibilityHidden(true)
-        }
-        Text(attributed(block.runs)).textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }.designFont(.body).fixedSize(horizontal: false, vertical: true)
+        Text(attributed(block.runs))
+          .webFont(.prose)
+          .foregroundStyle(block.kind == .quote ? WebColor.textSoft.color : WebColor.text.color)
+          .textSelection(.enabled)
+          .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
+          .padding(.leading, block.kind == .quote ? 13 : 0)
+          .overlay(alignment: .leading) {
+            if block.kind == .quote {
+              Rectangle().fill(WebColor.lineStrong.color).frame(width: 2)
+            }
+          }
+      }
+      .padding(.leading, block.kind == .quote ? 0 : indent)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
   private func attributed(_ runs: [RichDocument.Run]) -> AttributedString {
@@ -81,48 +118,152 @@ public struct RichTextDocumentView: View {
       if run.italic { intent.insert(.emphasized) }
       if run.code {
         intent.insert(.code)
-        part.font = .system(.body, design: .monospaced)
+        part.font = .system(size: 0.88 * em, design: .monospaced)
+        part.backgroundColor = WebColor.surfaceSubtle.color
       }
-      if run.strike { intent.insert(.strikethrough) }
+      if run.strike {
+        intent.insert(.strikethrough)
+        part.foregroundColor = WebColor.textMuted.color
+      }
       part.inlinePresentationIntent = intent
-      if let destination = run.link { part.link = URL(string: destination) }
+      if let destination = run.link {
+        part.link = URL(string: destination)
+        part.foregroundColor = theme.palette.accent.color
+      }
       value += part
     }
   }
 }
 
+/// Web `.markdown-table`: framed radius 8 on `--surface`, subtle header row in soft 650 text with
+/// a line-strong rule, 1 px row lines, alternate rows washed with surface-hover at 55%.
+struct MarkdownTableView: View {
+  let rows: [[[RichDocument.Run]]]
+  let attributed: ([RichDocument.Run]) -> AttributedString
+  let compact: Bool
+  private var columns: Int { rows.map(\.count).max() ?? 0 }
+  private var grid: some View {
+    Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
+      ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+        // Opaque row fills (alternate rows pre-mixed) overlap by half a point so adjacent
+        // cells never show a seam.
+        let fill: Color? =
+          index == 0
+          ? WebColor.surfaceSubtle.color
+          : index % 2 == 0 ? WebColor.surfaceHover.mixed(55, with: WebColor.surface).color : nil
+        GridRow {
+          ForEach(0..<columns, id: \.self) { column in
+            Text(column < row.count ? attributed(row[column]) : AttributedString())
+              .webFont(.table)
+              .fontWeight(index == 0 ? .semibold : .regular)
+              .foregroundStyle(index == 0 ? WebColor.textSoft.color : WebColor.text.color)
+              .lineLimit(index == 0 ? 1 : nil)
+              .padding(.vertical, compact ? 6 : 7)
+              .padding(.horizontal, compact ? 8 : 10)
+              .frame(minWidth: 90, maxWidth: .infinity, alignment: .leading)
+              .background { fill.map { $0.padding(.horizontal, -0.5) } }
+              .overlay(alignment: .bottom) {
+                if index < rows.count - 1 {
+                  Rectangle()
+                    .fill(index == 0 ? WebColor.lineStrong.color : WebColor.line.color)
+                    .frame(height: 1)
+                    .padding(.horizontal, -0.5)
+                }
+              }
+              .textSelection(.enabled)
+          }
+        }
+      }
+    }
+  }
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: WebRadius.small, style: .continuous)
+    // Fill the column when the columns fit; otherwise scroll sideways at natural widths
+    // (web: width 100%, min-width max-content, overflow contained).
+    ViewThatFits(in: .horizontal) {
+      grid
+      ScrollView(.horizontal) { grid }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+    }
+    .background(WebColor.surface.color, in: shape)
+    .clipShape(shape)
+    .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+    .accessibilityLabel("Table").accessibilityIdentifier("markdown-table")
+  }
+}
+
 /// Horizontal, selectable code. Copy preserves the complete supplied value, not the preview.
+///
+/// `.block` is the web markdown `pre`: rail fill, 1 px line, radius 10, padding 13×15 and a
+/// Copy action below. `.payload` is the quieter tool/job payload panel.
 public struct CodeDocumentView: View {
+  public enum Style: Sendable { case block, payload }
   private let source: String
   private let language: String
-  @State private var copied = false
-  public init(source: String, language: String = "Code") {
+  private let style: Style
+  @Environment(\.consoleTheme) private var theme
+  public init(source: String, language: String = "Code", style: Style = .payload) {
     self.source = source
     self.language = language
+    self.style = style
   }
+  private var display: String { String(decoding: source.utf8.prefix(16_384), as: UTF8.self) }
   public var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+    switch style {
+    case .block: block
+    case .payload: payload
+    }
+  }
+  private var block: some View {
+    let shape = RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+    return VStack(alignment: .leading, spacing: 4) {
+      ScrollView(.horizontal) {
+        Text(verbatim: display)
+          .webFont(.code)
+          .foregroundStyle(WebColor.codeText.color)
+          .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
+          .padding(.vertical, 13).padding(.horizontal, 15)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(theme.palette.rail.color, in: shape)
+      .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+      .accessibilityLabel("\(language) code").accessibilityIdentifier("code-content")
+      if source.utf8.count > 16_384 {
+        Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.")
+          .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
+      }
+      MessageActionButton("Copy", systemImage: "doc.on.doc") {
+        UIPasteboard.general.string = source
+      }
+      .accessibilityLabel("Copy code").accessibilityIdentifier("code-copy")
+    }
+  }
+  private var payload: some View {
+    let shape = RoundedRectangle(cornerRadius: WebRadius.small, style: .continuous)
+    return VStack(alignment: .leading, spacing: 6) {
       HStack {
-        Text(language.isEmpty ? "Code" : language).designFont(.caption).foregroundStyle(.secondary)
+        Text(language.isEmpty ? "Code" : language)
+          .webFont(.activityLabel).foregroundStyle(WebColor.textMuted.color)
         Spacer()
-        Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
+        MessageActionButton("Copy", systemImage: "doc.on.doc") {
           UIPasteboard.general.string = source
-          copied = true
-        }.buttonStyle(.bordered).accessibilityLabel("Copy code").accessibilityIdentifier(
-          "code-copy")
+        }
+        .accessibilityLabel("Copy code").accessibilityIdentifier("code-copy")
       }
       ScrollView(.horizontal) {
-        Text(verbatim: String(decoding: source.utf8.prefix(16_384), as: UTF8.self)).designFont(
-          .code
-        )
-        .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
+        Text(verbatim: display).font(.system(size: 10, design: .monospaced))
+          .lineSpacing(3)
+          .foregroundStyle(WebColor.text.color)
+          .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
       }.accessibilityLabel("\(language) code").accessibilityIdentifier("code-content")
       if source.utf8.count > 16_384 {
-        Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.").designFont(
-          .caption)
+        Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.")
+          .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
       }
-    }.padding(DesignSpacing.md).background(
-      DesignColor.contentSurface, in: RoundedRectangle(cornerRadius: DesignRadius.sm))
+    }
+    .padding(.vertical, 6).padding(.horizontal, 10)
+    .background(theme.palette.canvas.mixed(55, with: WebColor.surface).color, in: shape)
+    .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
   }
 }
 #if DEBUG

@@ -47,7 +47,7 @@ struct DashboardShell: View {
       if sizeClass == .regular {
         NavigationSplitView(columnVisibility: $columns) {
           dashboard(selectable: true)
-            .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 520)
+            .navigationSplitViewColumnWidth(min: 320, ideal: WebMetrics.dashboardColumn, max: 520)
         } detail: {
           NavigationStack {
             detail(route).id(route)

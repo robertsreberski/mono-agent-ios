@@ -39,32 +39,45 @@ public struct AttachmentChip: View {
     }
   }
 
+  /// Web `.attachment-chip`: 34 pt high, ≤ 250 pt wide, radius 9, 1 px line on raised;
+  /// a 20 pt icon tile, the name in 11 pt and the size or progress beside it.
   public var body: some View {
-    HStack(spacing: DesignSpacing.sm) {
+    let shape = RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
+    HStack(spacing: 7) {
       preview
-      VStack(alignment: .leading, spacing: DesignSpacing.xxs) {
-        Text(name).designFont(.supporting).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(name).webFont(.attachment).foregroundStyle(WebColor.text.color)
+          .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
           .truncationMode(.middle)
         status
       }
       if let onRemove {
-        Button("Remove \(name)", systemImage: "xmark.circle.fill", action: onRemove)
+        Button("Remove \(name)", systemImage: "xmark", action: onRemove)
           .labelStyle(.iconOnly)
+          .font(.system(size: 10, weight: .semibold))
           .buttonStyle(.borderless)
-          .foregroundStyle(.secondary)
-          .frame(
-            minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget
-          )
+          .foregroundStyle(WebColor.textMuted.color)
+          .frame(minWidth: 24, minHeight: DesignMetrics.minimumHitTarget)
           .contentShape(Rectangle())
       }
     }
-    .padding(.leading, DesignSpacing.xs)
-    .padding(.vertical, DesignSpacing.xxs)
-    .background(DesignColor.contentSurface, in: RoundedRectangle(cornerRadius: DesignRadius.sm))
+    .padding(.leading, 8)
+    .padding(.trailing, onRemove == nil ? 8 : 2)
+    .frame(maxWidth: typeSize.isAccessibilitySize ? nil : 250, minHeight: 34, alignment: .leading)
+    .background(WebColor.surfaceRaised.color, in: shape)
     .overlay {
-      if phase == .failed {
-        RoundedRectangle(cornerRadius: DesignRadius.sm).stroke(
-          DesignColor.danger.color, lineWidth: 1)
+      shape.strokeBorder(
+        phase == .failed ? WebColor.danger.color : WebColor.line.color, lineWidth: 1)
+    }
+    .overlay(alignment: .bottomLeading) {
+      if case .uploading(let fraction) = phase {
+        GeometryReader { proxy in
+          Rectangle().fill(theme.palette.accent.color)
+            .frame(width: proxy.size.width * min(1, max(0, fraction)), height: 2)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+        }
+        .clipShape(shape)
+        .accessibilityHidden(true)
       }
     }
     .accessibilityElement(children: .combine)
@@ -72,16 +85,17 @@ public struct AttachmentChip: View {
   }
 
   @ViewBuilder private var preview: some View {
-    let shape = RoundedRectangle(cornerRadius: DesignRadius.sm - 2, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
     Group {
       if let thumbnail {
         thumbnail.resizable().scaledToFill()
       } else {
         Image(systemName: isImage ? "photo" : "doc")
+          .font(.system(size: 10, weight: .medium))
           .foregroundStyle(theme.palette.accent.color)
       }
     }
-    .frame(width: 36, height: 36)
+    .frame(width: 20, height: 20)
     .background(theme.palette.accentSoft.color)
     .clipShape(shape)
     .accessibilityHidden(true)
@@ -90,14 +104,15 @@ public struct AttachmentChip: View {
   @ViewBuilder private var status: some View {
     switch phase {
     case .uploading(let fraction):
-      ProgressView(value: min(1, max(0, fraction)))
-        .frame(maxWidth: 120)
-        .tint(theme.palette.accent.color)
+      Text("Uploading \(Int((min(1, max(0, fraction)) * 100).rounded()))%")
+        .font(.system(size: 9)).foregroundStyle(WebColor.textMuted.color)
     case .ready:
-      Text(detail).designFont(.caption).foregroundStyle(.secondary)
+      if !detail.isEmpty {
+        Text(detail).font(.system(size: 9)).foregroundStyle(WebColor.textMuted.color)
+      }
     case .failed:
       Label("Upload failed", systemImage: "exclamationmark.triangle.fill")
-        .designFont(.caption).foregroundStyle(DesignColor.danger.color)
+        .font(.system(size: 9)).foregroundStyle(DesignColor.danger.color)
     }
   }
 }
@@ -124,29 +139,42 @@ public struct SuggestionRow: View {
     self.enabled = enabled
   }
 
+  /// Web `.composer-trigger-item`: 49 pt, radius 9, a 30 pt accent-soft icon tile, the name
+  /// in 11.5/680 and a one-line 9.5 pt description; the highlighted row is subtle-filled.
   public var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: DesignSpacing.sm) {
-      Image(systemName: systemImage).foregroundStyle(theme.palette.accent.color)
+    HStack(alignment: .center, spacing: 10) {
+      Image(systemName: systemImage)
+        .font(.system(size: 13, weight: .medium))
+        .foregroundStyle(theme.palette.accent.color)
+        .frame(width: 30, height: 30)
+        .background(theme.palette.accentSoft.color, in: RoundedRectangle(cornerRadius: 8))
         .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: DesignSpacing.xxs) {
-        Text(title).designFont(.headline).foregroundStyle(enabled ? .primary : .secondary)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).webFont(.triggerTitle)
+          .foregroundStyle(highlighted ? WebColor.text.color : WebColor.textSoft.color)
+          .lineLimit(1)
         if let subtitle {
-          Text(subtitle).designFont(.caption).foregroundStyle(.secondary).lineLimit(2)
+          Text(subtitle).webFont(.triggerDetail).foregroundStyle(WebColor.textMuted.color)
+            .lineLimit(1)
         }
       }
-      Spacer(minLength: DesignSpacing.sm)
+      Spacer(minLength: 8)
       if let badge {
-        Text(badge).designFont(.caption).foregroundStyle(.secondary)
-          .padding(.horizontal, DesignSpacing.xs)
-          .background(DesignColor.separator.opacity(0.4), in: Capsule())
+        Text(badge)
+          .font(.system(size: 8.5, weight: .semibold)).tracking(0.17)
+          .foregroundStyle(WebColor.textMuted.color)
+          .padding(.horizontal, 6).padding(.vertical, 3)
+          .background(WebColor.surfaceSubtle.color, in: Capsule())
+          .overlay(Capsule().strokeBorder(WebColor.line.color, lineWidth: 1))
       }
     }
-    .padding(.vertical, DesignSpacing.xs)
-    .padding(.horizontal, DesignSpacing.sm)
-    .frame(maxWidth: .infinity, minHeight: DesignMetrics.minimumHitTarget, alignment: .leading)
+    .opacity(enabled ? 1 : 0.58)
+    .padding(.vertical, 6)
+    .padding(.horizontal, 8)
+    .frame(maxWidth: .infinity, minHeight: 49, alignment: .leading)
     .background(
-      highlighted ? theme.palette.accentSoft.color : .clear,
-      in: RoundedRectangle(cornerRadius: DesignRadius.sm)
+      highlighted ? WebColor.surfaceSubtle.color : .clear,
+      in: RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
     )
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
@@ -167,21 +195,27 @@ public struct QuotePreview: View {
   }
 
   public var body: some View {
-    HStack(alignment: .top, spacing: DesignSpacing.sm) {
-      Rectangle().fill(theme.palette.accent.color).frame(width: 3)
+    // Web `.composer-quote`: 38 pt, radius 7, surface-hover, a 2 pt accent rule, 11 pt text.
+    HStack(alignment: .center, spacing: 8) {
+      Image(systemName: "quote.opening").font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(theme.palette.accent.color)
         .accessibilityHidden(true)
-      Label {
-        Text(text).designFont(.supporting).foregroundStyle(.secondary).lineLimit(3)
-      } icon: {
-        Image(systemName: "quote.opening").foregroundStyle(theme.palette.accent.color)
-      }
+      Text(text).font(.system(size: 11)).foregroundStyle(WebColor.textMuted.color).lineLimit(3)
       Spacer(minLength: 0)
       if let onDismiss {
         Button("Remove quote", systemImage: "xmark", action: onDismiss)
-          .labelStyle(.iconOnly).buttonStyle(.borderless).foregroundStyle(.secondary)
-          .frame(
-            minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget)
+          .labelStyle(.iconOnly).font(.system(size: 10, weight: .semibold))
+          .buttonStyle(.borderless).foregroundStyle(WebColor.textMuted.color)
+          .frame(minWidth: 26, minHeight: DesignMetrics.minimumHitTarget)
+          .contentShape(Rectangle())
       }
+    }
+    .padding(.leading, 10).padding(.trailing, 8)
+    .frame(minHeight: 38)
+    .background(WebColor.surfaceHover.color, in: RoundedRectangle(cornerRadius: 7))
+    .overlay(alignment: .leading) {
+      UnevenRoundedRectangle(topLeadingRadius: 7, bottomLeadingRadius: 7)
+        .fill(theme.palette.accent.color).frame(width: 2)
     }
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .contain)

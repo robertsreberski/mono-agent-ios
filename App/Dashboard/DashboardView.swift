@@ -93,22 +93,25 @@ struct DashboardView: View {
 
   // MARK: Body
 
+  @Environment(\.dynamicTypeSize) private var typeSize
+  @FocusState private var searchFocused: Bool
+
   var body: some View {
     TimelineView(.everyMinute) { context in
-      list(now: model.referenceDate ?? context.date)
+      content(now: model.referenceDate ?? context.date)
     }
+    .background(theme.palette.panel.color.ignoresSafeArea())
+    .overlay(alignment: .trailing) {
+      // Web: the 340 pt dashboard column ends in a 1 px line beside the chat.
+      if selectable {
+        Rectangle().fill(WebColor.line.color).frame(width: 1).ignoresSafeArea()
+          .accessibilityHidden(true)
+      }
+    }
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier(ready ? "scenario-ready" : "dashboard-loading")
     .navigationTitle(selectedAgent?.label ?? consoleName)
-    .navigationSubtitle(DashboardBanner.subtitle(console: consoleName, inputs: statusInputs))
-    .toolbar { toolbar }
-    .contentMargins(.bottom, DesignMetrics.minimumHitTarget + DesignSpacing.lg, for: .scrollContent)
-    .searchable(
-      text: $query,
-      placement: sizeClass == .regular
-        ? .automatic : .navigationBarDrawer(displayMode: .always),
-      prompt: "Search conversations"
-    )
-    .refreshable { await refresh() }
+    .toolbar(.hidden, for: .navigationBar)
     .onChange(of: query) { updateSearch() }
     .onChange(of: selectedAgentID) { previous, _ in
       // A query is about one agent; its hits must not linger under another agent's name.
@@ -119,21 +122,37 @@ struct DashboardView: View {
     .task(id: ready) { if ready { updateSearch() } }
   }
 
-  @ViewBuilder private func list(now: Date) -> some View {
-    if selectable {
-      List(selection: $route) { sections(now: now) }
-        .listStyle(.sidebar)
-    } else {
-      List { sections(now: now) }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(theme.palette.canvas.color)
+  /// Web dashboard column: fixed header, agent strip and search, then the scrolling sections
+  /// and the quiet footer. At accessibility sizes the strip and search scroll with the list.
+  @ViewBuilder private func content(now: Date) -> some View {
+    VStack(spacing: 0) {
+      header
+      if !typeSize.isAccessibilitySize {
+        agentStrip
+        searchField
+      }
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 0) {
+          if typeSize.isAccessibilitySize {
+            agentStrip
+            searchField
+          }
+          sections(now: now)
+        }
+        .padding(.horizontal, WebSpace.dashboardGutter)
+        .padding(.top, typeSize.isAccessibilitySize ? 0 : 8)
+        .padding(.bottom, 28)
+      }
+      .scrollIndicators(.hidden)
+      .scrollDismissesKeyboard(.immediately)
+      .accessibilityIdentifier("dashboard-list")
+      .refreshable { await refresh() }
     }
+    .safeAreaBar(edge: .bottom) { footer }
   }
 
   @ViewBuilder private func sections(now: Date) -> some View {
     bannerSection
-    agentSection
     if searching {
       searchSections(now: now)
     } else {
@@ -143,12 +162,53 @@ struct DashboardView: View {
     }
   }
 
+  // MARK: Header
+
+  private var statusLine: String {
+    DashboardBanner.subtitle(console: consoleName, inputs: statusInputs)
+  }
+
+  /// Web `.dashboard-header`: eyebrow console name, the agent name, and the action tiles.
+  private var header: some View {
+    HStack(alignment: .center, spacing: 12) {
+      VStack(alignment: .leading, spacing: 3) {
+        // The web eyebrow is the console name; a non-live state is appended in words.
+        Eyebrow(
+          statusLine.hasSuffix(" · Online") ? String(statusLine.dropLast(9)) : statusLine)
+        Text(selectedAgent?.label ?? consoleName)
+          .webFont(.agentName)
+          .foregroundStyle(WebColor.text.color)
+          .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+          .accessibilityAddTraits(.isHeader)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("\(selectedAgent?.label ?? consoleName), \(statusLine)")
+      Spacer(minLength: 0)
+      // 36 pt tiles in 44 pt hit targets: the visible gap is the web's 8 px.
+      GlassEffectContainer(spacing: 8) {
+        HStack(spacing: 0) {
+          Button("Consoles", systemImage: "slider.horizontal.3") { manageConsoles() }
+            .buttonStyle(WebTileButtonStyle())
+            .accessibilityIdentifier("consoles-button")
+          Button("New conversation", systemImage: "plus") { newConversation() }
+            .buttonStyle(WebTileButtonStyle(.accent))
+            .disabled(selectedAgentID == nil)
+            .accessibilityIdentifier("new-conversation")
+        }
+      }
+      .padding(.trailing, -4)
+    }
+    .padding(.horizontal, WebSpace.dashboardGutter)
+    .padding(.vertical, 7)
+    .frame(minHeight: WebMetrics.headerHeight)
+  }
+
   // MARK: Banners
 
   @ViewBuilder private var bannerSection: some View {
     let banners = DashboardBanner.banners(statusInputs)
     if !banners.isEmpty {
-      Section {
+      VStack(spacing: 8) {
         ForEach(banners) { banner in
           ConnectionBanner(
             banner.kind, title: banner.title, message: banner.message,
@@ -158,47 +218,46 @@ struct DashboardView: View {
               : { @MainActor in if let action = banner.action { Task { await perform(action) } } }
           )
           .accessibilityIdentifier(banner.identifier)
-          .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-          .listRowBackground(Color.clear)
         }
       }
+      .padding(.bottom, WebSpace.sectionGap)
     }
   }
 
   // MARK: Agents
 
-  @ViewBuilder private var agentSection: some View {
+  @ViewBuilder private var agentStrip: some View {
     let visibility = DashboardModel.visibleAgents(
       agents, selected: selectedAgentID, showOffline: showOffline)
     let counts = running.counts
     let unread = unreadCounts
-    Section {
-      if agents.isEmpty {
-        Text("No agents discovered. Running agents will appear automatically.")
-          .designFont(.supporting).foregroundStyle(.secondary)
-          .accessibilityIdentifier("agent-strip")
-      } else {
-        ScrollView(.horizontal) {
-          HStack(alignment: .top, spacing: DesignSpacing.md) {
-            ForEach(visibility.visible, id: \.sourceId) { agent in
-              agentButton(
-                agent, running: DashboardModel.runningCount(for: agent, counts: counts),
-                unread: unread[agent.sourceId] ?? 0)
-            }
-            if visibility.hiddenOffline > 0 || showOffline {
-              offlineToggle(hidden: visibility.hiddenOffline)
-            }
-          }
-          .padding(.horizontal, DesignSpacing.xs)
-          .padding(.bottom, DesignSpacing.xs)
-        }
-        .scrollIndicators(.hidden)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Agents")
+    if agents.isEmpty {
+      Text("No agents discovered. Running agents will appear automatically.")
+        .webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, typeSize.isAccessibilitySize ? 0 : WebSpace.dashboardGutter)
+        .padding(.vertical, 8)
         .accessibilityIdentifier("agent-strip")
-        .listRowInsets(
-          EdgeInsets(top: 0, leading: DesignSpacing.sm, bottom: 0, trailing: DesignSpacing.sm))
+    } else {
+      ScrollView(.horizontal) {
+        HStack(alignment: .top, spacing: WebSpace.agentGap) {
+          ForEach(visibility.visible, id: \.sourceId) { agent in
+            agentButton(
+              agent, running: DashboardModel.runningCount(for: agent, counts: counts),
+              unread: unread[agent.sourceId] ?? 0)
+          }
+          if visibility.hiddenOffline > 0 || showOffline {
+            offlineToggle(hidden: visibility.hiddenOffline)
+          }
+        }
+        .padding(.horizontal, typeSize.isAccessibilitySize ? 0 : WebSpace.dashboardGutter)
+        .padding(.top, 2)
+        .padding(.bottom, 2)
       }
+      .scrollIndicators(.hidden)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("Agents")
+      .accessibilityIdentifier("agent-strip")
     }
   }
 
@@ -227,20 +286,19 @@ struct DashboardView: View {
     Button {
       showOffline.toggle()
     } label: {
-      VStack(spacing: DesignSpacing.xs) {
+      VStack(spacing: 5) {
         Image(systemName: showOffline ? "eye.slash" : "eye")
-          .font(.system(.headline))
-          .foregroundStyle(.secondary)
-          .frame(
-            minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget
-          )
+          .font(.system(size: 13, weight: .medium))
+          .foregroundStyle(WebColor.textMuted.color)
+          .frame(width: WebMetrics.agentSquare, height: WebMetrics.agentSquare)
           .background(
-            RoundedRectangle(cornerRadius: DesignRadius.md, style: .continuous)
-              .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+            RoundedRectangle(cornerRadius: WebRadius.medium, style: .continuous)
+              .strokeBorder(
+                WebColor.lineStrong.color, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
         Text(showOffline ? "Hide" : "\(hidden) offline")
-          .designFont(.caption).foregroundStyle(.secondary).lineLimit(1)
+          .webFont(.agentLabel).foregroundStyle(WebColor.textMuted.color).lineLimit(1)
       }
-      .padding(.top, DesignSpacing.sm)
+      .padding(.top, 6)
     }
     .buttonStyle(.plain)
     .accessibilityLabel(
@@ -249,64 +307,207 @@ struct DashboardView: View {
     .accessibilityIdentifier("agent-offline-toggle")
   }
 
+  // MARK: Search
+
+  /// Web `.dashboard-search`: 42 pt, radius 12, subtle fill and a line-strong edge; focus
+  /// raises the fill, turns the edge accent and adds the 3 px accent glow.
+  private var searchField: some View {
+    let shape = RoundedRectangle(cornerRadius: WebRadius.medium, style: .continuous)
+    return HStack(spacing: 10) {
+      Image(systemName: "magnifyingglass")
+        .font(.system(size: 13, weight: .medium))
+        .foregroundStyle(WebColor.textMuted.color)
+        .accessibilityHidden(true)
+      TextField(
+        "Search conversations", text: $query,
+        prompt: Text("Search conversations").foregroundStyle(WebColor.textMuted.color)
+      )
+      .webFont(.search)
+      .foregroundStyle(WebColor.text.color)
+      .focused($searchFocused)
+      .submitLabel(.search)
+      .autocorrectionDisabled()
+      .textInputAutocapitalization(.never)
+      .accessibilityIdentifier("search-field")
+      if !query.isEmpty {
+        Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
+          .labelStyle(.iconOnly)
+          .font(.system(size: 13))
+          .foregroundStyle(WebColor.textMuted.color)
+          .frame(minWidth: 26, minHeight: 26)
+          .contentShape(Rectangle())
+          .buttonStyle(.plain)
+      }
+    }
+    .padding(.horizontal, 14)
+    .frame(minHeight: WebMetrics.searchHeight)
+    .background(
+      searchFocused ? WebColor.surfaceRaised.color : WebColor.surfaceSubtle.color, in: shape
+    )
+    .overlay {
+      shape.strokeBorder(
+        searchFocused ? theme.palette.accent.color : WebColor.lineStrong.color, lineWidth: 1)
+    }
+    .background {
+      if searchFocused { shape.inset(by: -3).fill(theme.palette.accentGlow) }
+    }
+    .padding(.horizontal, typeSize.isAccessibilitySize ? 0 : WebSpace.dashboardGutter)
+    .padding(.vertical, 12)
+  }
+
+  // MARK: Section heads
+
+  /// Web `.dashboard-section-head`: an uppercase eyebrow, optional count and trailing control.
+  private func sectionHead<Trailing: View>(
+    _ title: String, count: Int? = nil, symbol: String? = nil, accent: Bool = false,
+    note: String? = nil, @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+  ) -> some View {
+    let tone = accent ? theme.palette.accent.color : WebColor.textMuted.color
+    return HStack(alignment: .center, spacing: 10) {
+      HStack(spacing: 6) {
+        if let symbol {
+          Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(tone).accessibilityHidden(true)
+        }
+        Eyebrow(title, color: tone)
+        if let count {
+          Text("\(count)").webFont(.sectionCount).foregroundStyle(tone)
+        }
+        if let note {
+          Text(note).font(.system(size: 9, weight: .semibold)).tracking(0.36)
+            .foregroundStyle(WebColor.textMuted.color).lineLimit(2)
+        }
+      }
+      Spacer(minLength: 0)
+      trailing()
+    }
+    .frame(minHeight: 26)
+    .padding(.bottom, WebSpace.sectionHeadBottom)
+  }
+
+  /// Rows bleed 8 pt into the gutter (web `margin: 0 -8px`) and are divided by an inset line.
+  private func rowList<Item, Row: View>(
+    _ items: [Item], @ViewBuilder row: @escaping (Item) -> Row
+  ) -> some View {
+    VStack(spacing: 0) {
+      ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+        if index > 0 {
+          Rectangle().fill(WebColor.line.color).frame(height: 1)
+            .padding(.horizontal, WebSpace.rowPaddingHorizontal)
+            .accessibilityHidden(true)
+        }
+        row(item)
+      }
+    }
+    .padding(.horizontal, -WebSpace.rowPaddingHorizontal)
+  }
+
+  /// A selectable dashboard row. Selection (iPad split) draws raised + shadow-sm + inset line.
+  private func rowButton(_ target: AppRoute, identifier: String, content: ConversationRowContent)
+    -> some View
+  {
+    let selected = selectable && route == target
+    let shape = RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
+    return Button {
+      route = target
+    } label: {
+      ConversationRow(content)
+        .background {
+          if selected {
+            shape.fill(WebColor.surfaceRaised.color).webShadow(.small)
+              .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+          }
+        }
+    }
+    .buttonStyle(WebRowButtonStyle())
+    .accessibilityAddTraits(selected ? .isSelected : [])
+    .accessibilityIdentifier(identifier)
+  }
+
   // MARK: Running
 
   @ViewBuilder private func runningSection(now: Date) -> some View {
     let projection = running
     if !projection.groups.isEmpty {
-      Section {
-        ForEach(projection.groups, id: \.agent.sourceId) { group in
-          let expanded = expandedAgents.contains(group.agent.sourceId)
-          let cards =
-            expanded
-            ? group.threads : Array(group.threads.prefix(DashboardModel.runningCardsPerAgent))
-          ForEach(cards, id: \.id) { thread in
-            NavigationLink(value: conversationRoute(thread)) {
-              ConversationRow(
-                DashboardRows.running(
-                  thread, agent: group.agent,
-                  confirmed: store.isRunningConfirmed(threadID: thread.id),
-                  projects: store.projects,
-                  now: now))
-            }
-            .accessibilityIdentifier("running-row-\(thread.id)")
-          }
-          if group.threads.count > DashboardModel.runningCardsPerAgent {
-            let hidden = group.threads.count - cards.count
-            Button(
-              expanded
-                ? "Show fewer · \(group.agent.label)" : "+\(hidden) more · \(group.agent.label)"
-            ) {
-              if expanded {
-                expandedAgents.remove(group.agent.sourceId)
-              } else {
-                expandedAgents.insert(group.agent.sourceId)
-              }
-            }
-            .designFont(.supporting)
-            .foregroundStyle(theme.palette.accent.color)
-            .accessibilityIdentifier("running-more-\(group.agent.sourceId)")
-          }
-        }
-        if projection.truncated {
-          Text("Showing \(DashboardModel.runningCount(projection.groups)) of \(projection.total)")
-            .designFont(.caption).foregroundStyle(.secondary)
-        }
-      } header: {
-        SectionHeader(
-          "Running", detail: projection.authoritative ? nil : "Last known, not confirmed just now"
-        ) {
-          Text("\(projection.total)")
-            .designFont(.headline).monospacedDigit().foregroundStyle(.secondary)
-        }
+      VStack(alignment: .leading, spacing: 0) {
+        sectionHead(
+          "Running", count: projection.total, symbol: "waveform.path.ecg", accent: true,
+          note: projection.authoritative ? nil : "Last known, not confirmed just now"
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
           "Running, \(projection.total)\(projection.authoritative ? "" : ", last known")"
         )
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("running-section")
+        VStack(alignment: .leading, spacing: 7) {
+          ForEach(projection.groups, id: \.agent.sourceId) { group in
+            let expanded = expandedAgents.contains(group.agent.sourceId)
+            let cards =
+              expanded
+              ? group.threads : Array(group.threads.prefix(DashboardModel.runningCardsPerAgent))
+            ForEach(cards, id: \.id) { thread in
+              runningCard(thread, agent: group.agent, now: now)
+            }
+            if group.threads.count > DashboardModel.runningCardsPerAgent {
+              let hidden = group.threads.count - cards.count
+              Button(
+                expanded
+                  ? "Show fewer · \(group.agent.label)" : "+\(hidden) more · \(group.agent.label)"
+              ) {
+                if expanded {
+                  expandedAgents.remove(group.agent.sourceId)
+                } else {
+                  expandedAgents.insert(group.agent.sourceId)
+                }
+              }
+              .webFont(.rowSubtitle)
+              .foregroundStyle(WebColor.textMuted.color)
+              .padding(.horizontal, 7)
+              .frame(minHeight: 27)
+              .frame(minHeight: DesignMetrics.minimumHitTarget)
+              .contentShape(Rectangle())
+              .buttonStyle(.plain)
+              .accessibilityIdentifier("running-more-\(group.agent.sourceId)")
+            }
+          }
+          if projection.truncated {
+            Text(
+              "Showing \(DashboardModel.runningCount(projection.groups)) of \(projection.total)"
+            )
+            .webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+          }
+        }
+      }
+      .padding(.bottom, WebSpace.sectionGap)
+    }
+  }
+
+  /// Web `.running-card`: accent 7% into raised, accent 26% into line, radius 12, −8 bleed.
+  private func runningCard(_ thread: WebThread, agent: WebAgentSummary, now: Date) -> some View {
+    let palette = theme.palette
+    let target = conversationRoute(thread)
+    let selected = selectable && route == target
+    let shape = RoundedRectangle(cornerRadius: WebRadius.medium, style: .continuous)
+    return Button {
+      route = target
+    } label: {
+      ConversationRow(
+        DashboardRows.running(
+          thread, agent: agent, confirmed: store.isRunningConfirmed(threadID: thread.id),
+          projects: store.projects, now: now)
+      )
+      .padding(.horizontal, -1)
+      .background(palette.accent.mixed(7, with: WebColor.surfaceRaised).color, in: shape)
+      .overlay {
+        shape.strokeBorder(
+          palette.accent.mixed(selected ? 45 : 26, with: WebColor.line).color, lineWidth: 1)
       }
     }
+    .buttonStyle(WebRowButtonStyle())
+    .padding(.horizontal, -WebSpace.rowPaddingHorizontal)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+    .accessibilityIdentifier("running-row-\(thread.id)")
   }
 
   // MARK: Projects
@@ -314,27 +515,17 @@ struct DashboardView: View {
   @ViewBuilder private func projectsSection(now: Date) -> some View {
     let projects = projects
     if !projects.isEmpty, let agent = selectedAgentID {
-      Section {
-        if !projectsCollapsed {
-          ForEach(projects, id: \.id) { project in
-            NavigationLink(
-              value: AppRoute.project(
-                profile: store.profile.id, sourceID: agent, projectID: project.id)
-            ) {
-              ConversationRow(DashboardRows.project(project, now: now))
-            }
-            .accessibilityIdentifier("project-row-\(project.id)")
-          }
-        }
-      } header: {
+      VStack(alignment: .leading, spacing: 0) {
         Button {
           projectsCollapsed.toggle()
         } label: {
-          SectionHeader("Projects", detail: projectsCollapsed ? "\(projects.count) hidden" : nil) {
+          HStack(spacing: 6) {
             Image(systemName: "chevron.down")
+              .font(.system(size: 10, weight: .semibold))
               .rotationEffect(.degrees(projectsCollapsed ? -90 : 0))
-              .foregroundStyle(.secondary)
+              .foregroundStyle(WebColor.textMuted.color)
               .accessibilityHidden(true)
+            sectionHead("Projects", note: projectsCollapsed ? "\(projects.count) hidden" : nil)
           }
           .contentShape(Rectangle())
         }
@@ -344,7 +535,16 @@ struct DashboardView: View {
         .accessibilityHint(projectsCollapsed ? "Shows the projects" : "Hides the projects")
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("projects-section")
+        if !projectsCollapsed {
+          rowList(projects) { project in
+            rowButton(
+              AppRoute.project(profile: store.profile.id, sourceID: agent, projectID: project.id),
+              identifier: "project-row-\(project.id)",
+              content: DashboardRows.project(project, now: now))
+          }
+        }
       }
+      .padding(.bottom, WebSpace.sectionGap)
     }
   }
 
@@ -352,19 +552,21 @@ struct DashboardView: View {
 
   @ViewBuilder private func recentSection(now: Date) -> some View {
     let threads = recentThreads
-    Section {
+    VStack(alignment: .leading, spacing: 0) {
+      sectionHead(archived ? "Archived" : "Recent")
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("recent-section")
       if threads.isEmpty {
         recentEmpty
       }
-      ForEach(threads, id: \.id) { thread in
-        NavigationLink(value: conversationRoute(thread)) {
-          ConversationRow(
-            DashboardRows.recent(
-              thread, unread: store.isUnread(thread),
-              confirmed: store.isRunningConfirmed(threadID: thread.id), projects: store.projects,
-              tags: store.tags, now: now))
-        }
-        .accessibilityIdentifier("recent-row-\(thread.id)")
+      rowList(threads) { thread in
+        rowButton(
+          conversationRoute(thread), identifier: "recent-row-\(thread.id)",
+          content: DashboardRows.recent(
+            thread, unread: store.isUnread(thread),
+            confirmed: store.isRunningConfirmed(threadID: thread.id), projects: store.projects,
+            tags: store.tags, now: now))
       }
       if let key = bucketKey, bucket?.nextCursor != nil {
         Button {
@@ -374,20 +576,24 @@ struct DashboardView: View {
             loadingOlder = false
           }
         } label: {
-          HStack {
+          HStack(spacing: 6) {
+            if loadingOlder { ProgressView().controlSize(.mini) }
             Text(loadingOlder ? "Loading older conversations…" : "Load older conversations")
-            if loadingOlder {
-              Spacer()
-              ProgressView()
-            }
           }
+          .webFont(.rowSubtitle)
+          .foregroundStyle(WebColor.textSoft.color)
+          .padding(.horizontal, 9)
+          .frame(minHeight: 31)
+          .background(WebColor.surfaceRaised.color, in: RoundedRectangle(cornerRadius: 8))
+          .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(WebColor.line.color))
+          .frame(minHeight: DesignMetrics.minimumHitTarget)
+          .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .disabled(loadingOlder || !store.isStarted)
+        .padding(.top, 8)
         .accessibilityIdentifier("load-older")
       }
-    } header: {
-      SectionHeader(archived ? "Archived" : "Recent")
-        .accessibilityIdentifier("recent-section")
     }
   }
 
@@ -409,31 +615,32 @@ struct DashboardView: View {
           action: selectedAgentID == nil ? nil : { @MainActor in newConversation() })
       }
     }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 12)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("recent-empty")
   }
 
-  // MARK: Search
+  // MARK: Search results
 
   @ViewBuilder private func searchSections(now: Date) -> some View {
     let hits = search.hits
     if hits.isEmpty {
-      Section {
-        Group {
-          switch search.status {
-          case .error:
-            ErrorStateView(
-              "Search is unavailable right now",
-              message: store.isStarted ? nil : "Search needs a live connection to the console.")
-          case .ready:
-            EmptyStateView("No matching conversations", systemImage: "magnifyingglass")
-          case .idle, .loading:
-            LoadingStateView("Searching…")
-          }
+      Group {
+        switch search.status {
+        case .error:
+          ErrorStateView(
+            "Search is unavailable right now",
+            message: store.isStarted ? nil : "Search needs a live connection to the console.")
+        case .ready:
+          EmptyStateView("No matching conversations", systemImage: "magnifyingglass")
+        case .idle, .loading:
+          LoadingStateView("Searching…")
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("search-results")
       }
+      .frame(maxWidth: .infinity)
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("search-results")
     } else {
       let current = Dictionary(
         store.buckets.values.flatMap(\.threads).map { ($0.id, $0) },
@@ -441,22 +648,21 @@ struct DashboardView: View {
       let active = hits.filter { $0.thread.archivedAt == nil }
       let shelved = hits.filter { $0.thread.archivedAt != nil }
       if !active.isEmpty {
-        Section {
-          ForEach(active, id: \.thread.id) { hit in searchRow(hit, current: current, now: now) }
-        } header: {
-          SectionHeader("Conversations", detail: search.status == .loading ? "Updating…" : nil)
+        VStack(alignment: .leading, spacing: 0) {
+          sectionHead("Conversations", note: search.status == .loading ? "Updating…" : nil)
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("search-results")
-        } footer: {
+          rowList(active) { hit in searchRow(hit, current: current, now: now) }
           if search.truncated && shelved.isEmpty { truncatedNote }
         }
+        .padding(.bottom, WebSpace.sectionGap)
       }
       if !shelved.isEmpty {
-        Section {
-          ForEach(shelved, id: \.thread.id) { hit in searchRow(hit, current: current, now: now) }
-        } header: {
-          SectionHeader("Archived")
+        VStack(alignment: .leading, spacing: 0) {
+          sectionHead("Archived")
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier(active.isEmpty ? "search-results" : "search-archived")
-        } footer: {
+          rowList(shelved) { hit in searchRow(hit, current: current, now: now) }
           if search.truncated { truncatedNote }
         }
       }
@@ -465,37 +671,44 @@ struct DashboardView: View {
 
   private var truncatedNote: some View {
     Text("Showing the closest matches. Add a word to narrow the search.")
-      .designFont(.caption)
+      .webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+      .padding(.top, 8)
   }
 
   private func searchRow(_ hit: WebThreadSearchHit, current: [String: WebThread], now: Date)
     -> some View
   {
-    NavigationLink(value: conversationRoute(current[hit.thread.id] ?? hit.thread)) {
-      ConversationRow(
-        DashboardRows.search(
-          hit, current: current[hit.thread.id], query: search.answeredQuery,
-          projects: store.projects, now: now))
-    }
-    .accessibilityIdentifier("search-row-\(hit.thread.id)")
+    rowButton(
+      conversationRoute(current[hit.thread.id] ?? hit.thread),
+      identifier: "search-row-\(hit.thread.id)",
+      content: DashboardRows.search(
+        hit, current: current[hit.thread.id], query: search.answeredQuery,
+        projects: store.projects, now: now))
   }
 
-  // MARK: Toolbar
+  // MARK: Footer
 
-  @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-    ToolbarItem(placement: .topBarLeading) {
-      Button("Consoles", systemImage: "server.rack") { manageConsoles() }
-        .accessibilityIdentifier("consoles-button")
-    }
-    ToolbarItem(placement: .primaryAction) {
-      Button("New conversation", systemImage: "square.and.pencil") { newConversation() }
-        .disabled(selectedAgentID == nil)
-        .accessibilityIdentifier("new-conversation")
-    }
-    ToolbarItemGroup(placement: .bottomBar) {
-      dataModeMenu
-      Spacer()
-      archiveToggle
+  /// Web `.dashboard-footer`: data mode and Archived as quiet 32 pt pills, below a 28 pt fade
+  /// from the transparent list into the panel.
+  private var footer: some View {
+    VStack(spacing: 0) {
+      LinearGradient(
+        colors: [theme.palette.panel.color.opacity(0), theme.palette.panel.color],
+        startPoint: .top, endPoint: .bottom
+      )
+      .frame(height: 28)
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+      GlassEffectContainer(spacing: 8) {
+        HStack(spacing: 8) {
+          dataModeMenu
+          Spacer(minLength: 0)
+          archiveToggle
+        }
+      }
+      .padding(.horizontal, WebSpace.dashboardGutter - 7)
+      .frame(minHeight: 44)
+      .background(theme.palette.panel.color.ignoresSafeArea(edges: .bottom))
     }
   }
 
@@ -514,13 +727,15 @@ struct DashboardView: View {
       Text("Auto follows Low Data Mode. Lean halves page sizes and batches live updates.")
     } label: {
       // Text stays visible: the mode is a fact to read, not only a control to find.
-      HStack(spacing: DesignSpacing.xs) {
-        Image(
-          systemName: store.effectiveDataMode == .lean
-            ? "leaf" : "antenna.radiowaves.left.and.right")
-        Text(label)
+      HStack(spacing: 6) {
+        Image(systemName: store.effectiveDataMode == .lean ? "leaf" : "waveform.path.ecg")
+          .font(.system(size: 11, weight: .medium))
+        Text(label).fontWeight(.semibold)
       }
+      .webQuietPill(hitTarget: false)
     }
+    .buttonStyle(.plain)
+    .frame(minHeight: DesignMetrics.minimumHitTarget)
     .accessibilityLabel("Data \(label)")
     .accessibilityHint("Changes the data mode")
     .accessibilityIdentifier("data-mode")
@@ -534,11 +749,13 @@ struct DashboardView: View {
     return Button {
       toggleArchive()
     } label: {
-      HStack(spacing: DesignSpacing.xs) {
+      HStack(spacing: 6) {
         Image(systemName: archived ? "bubble.left.and.bubble.right" : "archivebox")
+          .font(.system(size: 11, weight: .medium))
         Text(title)
       }
     }
+    .buttonStyle(WebQuietPillStyle())
     .disabled(selectedAgentID == nil)
     .accessibilityLabel(
       archived ? "Back to conversations" : count > 0 ? "Archived, \(count)" : "Archived"

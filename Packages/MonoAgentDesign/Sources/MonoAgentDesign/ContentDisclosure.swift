@@ -24,7 +24,11 @@ public struct ContentDisclosure<Header: View, Content: View>: View {
       } label: {
         HStack(alignment: .center, spacing: DesignSpacing.sm) {
           header().frame(maxWidth: .infinity, alignment: .leading)
-          Image(systemName: expanded ? "chevron.down" : "chevron.right").accessibilityHidden(true)
+          Image(systemName: "chevron.down")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(WebColor.textMuted.color)
+            .rotationEffect(.degrees(expanded ? 180 : 0))
+            .accessibilityHidden(true)
         }.frame(minHeight: DesignMetrics.minimumHitTarget).contentShape(Rectangle())
       }.buttonStyle(.plain).foregroundStyle(.primary)
         .accessibilityElement(children: .combine)
