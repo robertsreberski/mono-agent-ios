@@ -7,6 +7,7 @@ import Testing
 @Suite("MCP secure-document goldens")
 struct McpSecureDocumentTests {
   // Web mcp-app-document.ts:24–41,50–52; mcp-app-proxy.test.ts:259–282.
+  // Native policy adds the deliberate webrtc 'block' defense-in-depth suffix.
   @Test func canonicalNoGrantsGolden() throws {
     let expected =
       "<!doctype html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; navigate-to 'none'; webrtc 'block'\"><meta name=\"referrer\" content=\"no-referrer\"></head><p>producer contract</p>"

@@ -37,10 +37,32 @@ final class McpAppHost: NSObject, WKNavigationDelegate, WKUIDelegate {
     return host
   }
 
+  /// Defense in depth only: every accessible realm must be tested, not just the app global.
+  private static let webRtcDefenseScript = """
+    (() => {
+      const names = ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel',
+        'RTCIceCandidate', 'RTCSessionDescription', 'RTCRtpSender', 'RTCRtpReceiver', 'RTCRtpTransceiver'];
+      for (const name of names) {
+        let target = window;
+        while (target) {
+          if (target === window || Object.prototype.hasOwnProperty.call(target, name)) {
+            try { Object.defineProperty(target, name, {value: undefined, writable: false, configurable: false}); }
+            catch {}
+          }
+          target = Object.getPrototypeOf(target);
+        }
+      }
+    })();
+    """
+
   private init(document: McpSecureDocument, rules: WKContentRuleList) throws {
     listener = McpAppBridgeListener(nonce: UUID().uuidString, generation: UUID().uuidString)
     let controller = WKUserContentController()
     controller.add(rules)
+    controller.addUserScript(
+      WKUserScript(
+        source: Self.webRtcDefenseScript, injectionTime: .atDocumentStart,
+        forMainFrameOnly: false, in: .page))
     controller.addScriptMessageHandler(
       listener, contentWorld: McpAppBridgeListener.world, name: McpAppBridgeListener.handlerName)
     controller.addUserScript(

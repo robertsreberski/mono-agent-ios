@@ -19,20 +19,35 @@ WKFrameInfo, shell URL/origin, session identity and serialized envelope byte cap
 1 MiB + 64 KiB including its native transport envelope. Host owners must call `close()`
 when disposing a host. Fresh hosts never reuse a session identity.
 
-## Known network-isolation gap
+## WebRTC mitigation and residual limits
 
-**WebRTC is not blocked by this core.** On iOS 27.0 with Xcode 27.1, real WKWebViews send
-STUN UDP and TURN TCP to loopback sinks despite canonical CSP and content rules. The
-public WebKit SDK exposes no supported disable-WebRTC preference. The isolation suite
-records the unmet zero-network assertion as an explicit **known issue**, while separately
-asserting that its escape probes really reach both sinks. Do not interpret a green test
-command with that known issue as complete network isolation. This core must not be
-advertised as a general network firewall or wired to UI without considering that risk.
+The web console's canonical CSP has no WebRTC restriction. The same baseline policy on
+iOS 27.0 with Xcode 27.1 permits STUN UDP and TURN TCP despite HTTP/HTTPS content rules.
+No supported disable-WebRTC preference exists in the public WebKit SDK. Adding the
+native-only `webrtc 'block'` directive to both CSPs produces no observed violation or
+reduction in that traffic on this runtime; it remains defense in depth for future engines.
+
+The native host additionally installs a **page-world, all-frame, document-start** script
+that replaces WebRTC constructor globals with nonwritable, nonconfigurable undefined
+properties (including the prefixed peer-connection constructor and RTP/data-channel types).
+It does not touch the isolated world or the bridge. This is JavaScript defense in depth,
+not an engine-level network firewall.
+
+The real-WebKit suite records zero connections/datagrams at both loopback sinks for direct
+construction, caching in the first app script, prototype/descriptor recovery and attempts
+to restore constructors. App-created about:blank frames cannot expose a constructor to
+the app: sandbox-origin access is denied immediately, native policy rejects their load,
+and the host retires. After-load access and document.write attempts also yield zero hits.
+Because these new frames cannot load, this does not establish injection timing in an
+otherwise permitted nested realm. All tested WebRTC variants are normal zero-hit assertions;
+the historical known issue is not suppressed as an expected failure anymore.
 
 Ordinary fetch/XHR/WebSocket/beacon/resource/form and numeric-loopback prefetch/preconnect/
-DNS-prefetch probes record zero inbound connections with the full policy stack. This does
-not prove that DNS-name prefetch cannot leak, or attribute each result to content rules
-rather than CSP/WebKit. Tests use TCP/UDP positive controls and no live console.
+DNS-prefetch probes also record zero inbound connections with the full policy stack. Tests
+use TCP/UDP positive controls and no live console. These bounded runtime tests do not prove
+DNS-name privacy, eliminate unknown JavaScript-realm bypasses, or attribute every result to
+CSP versus content rules versus navigation policy. Keep the sandbox and navigation gate;
+do not rely on global removal alone or advertise a general network firewall.
 
 Public WKWebView APIs also provide no hard per-host CPU or memory quota. The bridge's
 method allowlist, effects, consent, request/rate limits and lifecycle presentation are not

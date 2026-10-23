@@ -17,6 +17,18 @@ private final class McpEnvelopeRecorder: McpAppEnvelopeDelegate {
   }
 }
 
+/// Test-only timing observations; isolation outcomes still come from TCP/UDP sinks and
+/// the production delegate. This handler is never installed by production configuration.
+@MainActor
+private final class McpRtcTimingObserver: NSObject, WKScriptMessageHandler {
+  var observations: [[String: Any]] = []
+  func userContentController(
+    _ userContentController: WKUserContentController, didReceive message: WKScriptMessage
+  ) {
+    if let body = message.body as? [String: Any] { observations.append(body) }
+  }
+}
+
 @Suite("MCP WebKit isolation", .serialized)
 @MainActor
 struct McpAppIsolationTests {
@@ -325,7 +337,10 @@ struct McpAppIsolationTests {
     #expect(recorder.deliveries.count == 1)
   }
 
-  @Test func webRtcHasDocumentedNetworkEscape() async throws {
+  @Test(arguments: [
+    "direct", "cached", "prototype", "nested-immediate", "nested-after-load", "document-write",
+  ])
+  func webRtcMitigationVariants(_ variant: String) async throws {
     let console = try await sink()
     let evil = try await sink()
     defer {
@@ -334,50 +349,114 @@ struct McpAppIsolationTests {
     }
     let recorder = McpEnvelopeRecorder()
     let ports = [console.port, evil.port].map(String.init).joined(separator: ",")
-    let host = try await McpAppHost.make(
-      html: appHtml(
-        probe: """
-          window.rtcCanaries=[];
-          document.addEventListener('securitypolicyviolation', event => {
-            if(event.isTrusted) deliver({marker:'rtc-csp',directive:event.effectiveDirective,policy:event.originalPolicy});
-          });
-          for (const port of [\(ports)]) {
-            const rtc = new RTCPeerConnection({iceServers:[
-              {urls:`stun:127.0.0.1:${port}`},
-              {urls:`turn:127.0.0.1:${port}?transport=tcp`,username:'canary',credential:'fictional'}
-            ]});
-            window.rtcCanaries.push(rtc);
+    let timing = McpRtcTimingObserver()
+    let script = """
+      const observe = value => window.webkit.messageHandlers.rtcProbe.postMessage(value);
+      addEventListener('error', event => observe({marker:'script-error',name:event.error?.name,message:event.message}));
+      const cachedRtcAtFirstAppScript = window.RTCPeerConnection;
+      \(Self.sessionScript)
+      const start = (Constructor, label) => {
+        observe({marker:'constructor-observed',label,available:typeof Constructor==='function'});
+        if(typeof Constructor!=='function') return;
+        for(const port of [\(ports)]) {
+          try {
+            const rtc=new Constructor({iceServers:[{urls:`stun:127.0.0.1:${port}`},
+              {urls:`turn:127.0.0.1:${port}?transport=tcp`,username:'canary',credential:'fictional'}]});
+            window.rtcCanaries=[...(window.rtcCanaries||[]),rtc];
             rtc.createDataChannel('canary');
-            rtc.createOffer().then(offer => rtc.setLocalDescription(offer))
-              .then(() => deliver({marker:'rtc-started',port}));
+            rtc.createOffer().then(offer=>rtc.setLocalDescription(offer))
+              .then(()=>deliver({marker:'rtc-started',label,port})).catch(()=>{});
+          } catch {}
+        }
+      };
+      addEventListener('message', event=>{
+        if(event.source!==parent || event.data?.type!=='probe') return;
+        observe({marker:'descriptors',values:['RTCPeerConnection','webkitRTCPeerConnection','RTCDataChannel',
+          'RTCIceCandidate','RTCSessionDescription','RTCRtpSender','RTCRtpReceiver','RTCRtpTransceiver']
+          .map(name=>({name,available:typeof window[name]==='function',configurable:Object.getOwnPropertyDescriptor(window,name)?.configurable,writable:Object.getOwnPropertyDescriptor(window,name)?.writable}))});
+        document.addEventListener('securitypolicyviolation',event=>observe({marker:'csp',directive:event.effectiveDirective,trusted:event.isTrusted}));
+        deliver({marker:'variant-starting',variant:'\(variant)'});
+        setTimeout(()=>{
+          const variant='\(variant)';
+          if(variant==='direct') {start(window.RTCPeerConnection,variant);return;}
+          if(variant==='cached') {start(cachedRtcAtFirstAppScript,variant);return;}
+          if(variant==='prototype') {
+            let target=window;
+            while(target) {
+              const descriptor=Object.getOwnPropertyDescriptor(target,'RTCPeerConnection');
+              start(descriptor?.value,'prototype-descriptor');
+              target=Object.getPrototypeOf(target);
+            }
+            start(window.constructor.prototype.RTCPeerConnection,'window-constructor-prototype');
+            try { start(Function('return RTCPeerConnection')(),'function-global'); } catch {observe({marker:'unsafe-eval-blocked'});}
+            try {Object.defineProperty(window,'RTCPeerConnection',{value:function restored(){}});} catch {}
+            observe({marker:'descriptor',configurable:Object.getOwnPropertyDescriptor(window,'RTCPeerConnection')?.configurable});
+            return;
           }
-          """), delegate: recorder)
+          const frame=document.createElement('iframe');
+          if(variant==='nested-after-load') frame.onload=()=>start(frame.contentWindow.RTCPeerConnection,variant);
+          document.body.append(frame);
+          try { observe({marker:'nested-created',available:typeof frame.contentWindow.RTCPeerConnection==='function',configurable:Object.getOwnPropertyDescriptor(frame.contentWindow,'RTCPeerConnection')?.configurable}); }
+          catch(error) { observe({marker:'nested-access-denied',name:error.name,message:error.message}); }
+          if(variant==='nested-immediate') start(frame.contentWindow.RTCPeerConnection,variant);
+          if(variant==='document-write') {
+            frame.contentDocument.open();
+            frame.contentDocument.write('<script>window.webkit.messageHandlers.rtcProbe.postMessage({marker:"written-frame",available:typeof RTCPeerConnection==="function"})<'+'/script>');
+            frame.contentDocument.close();
+            start(frame.contentWindow.RTCPeerConnection,variant);
+          }
+        },50);
+      });
+      """
+    let host = try await McpAppHost.make(html: "<script>\(script)</script>", delegate: recorder)
+    host.webView.configuration.userContentController.add(timing, name: "rtcProbe")
     attach(host)
-    defer { host.close() }
+    defer {
+      host.webView.configuration.userContentController.removeScriptMessageHandler(
+        forName: "rtcProbe")
+      host.close()
+    }
     try await waitUntil { recorder.deliveries.count == 1 }
     try await probe(host)
     try await waitUntil {
-      recorder.deliveries.filter { $0["marker"] as? String == "rtc-started" }.count == 2
+      recorder.deliveries.contains { $0["marker"] as? String == "variant-starting" }
     }
     try await Task.sleep(for: .seconds(4))
     print(
-      "MCP WebRTC ESCAPE console=\(console.inboundConnections) connections/\(console.datagrams) datagrams/\(console.nonHttpBytes) nonHTTP bytes; evil=\(evil.inboundConnections)/\(evil.datagrams)/\(evil.nonHttpBytes)"
+      "MCP WebRTC variant \(variant): console=\(console.inboundConnections)/\(console.datagrams)/\(console.nonHttpBytes), evil=\(evil.inboundConnections)/\(evil.datagrams)/\(evil.nonHttpBytes), retired=\(host.retirementReason ?? "none"); observations=\(recorder.deliveries)"
     )
-    print(
-      "MCP WebRTC policy events: \(recorder.deliveries.filter { $0["marker"] as? String == "rtc-csp" })"
-    )
-    // D4 residual risk: the public SDK exposes no WebRTC-disable preference. Keep the unmet
-    // zero-network invariant visible as a known issue, NEVER a successful isolation proof.
-    withKnownIssue(
-      "WebRTC STUN/TURN bypasses canonical CSP and WKContentRuleList; no supported disable setting in Xcode 27.1"
-    ) {
-      #expect(console.inboundConnections == 0 && evil.inboundConnections == 0)
+    print("MCP RTC timing \(variant): \(timing.observations)")
+    #expect(console.inboundConnections == 0 && evil.inboundConnections == 0)
+    #expect(console.datagrams == 0 && evil.datagrams == 0)
+    #expect(console.nonHttpBytes == 0 && evil.nonHttpBytes == 0)
+    let descriptors = try #require(
+      timing.observations.first { $0["marker"] as? String == "descriptors" }?["values"]
+        as? [[String: Any]])
+    #expect(descriptors.count == 8)
+    for descriptor in descriptors {
+      #expect(descriptor["available"] as? Bool == false)
+      #expect(descriptor["configurable"] as? Bool == false)
+      #expect(descriptor["writable"] as? Bool == false)
     }
-    #expect(console.datagrams > 0)
-    #expect(evil.datagrams > 0)
-    #expect(console.nonHttpBytes > 0)
-    #expect(evil.nonHttpBytes > 0)
+    if ["direct", "cached", "prototype"].contains(variant) {
+      #expect(!host.isRetired)
+      #expect(timing.observations.contains { $0["marker"] as? String == "constructor-observed" })
+    } else {
+      #expect(host.isRetired)
+      #expect(host.navigationDecisions.contains("sub:about:blank"))
+    }
     #expect(console.requests == 0 && evil.requests == 0)
+    for sink in [console, evil] {
+      _ = try await URLSession.shared.data(from: URL(string: sink.origin + "/control")!)
+      try await sink.sendUDPControl()
+      try await waitUntil { sink.requests == 1 && sink.datagrams > 0 }
+    }
+    if !host.isRetired {
+      let isolated = try await host.webView.callAsyncJavaScript(
+        "return typeof RTCPeerConnection", arguments: [:], in: nil,
+        contentWorld: McpAppBridgeListener.world)
+      #expect(isolated as? String == "function")
+    }
   }
 
   @Test func forgedEventsAndStaleSessionsNeverDeliver() async throws {
