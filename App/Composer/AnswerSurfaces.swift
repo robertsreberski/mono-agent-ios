@@ -138,7 +138,17 @@ struct AskUserCard: View {
     var delay = lean ? 0.5 : 0.25
     let maximum = lean ? 4.0 : 2.0
     while !Task.isCancelled {
-      if terminal != nil { return }
+      if snapshot.map({ $0.status != "pending" }) == true { return }
+      // A persisted terminal result closes the form immediately. By-id agents can still
+      // hydrate its answer summary after a lazy transcript row is recreated; legacy agents
+      // have only a pending endpoint, so a retained pending snapshot must not keep polling.
+      if persisted != nil,
+        store.agents.first(where: {
+          $0.sourceId == store.conversations[message.threadId]?.thread.sourceId
+        })?.supportsAskById == false
+      {
+        return
+      }
       // Not live: conclude nothing yet; the poll restarts when the connection does.
       guard store.connection == .live else { return }
       let id = expectedID ?? assignedID
@@ -150,7 +160,7 @@ struct AskUserCard: View {
       do {
         if let value = try await store.askSnapshot(threadID: message.threadId, interactionID: id) {
           let now = await store.serverNow()
-          guard !Task.isCancelled, scenePhase == .active, terminal == nil else { return }
+          guard !Task.isCancelled, scenePhase == .active else { return }
           interaction.applyPoll(AskForm.normalized(value, now: now), revision: revision)
           assignedID = value.interactionId
           unavailable = false
@@ -162,7 +172,7 @@ struct AskUserCard: View {
       } catch {
         unavailable = true
       }
-      if terminal != nil { return }
+      if snapshot.map({ $0.status != "pending" }) == true { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
       delay = min(maximum, delay * 2)
     }
