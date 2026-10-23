@@ -84,6 +84,9 @@
           catalogSection("Status") { StatusSpecimens() }
           catalogSection("Unread markers") { UnreadSpecimens() }
           catalogSection("Banners") { BannerSpecimens() }
+          catalogSection("Agent tiles") { AgentTileSpecimens() }
+          catalogSection("Tags and projects") { ChipSpecimens() }
+          catalogSection("Conversation rows") { RowSpecimens() }
           catalogSection("Section headers") {
             VStack(alignment: .leading, spacing: DesignSpacing.md) {
               SectionHeader("Saved consoles")
@@ -281,6 +284,64 @@
     }
   }
 
+  private struct AgentTileSpecimens: View {
+    var body: some View {
+      ScrollView(.horizontal) {
+        HStack(alignment: .top, spacing: DesignSpacing.md) {
+          AgentTile(
+            initials: "AR", caption: "Atlas", selected: true, pinned: true, badge: .running(2))
+          AgentTile(initials: "HO", caption: "Harbor", presence: .degraded, badge: .unread(3))
+          AgentTile(initials: "QW", caption: "Quill")
+          AgentTile(initials: "DH", caption: "Dormant", presence: .offline)
+        }
+        .padding(.horizontal, DesignSpacing.sm)
+      }
+      .contentSurface(padding: DesignSpacing.md)
+    }
+  }
+
+  private struct ChipSpecimens: View {
+    var body: some View {
+      FlowLayout {
+        ProjectChip("Field notes", color: .blue)
+        ForEach(LabelColor.allCases, id: \.self) { TagChip($0.rawValue, color: $0) }
+        ActivityIndicator(.running)
+        ActivityIndicator(.lastKnown)
+      }
+      .contentSurface(padding: DesignSpacing.md)
+    }
+  }
+
+  private struct RowSpecimens: View {
+    private let rows: [ConversationRowContent] = [
+      .init(
+        leading: .symbol("bubble.left", label: "Conversation", tone: .neutral),
+        title: "Weekly field notes", time: "40m", unread: true,
+        preview: "Drafted the synthetic summary.", project: .init("Field notes", color: .blue),
+        tags: [.init("Research", color: .teal), .init("Draft")]),
+      .init(
+        leading: .monogram("AR", label: "Atlas Research"), title: "Launch checklist",
+        time: "2m", activity: .running, preview: "Working · 4 tool calls · $0.42",
+        previewPending: true),
+      .init(
+        leading: .symbol("exclamationmark.triangle.fill", label: "Needs attention", tone: .danger),
+        title: "Nightly import", time: "3h", activity: .lastKnown, preview: "Failed"),
+      .init(
+        leading: .folder(.amber), title: "Website refresh", preview: "2 chats · updated 2m",
+        detail: "1 running"),
+    ]
+
+    var body: some View {
+      VStack(alignment: .leading, spacing: DesignSpacing.md) {
+        ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+          if index > 0 { Divider() }
+          ConversationRow(row)
+        }
+      }
+      .contentSurface(padding: DesignSpacing.md)
+    }
+  }
+
   private struct BannerSpecimens: View {
     var body: some View {
       VStack(spacing: DesignSpacing.sm) {
@@ -292,6 +353,9 @@
           actionTitle: "Retry", action: {})
         ConnectionBanner(
           .storage, title: "Storage warning", message: "Changes are in memory only.")
+        ConnectionBanner(
+          .problem, title: "Conversation list could not be refreshed.",
+          message: "Showing the last synthetic list.", actionTitle: "Retry", action: {})
         ConnectionBanner(.notice, title: "Connect only to a console you trust")
       }
     }

@@ -151,13 +151,24 @@ class ToolingTests(unittest.TestCase):
     def test_matrix_keeps_connection_screens_and_covers_the_catalog(self):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
-        connection = {(s, a) for s, a, v in keys if not s.startswith("design-catalog") and v is None}
+        connection = {(s, a) for s, a, v in keys
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-")) and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
             for appearance in ("light", "dark"):
                 self.assertIn((f"design-catalog-{theme}", appearance, None), keys)
         self.assertTrue(any(entry["textSize"] != "standard" and entry["scenario"].startswith("design-catalog") for entry in MATRIX))
         self.assertTrue(any(entry["transparency"] != "system" for entry in MATRIX))
+
+    def test_matrix_covers_dashboard_scenarios_themes_and_accessibility(self):
+        keys = {(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX}
+        for scenario in ("dashboard-populated", "dashboard-empty", "dashboard-offline",
+                         "dashboard-search", "conversation-placeholder"):
+            for appearance in ("light", "dark"):
+                self.assertIn((scenario, appearance, None), keys)
+        dashboard = [entry for entry in MATRIX if entry["scenario"].startswith("dashboard-")]
+        self.assertTrue(any(entry["theme"] != "evergreen" for entry in dashboard))
+        self.assertTrue(any(entry["textSize"] != "standard" for entry in dashboard))
 
     def test_ci_family_leg_runs_only_one_device_and_uses_collision_free_index(self):
         for family in ("iPhone", "iPad"):

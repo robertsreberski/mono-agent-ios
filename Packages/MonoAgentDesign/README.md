@@ -70,7 +70,11 @@ colour is never the only cue.
 | Content card | `.contentSurface(padding:)` | Opaque, readable; outline under Increase Contrast |
 | Status | `StatusKind`, `StatusTone`, `StatusIndicator(_:label:)`, `StatusChip(_:label:placement:)` | Symbol + text; floating chips use glass |
 | Unread | `UnreadMarker(count:)` | Dot, count, `99+`; spoken as "N unread" |
-| Banner | `ConnectionBanner(_:title:message:actionTitle:action:)` | Kinds: insecure HTTP, offline, storage, notice. Icon stacks above text at accessibility sizes |
+| Banner | `ConnectionBanner(_:title:message:actionTitle:action:)` | Kinds: insecure HTTP, offline, storage, problem (a refresh/read failed), notice. Icon stacks above text at accessibility sizes |
+| Agent tile | `AgentTile(initials:caption:presence:selected:pinned:badge:)`, `AgentTile.accessibilityLabel(…)`, `AgentTile.badge(running:unread:)` | Monogram square. Presence symbol (online/degraded/offline, dashed when offline), pin star, one corner badge: running (bolt + count) wins over unread (outlined count); both are spoken |
+| Tag / project chips | `TagChip(_:color:)`, `ProjectChip(_:color:)`, `LabelColor(serverValue:)` | Web `--project-ink` on `--project-tint` pairs for the eight wire colours; `default` follows the theme. Ink-on-tint is AA-tested |
+| Activity | `ActivityIndicator(_:)`, `ActivityState` | Confirmed running vs last-known (unconfirmed): distinct symbols and spoken words |
+| Conversation row | `ConversationRow(_:)`, `ConversationRowContent` | Value-driven row for recent, running, search and project lists: kind/monogram/folder tile, title (attributed for search highlights), unread, wake, activity, preview, project/tag chips (+N after three, wrapping), detail and one composed VoiceOver sentence. Tile moves above the text at accessibility sizes |
 | States | `EmptyStateView`, `ErrorStateView`, `LoadingStateView` | Optional single action |
 | Section header | `SectionHeader(_:detail:accessory:)` | Header trait; optional trailing accessory |
 | Composer shell | `ComposerBarShell(leading:field:trailing:)` | Layout only: one `GlassEffectContainer`, readable width. No drafts or sending |

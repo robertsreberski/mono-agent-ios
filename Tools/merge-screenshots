@@ -14,7 +14,9 @@ for family in ("iPhone", "iPad"):
     rows = json.loads((output / f"index-{family}.json").read_text())
     found = set()
     for row in rows:
-        variant = "ax3" if "__ax3.png" in row["file"] else None
+        # <family>__<scenario>__<appearance>[__<variant>].png
+        parts = row["file"].removesuffix(".png").split("__")
+        variant = parts[3] if len(parts) == 4 else None
         key = (row["scenario"], row["appearance"], variant)
         assert key not in found, f"Duplicate {family} screenshot: {key}"
         found.add(key)

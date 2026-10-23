@@ -21,7 +21,13 @@ Screens must not instantiate API clients or submit directly.
   `journalStorage`, `pendingSubmissions`, `draftClearStorage`, `serverClockOffset`, and `serverNow()`.
 - Commands: `start`, `hydrate`, `select(sourceID:archived:threadID:)`, `loadOlder`,
   `refreshBucket(_:older:)`, `markVisible`, `reconcile`, `repairMessage`,
-  `repairToolOutput`, `cancel(threadID:)`, `scenePhaseChanged`, and `stop`.
+  `repairToolOutput`, `cancel(threadID:)`, `scenePhaseChanged`, `clearErrorMessage`, and `stop`.
+- Search: `searchThreads(sourceID:query:) -> ThreadSearchResult` is the web console's
+  server-side `chats`-scope search. Trimmed queries shorter than `minimumSearchQuery` (2)
+  return an empty result without a request; an offline-hydrated, stopped or backgrounded
+  Store throws `ConsoleSearchError.unavailable` without a request; a late answer after
+  stop/background throws `CancellationError`. Hits never patch buckets, the fleet, the cache
+  or read markers, and tombstoned conversations are filtered. Debounce belongs to the caller.
   Call `markVisible(true)` only when that transcript is actually visible; selection alone
   does not mark it read. Call false when it leaves the visible surface.
 - Composer: `draft(sourceID:threadID:)`, `setDraft`, `canSend`, `canUpload`, `stageUploads`,

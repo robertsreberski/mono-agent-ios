@@ -4,12 +4,6 @@ import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
 
-/// IDs, never DTOs, are navigation identity. Feature PRs can extend these routes.
-enum AppRoute: Hashable {
-  case console(UUID)
-  case agent(profile: UUID, id: String)
-}
-
 extension ConsoleTheme {
   /// Only a live, connected identity selects a theme; anything else uses the fallback.
   init(connection state: ConnectionState?) {
@@ -21,9 +15,53 @@ extension ConsoleTheme {
   }
 }
 
+/// The single scene's root. A console with a retained identity opens on its dashboard; the
+/// saved-console screens stay the root until then and remain reachable from the dashboard.
 struct ConsoleShell: View {
   let model: AppModel
+  @State private var managingConsoles = false
+
+  private var theme: ConsoleTheme {
+    ConsoleTheme(connection: model.registry.selectedID.flatMap { model.registry.states[$0] })
+  }
+
+  var body: some View {
+    Group {
+      if let store = model.store {
+        DashboardShell(model: model, store: store) { managingConsoles = true }
+          .id(store.namespace)
+      } else if model.expectsStore {
+        NavigationStack {
+          LoadingStateView("Opening console…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.palette.canvas.color)
+            .accessibilityIdentifier("connection-loading")
+        }
+      } else {
+        ConsoleManager(model: model, presentation: .root)
+      }
+    }
+    .consoleTheme(theme)
+    .sheet(isPresented: $managingConsoles) {
+      ConsoleManager(model: model, presentation: .sheet)
+    }
+    .onChange(of: model.expectsStore) { _, expects in
+      // The dashboard behind the sheet is gone (removed, edited or never-connected console):
+      // the connection screens become the root again.
+      if !expects { managingConsoles = false }
+    }
+  }
+}
+
+/// Saved-console management: list, add/edit/remove and the connection detail. The root
+/// presentation adapts to the size class; the sheet presentation always stacks.
+struct ConsoleManager: View {
+  enum Presentation { case root, sheet }
+
+  let model: AppModel
+  let presentation: Presentation
   @Environment(\.horizontalSizeClass) private var sizeClass
+  @Environment(\.dismiss) private var dismiss
   @State private var route: AppRoute?
   @State private var editor: EditorDestination?
   @State private var deleting: SavedConsole?
@@ -41,7 +79,7 @@ struct ConsoleShell: View {
 
   var body: some View {
     Group {
-      if sizeClass == .regular {
+      if sizeClass == .regular && presentation == .root {
         NavigationSplitView {
           sidebar
         } detail: {
@@ -79,11 +117,17 @@ struct ConsoleShell: View {
         }
       }
     }
+    .onAppear {
+      if presentation == .root, model.isReady, route == nil {
+        route = model.registry.selectedID.map(AppRoute.console)
+      }
+    }
     .onChange(of: model.isReady) { _, ready in
-      if ready { route = model.registry.selectedID.map(AppRoute.console) }
+      if ready && presentation == .root {
+        route = model.registry.selectedID.map(AppRoute.console)
+      }
     }
   }
-
   private var sidebar: some View {
     List {
       if let error = model.registry.localDataError {
@@ -132,6 +176,11 @@ struct ConsoleShell: View {
     .accessibilityIdentifier(model.isReady ? "scenario-ready" : "connection-loading")
     .navigationTitle("Consoles")
     .toolbar {
+      if presentation == .sheet {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { dismiss() }.accessibilityIdentifier("consoles-done")
+        }
+      }
       ToolbarItem(placement: .primaryAction) {
         Button("Add console", systemImage: "plus") { editor = EditorDestination(console: nil) }
           .accessibilityIdentifier("add-console")
@@ -145,7 +194,9 @@ struct ConsoleShell: View {
     if case .console(let id) = route,
       let console = model.registry.consoles.first(where: { $0.id == id })
     {
-      ConsoleDetail(console: console, registry: model.registry, ready: model.isReady)
+      ConsoleDetail(
+        console: console, registry: model.registry, ready: model.isReady,
+        dashboardOpen: model.store?.profile.id == console.id)
     } else {
       EmptyStateView(
         "Choose a console", systemImage: "sidebar.left",
@@ -225,6 +276,7 @@ private struct ConsoleDetail: View {
   let console: SavedConsole
   let registry: ConnectionRegistry
   let ready: Bool
+  let dashboardOpen: Bool
   @Environment(\.consoleTheme) private var theme
 
   private var state: ConnectionState { registry.states[console.id] ?? .disconnected }
@@ -279,8 +331,12 @@ private struct ConsoleDetail: View {
         StatusChip(.online, label: "Connected to \(identity.displayName)")
           .accessibilityIdentifier("console-online")
         Text("Console ready").designFont(.sectionTitle)
-        Text("Agents and conversations will appear here in a future update.")
-          .designFont(.supporting).foregroundStyle(.secondary)
+        Text(
+          dashboardOpen
+            ? "Its agents and conversations are on the dashboard behind this sheet."
+            : "Its dashboard opens as soon as this console is selected."
+        )
+        .designFont(.supporting).foregroundStyle(.secondary)
       }
       .contentSurface()
     }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
+import MonoAgentDesign
 import MonoAgentKit
 import MonoAgentStore
 import Observation
@@ -25,6 +26,8 @@ final class AppModel {
     guard let id = registry.selectedID else { return nil }
     return registry.consoles.first { $0.id == id && $0.lastIdentity != nil }
   }
+  /// A retained identity is selected, so a Store is (or is about to be) composed for it.
+  var expectsStore: Bool { retainedProfile != nil }
   var storeCompositionKey: String {
     guard let profile = retainedProfile else { return "none" }
     return profile.id.uuidString + ConsoleNamespace(profile: profile).identity
@@ -32,10 +35,16 @@ final class AppModel {
   }
   private(set) var isReady = false
   let appearance: ColorScheme?
+  /// Fixed "now" for relative times in synthetic fixtures; `nil` follows the clock.
+  let referenceDate: Date?
+  /// DEBUG fixture launch state applied once the dashboard is ready; always `nil` in Release.
+  let launchQuery: String?
+  let launchThreadID: String?
   @ObservationIgnored private var started = false
   #if DEBUG
     @ObservationIgnored private let scenario: Scenario?
     @ObservationIgnored private let storeScenario: StoreScenario?
+    @ObservationIgnored private let fixtureTheme: String
     /// A DEBUG design-catalog scenario replaces the console shell; storage stays isolated.
     let catalog: DesignCatalogScenario?
   #endif
@@ -52,11 +61,15 @@ final class AppModel {
       storeScenario = configuration.storeScenario
       catalog = configuration.catalog
       appearance = configuration.appearance
+      fixtureTheme = configuration.fixtureTheme
+      referenceDate = configuration.storeScenario?.isDashboard == true ? DashboardFixture.now : nil
+      launchQuery = configuration.storeScenario?.launchQuery
+      launchThreadID = configuration.storeScenario?.launchThreadID
       if let scenario {
         directory = FileManager.default.temporaryDirectory
           .appendingPathComponent("SyntheticFixtures", isDirectory: true)
           .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        transport = ScriptedTransport(scenario.steps)
+        transport = ScriptedTransport(Self.steps(scenario, theme: configuration.fixtureTheme))
         // Fixture storage is always fresh. Reset never deletes real profiles.
         UIView.setAnimationsEnabled(false)
       } else {
@@ -66,6 +79,9 @@ final class AppModel {
     #else
       // Release ignores all fixture/reset/appearance arguments.
       appearance = nil
+      referenceDate = nil
+      launchQuery = nil
+      launchThreadID = nil
       directory = Self.profileDirectory
       transport = URLSessionTransport()
     #endif
@@ -81,11 +97,15 @@ final class AppModel {
     /// Previews share the exact same catalog and fail-closed transport as XCUI screenshots.
     init(
       scenario: Scenario, appearance: ColorScheme? = nil, storeScenario: StoreScenario? = nil,
-      consoleRepository: (any ConsoleRepository)? = nil
+      consoleRepository: (any ConsoleRepository)? = nil, fixtureTheme: String = "evergreen"
     ) {
       self.scenario = scenario
       self.storeScenario = storeScenario
       self.appearance = appearance
+      self.fixtureTheme = fixtureTheme
+      referenceDate = storeScenario?.isDashboard == true ? DashboardFixture.now : nil
+      launchQuery = storeScenario?.launchQuery
+      launchThreadID = storeScenario?.launchThreadID
       catalog = nil
       let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("SyntheticPreviews", isDirectory: true)
@@ -96,9 +116,18 @@ final class AppModel {
           directory: directory.appendingPathComponent("Consoles"))
       registry = ConnectionRegistry(
         repository: FileProfileRepository(directory: directory),
-        probe: ConnectionProbe(transport: ScriptedTransport(scenario.steps)),
+        probe: ConnectionProbe(
+          transport: ScriptedTransport(Self.steps(scenario, theme: fixtureTheme))),
         consoleRepository: self.consoleRepository
       )
+    }
+
+    /// The probe script, with the fixture identity's theme swapped when one is requested.
+    private static func steps(_ scenario: Scenario, theme: String) -> [ScriptedTransport.Step] {
+      guard theme != "evergreen", scenario == .consoleOnline else { return scenario.steps }
+      let text = String(decoding: Scenario.bootstrap.data, as: UTF8.self)
+        .replacingOccurrences(of: #""theme":"evergreen""#, with: #""theme":"\#(theme)""#)
+      return [.response(Scenario.health), .response(HTTPResponse(data: Data(text.utf8)))]
     }
   #endif
 
@@ -122,6 +151,7 @@ final class AppModel {
     #endif
     // Connection/navigation readiness must not wait for cache, journal or stream initialization.
     // Store fixture readiness still guarantees that its prepared state has been hydrated.
+    // The dashboard adds its own data readiness (`DashboardView.ready`).
     #if DEBUG
       if storeScenario == nil { isReady = true }
     #else
@@ -184,7 +214,8 @@ final class AppModel {
     #if DEBUG
       if scenario != nil {
         api = APIClient(
-          endpoint: profile.endpoint, transport: ScenarioConsoleTransport(storeScenario))
+          endpoint: profile.endpoint,
+          transport: ScenarioConsoleTransport(storeScenario, theme: fixtureTheme))
         events = ScenarioEventSource(storeScenario)
       } else {
         api = APIClient(endpoint: profile.endpoint)
@@ -198,7 +229,9 @@ final class AppModel {
       profile: profile, api: api, events: events, repository: consoleRepository)
     store = next
     #if DEBUG
-      if let storeScenario { try? await storeScenario.prepare(next, repository: consoleRepository) }
+      if let storeScenario {
+        try? await storeScenario.prepare(next, repository: consoleRepository, theme: fixtureTheme)
+      }
     #endif
     guard generation == compositionGeneration else { return }
     #if DEBUG
@@ -227,6 +260,8 @@ final class AppModel {
     let storeScenario: StoreScenario?
     let catalog: DesignCatalogScenario?
     let appearance: ColorScheme?
+    /// `--fixture-theme <evergreen|ocean|plum|terracotta>` for the synthetic console identity.
+    let fixtureTheme: String
 
     init(arguments: [String]) throws {
       func value(_ flag: String) throws -> String? {
@@ -265,6 +300,12 @@ final class AppModel {
       } else {
         appearance = nil
       }
+      if let name = try value("--fixture-theme") {
+        guard ConsoleTheme(rawValue: name) != nil else { throw LaunchError.unknownTheme(name) }
+        fixtureTheme = name
+      } else {
+        fixtureTheme = "evergreen"
+      }
     }
   }
 
@@ -272,5 +313,6 @@ final class AppModel {
     case missingValue(String)
     case unknownScenario(String)
     case unknownAppearance(String)
+    case unknownTheme(String)
   }
 #endif
