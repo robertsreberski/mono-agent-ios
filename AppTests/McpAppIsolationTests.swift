@@ -682,4 +682,61 @@ struct McpAppIsolationTests {
     #expect(recorder.deliveries.last?["marker"] as? String == "storage-probed")
   }
 
+  @Test func releasedHostLeavesRetainedWebViewFailClosed() async throws {
+    let sink = try await sink()
+    defer { sink.stop() }
+    let recorder = McpEnvelopeRecorder()
+    var host: McpAppHost? = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          deliver({marker:'navigation-scheduled'});
+          setTimeout(()=>{location.href='\(sink.origin)/released-host';},150);
+          """), delegate: recorder)
+    weak let weakHost = host
+    let retained = try #require(host?.webView)
+    attach(try #require(host))
+    try await waitUntil { recorder.deliveries.count == 1 }
+    try await probe(try #require(host))
+    try await waitUntil { recorder.deliveries.count == 2 }
+    host = nil
+    try await waitUntil { weakHost == nil }
+    #expect(retained.navigationDelegate === retained.policy)
+    #expect(retained.uiDelegate === retained.policy)
+    #expect(retained.policy.isClosed)
+    retained.load(URLRequest(url: URL(string: "data:text/html,fail-closed-canary")!))
+    try await waitUntil {
+      retained.policy.navigationDecisions.contains("main:data:text/html,fail-closed-canary")
+    }
+    try await Task.sleep(for: .milliseconds(400))
+    #expect(retained.url == McpAppShellSchemeHandler.url)
+    #expect(sink.inboundConnections == 0)
+    #expect(recorder.deliveries.count == 2)
+    #expect(retained.configuration.userContentController.userScripts.isEmpty)
+    retained.removeFromSuperview()
+  }
+
+  @Test func nativeLinkPreviewContextMenuAndDraggingAreDenied() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html:
+        "<a href='https://fixture.example/link'><img src='data:image/svg+xml,%3Csvg/%3E'>link</a><script>\(Self.sessionScript)</script>",
+      delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    #expect(!host.webView.allowsLinkPreview)
+    #expect(host.webView.policy.contextMenuConfiguration() == nil)
+    #expect(
+      host.webView.uiDelegate?.responds(
+        to: NSSelectorFromString("webView:contextMenuConfigurationForElement:completionHandler:"))
+        == true)
+    host.webView.setNeedsLayout()
+    host.webView.layoutIfNeeded()
+    func dragCount(_ view: UIView) -> Int {
+      view.interactions.filter { $0 is UIDragInteraction }.count
+        + view.subviews.reduce(0) { $0 + dragCount($1) }
+    }
+    #expect(dragCount(host.webView) == 0)
+  }
+
 }

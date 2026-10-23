@@ -4,20 +4,16 @@ import WebKit
 
 /// Owns one disposable, credential-free WebKit session. Not yet wired to the transcript.
 @MainActor
-final class McpAppHost: NSObject, WKNavigationDelegate, WKUIDelegate {
-  let webView: WKWebView
+final class McpAppHost: NSObject {
+  let webView: McpAppWebView
   private let listener: McpAppBridgeListener
   weak var delegate: (any McpAppEnvelopeDelegate)?
   private(set) var isRetired = false
   private(set) var retirementReason: String?
   var innerLoaded = false
-  private var allowedShell = false
-  private var allowedSrcdoc = false
-  private var allowedShellResponse = false
-  private var allowedSrcdocResponse = false
   #if DEBUG
-    private(set) var navigationDecisions: [String] = []
-    private(set) var responseDecisions: [String] = []
+    var navigationDecisions: [String] { webView.policy.navigationDecisions }
+    var responseDecisions: [String] { webView.policy.responseDecisions }
   #endif
 
   static func make(html: String, delegate: (any McpAppEnvelopeDelegate)? = nil) async throws
@@ -78,18 +74,21 @@ final class McpAppHost: NSObject, WKNavigationDelegate, WKUIDelegate {
     configuration.mediaTypesRequiringUserActionForPlayback = .all
     configuration.allowsInlineMediaPlayback = false
     configuration.allowsAirPlayForMediaPlayback = false
-    webView = WKWebView(frame: .zero, configuration: configuration)
+    webView = McpAppWebView(configuration: configuration)
     super.init()
     listener.host = self
-    webView.navigationDelegate = self
-    webView.uiDelegate = self
+    webView.policy.host = self
+    webView.navigationDelegate = webView.policy
+    webView.uiDelegate = webView.policy
     webView.allowsBackForwardNavigationGestures = false
     webView.isInspectable = false
+    webView.allowsLinkPreview = false
   }
 
   func retire(reason: String) {
     guard !isRetired else { return }
     isRetired = true
+    webView.policy.isClosed = true
     retirementReason = reason
     webView.stopLoading()
     webView.evaluateJavaScript(
@@ -97,115 +96,26 @@ final class McpAppHost: NSObject, WKNavigationDelegate, WKUIDelegate {
       completionHandler: nil)
   }
 
-  func close() {
-    retire(reason: "Host closed")
+  isolated deinit {
+    webView.policy.isClosed = true
+    webView.stopLoading()
+    webView.evaluateJavaScript(
+      "window.mcpRetire?.()", in: nil, in: McpAppBridgeListener.world, completionHandler: nil)
+    Self.removeHandlers(from: webView)
+  }
+
+  private static func removeHandlers(from webView: WKWebView) {
     let controller = webView.configuration.userContentController
     controller.removeScriptMessageHandler(
       forName: McpAppBridgeListener.handlerName, contentWorld: McpAppBridgeListener.world)
     controller.removeAllUserScripts()
+  }
+
+  func close() {
+    retire(reason: "Host closed")
+    Self.removeHandlers(from: webView)
     delegate = nil
-    webView.navigationDelegate = nil
-    webView.uiDelegate = nil
     webView.removeFromSuperview()
   }
 
-  func webView(
-    _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-    decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
-  ) {
-    let url = navigationAction.request.url
-    #if DEBUG
-      navigationDecisions.append(
-        "\(navigationAction.targetFrame?.isMainFrame == true ? "main" : "sub"):\(url?.absoluteString ?? "nil")"
-      )
-    #endif
-    if !isRetired, navigationAction.targetFrame?.isMainFrame == true,
-      !allowedShell, url == McpAppShellSchemeHandler.url,
-      navigationAction.navigationType == .other
-    {
-      allowedShell = true
-      decisionHandler(.allow)
-    } else if !isRetired, navigationAction.targetFrame?.isMainFrame == false,
-      allowedShell, !allowedSrcdoc, url?.absoluteString == "about:srcdoc"
-    {
-      allowedSrcdoc = true
-      decisionHandler(.allow)
-    } else {
-      decisionHandler(.cancel)
-      retire(reason: "Navigation rejected")
-    }
-  }
-
-  func webView(
-    _ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
-    decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
-  ) {
-    let url = navigationResponse.response.url
-    #if DEBUG
-      responseDecisions.append(
-        "\(navigationResponse.isForMainFrame ? "main" : "sub"):\(url?.absoluteString ?? "nil")")
-    #endif
-    guard !isRetired, navigationResponse.canShowMIMEType else {
-      decisionHandler(.cancel)
-      retire(reason: "Response rejected")
-      return
-    }
-    if navigationResponse.isForMainFrame, !allowedShellResponse,
-      url == McpAppShellSchemeHandler.url,
-      navigationResponse.response.mimeType == "text/html"
-    {
-      allowedShellResponse = true
-      decisionHandler(.allow)
-    } else if !navigationResponse.isForMainFrame, !allowedSrcdocResponse,
-      url?.absoluteString == "about:srcdoc"
-    {
-      allowedSrcdocResponse = true
-      decisionHandler(.allow)
-    } else {
-      decisionHandler(.cancel)
-      retire(reason: "Response rejected")
-    }
-  }
-
-  func webView(
-    _ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!
-  ) {
-    retire(reason: "Redirect rejected")
-  }
-
-  func webView(
-    _ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
-    completionHandler:
-      @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
-  ) {
-    completionHandler(.cancelAuthenticationChallenge, nil)
-  }
-
-  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-    retire(reason: "Web content process terminated")
-  }
-
-  func webView(
-    _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
-    for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures
-  ) -> WKWebView? { nil }
-
-  func webView(
-    _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-    initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
-    decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
-  ) { decisionHandler(.deny) }
-
-  func webView(
-    _ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin,
-    initiatedByFrame frame: WKFrameInfo,
-    decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
-  ) { decisionHandler(.deny) }
-
-  @available(iOS 27.0, *)
-  func webView(
-    _ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin,
-    initiatedByFrame frame: WKFrameInfo,
-    decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
-  ) { decisionHandler(.deny) }
 }
