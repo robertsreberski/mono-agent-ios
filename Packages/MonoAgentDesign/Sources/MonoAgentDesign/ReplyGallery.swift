@@ -70,34 +70,47 @@ public struct ReplyLightbox: View {
   private var current: ReplyGalleryImage? { images.first { $0.id == selected } }
   private var index: Int { images.firstIndex { $0.id == selected } ?? 0 }
   public var body: some View {
-    VStack(spacing: 12) {
-      if let current {
-        ZoomableReplyImage(image: current.image, name: current.name, step: step)
-          .id(current.id)
-      }
-      HStack(spacing: 6) {
-        if images.count > 1 {
-          control("Previous image", "chevron.left") { step(-1) }
-        }
-        Text(current?.name ?? "Image").webFont(.replyFailure).lineLimit(1)
-        if images.count > 1 {
-          Text("\(index + 1) / \(images.count)").webFont(.contextTrigger)
-          control("Next image", "chevron.right") { step(1) }
-        }
+    GeometryReader { geometry in
+      VStack(spacing: 12) {
         if let current {
-          ShareLink(item: current.url) {
-            Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44)
-          }.accessibilityLabel("Share " + current.name)
+          let size = fittedSize(current.image.size, in: geometry.size)
+          ZoomableReplyImage(image: current.image, name: current.name, step: step)
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .id(current.id)
         }
-        control("Close image", "xmark", action: close)
-      }.foregroundStyle(WebColor.text.color).padding(.horizontal, 8).padding(.vertical, 6)
-        .floatingGlass(in: RoundedRectangle(cornerRadius: 11), opaqueFill: WebColor.surface.color)
+        controls
+      }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }.padding(12).background(
       Color(red: 7 / 255, green: 10 / 255, blue: 8 / 255).opacity(0.94).ignoresSafeArea()
     )
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("reply-lightbox")
     .accessibilityAction(.escape, close)
+  }
+  private func fittedSize(_ image: CGSize, in viewport: CGSize) -> CGSize {
+    let scale = min(
+      1, viewport.width / max(1, image.width), max(1, viewport.height - 80) / max(1, image.height))
+    return CGSize(width: image.width * scale, height: image.height * scale)
+  }
+  private var controls: some View {
+    HStack(spacing: 6) {
+      if images.count > 1 {
+        control("Previous image", "chevron.left") { step(-1) }
+      }
+      Text(current?.name ?? "Image").webFont(.replyFailure).lineLimit(1)
+      if images.count > 1 {
+        Text("\(index + 1) / \(images.count)").webFont(.contextTrigger)
+        control("Next image", "chevron.right") { step(1) }
+      }
+      if let current {
+        ShareLink(item: current.url) {
+          Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44)
+        }.accessibilityLabel("Share " + current.name)
+      }
+      control("Close image", "xmark", action: close)
+    }.foregroundStyle(WebColor.text.color).padding(.horizontal, 8).padding(.vertical, 6)
+      .floatingGlass(in: RoundedRectangle(cornerRadius: 11), opaqueFill: WebColor.surface.color)
   }
   private func step(_ delta: Int) {
     guard !images.isEmpty else { return }
