@@ -33,10 +33,24 @@ Screens must not instantiate API clients or submit directly.
   Call `markVisible(true)` only when that transcript is actually visible; selection alone
   does not mark it read. Call false when it leaves the visible surface.
 - Composer: `draft(sourceID:threadID:)`, `setDraft`, `canSend`, `canUpload`, `stageUploads`,
-  `stagedAttachments`, `discardStagedUploads`, `createConversation`, and `submit`.
+  `stagedAttachments`, `uploadProgress`, `discardStagedUpload(_:)`, `discardStagedUploads`,
+  `createConversation(_:retainingAttachments:)`, and `submit`.
   New conversations are created **before** submission recovery. Pass `draftContext` when
-  the authored draft still belongs to a source's new-conversation context. Switching context
-  cancels uploads and disposes reservations; bytes and capability URLs are never restored.
+  the authored draft still belongs to a source's new-conversation context; pass the staged
+  attachment IDs as `retainingAttachments` so creation's own selection change keeps them.
+  Switching context cancels uploads and disposes reservations; bytes and capability URLs are
+  never restored. `canSend`/`canUpload` mirror the web console: live connection, agent online
+  (and accepting attachments), and the thread's flags; a new conversation follows its agent.
+  `stageUploads` validates the bootstrap limits before any progress row appears;
+  `uploadProgress` lists files still uploading (memory only). `discardStagedUpload` removes
+  one chip and never touches files protected by an active submission.
+- Composer support: `skillRegistries` / `loadSkills(sourceID:)` (a failed refresh keeps
+  earlier items as stale, which disables insertion); `askSnapshot(threadID:interactionID:)`
+  (exact by-id read when known, else the pending ask) and `answerAsk(…)` (`POST
+  /threads/:id/ask`; `invalid_answer` → `AskAnswerError.incomplete`); `setRunOverride(threadID:
+  model:effort:)` — optimistic per-conversation model/effort through `enqueueThreadWrite`,
+  reverted with a visible error when refused, so a following submission settles after it.
+  `cancel(threadID:)` sends the contract's `user-stop` origin and adopts the returned thread.
 - `enqueueThreadWrite` serializes pending settings/project edits; `settleThreadWrites`
   completes before a submission POST. Each caller's 15-second deadline starts at enqueue,
   including queue wait. An expired queued write never starts. Cancelling settlement stops

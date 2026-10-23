@@ -9,10 +9,17 @@ public enum SubmissionError: Error {
 }
 extension ConsoleStore {
   /// Thread creation is outside recovery, and is never retried by lifecycle effects.
+  /// `retainingAttachments` keeps the new-conversation composer's staged files across this
+  /// command's own selection change, so the first submission can still reference them.
   @discardableResult
-  public func createConversation(_ input: ApiCreateThread) async throws -> String {
+  public func createConversation(
+    _ input: ApiCreateThread, retainingAttachments attachmentIDs: [String] = []
+  ) async throws -> String {
     let generation = epoch
     let selected = selection
+    let claim = UUID()
+    attachmentClaims[claim] = Set(attachmentIDs)
+    defer { attachmentClaims[claim] = nil }
     let value = try await api.createThread(body: input)
     let now = await clock.wallNow()
     guard epoch == generation, selection == selected, !backgrounded else {
@@ -341,10 +348,12 @@ extension ConsoleStore {
       await refreshBootstrap()
     }
   }
+  /// The operator's Stop. `user-stop` is the contract's origin for it (web `cancelTurn`).
   public func cancel(threadID: String) async throws {
     let generation = epoch
-    _ = try await api.cancelTurn(id: threadID, body: .init(origin: "user"))
+    let value = try await api.cancelTurn(id: threadID, body: .init(origin: "user-stop"))
     guard epoch == generation else { return }
+    patchSummary(value.thread)
     await refreshDetail(threadID)
   }
 }
