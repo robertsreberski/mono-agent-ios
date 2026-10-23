@@ -10,6 +10,8 @@
     case streaming = "store-streaming"
     case unread = "store-unread"
     case uncertain = "store-uncertain"
+    case fidelityChat = "fidelity-chat"
+    case fidelityDashboard = "fidelity-dashboard"
     case dashboardPopulated = "dashboard-populated"
     case dashboardEmpty = "dashboard-empty"
     case dashboardOffline = "dashboard-offline"
@@ -36,7 +38,8 @@
     case conversationQuickReplies = "conversation-quick-replies"
     case peerQuestionSheet = "peer-question-sheet"
 
-    var isTranscript: Bool { rawValue.hasPrefix("conversation-") }
+    var isTranscript: Bool { rawValue.hasPrefix("conversation-") || self == .fidelityChat }
+    var isFidelity: Bool { self == .fidelityChat || self == .fidelityDashboard }
 
     /// Composer scenarios are served by a stateful per-instance `ComposerScript`.
     var isComposer: Bool {
@@ -70,6 +73,10 @@
     @MainActor func prepare(
       _ store: ConsoleStore, repository: any ConsoleRepository, theme: String = "evergreen"
     ) async throws {
+      if isFidelity {
+        try await ScreenFixture.prepare(store, repository: repository, theme: theme)
+        return
+      }
       if isComposer {
         try await ComposerFixture.prepare(self, store: store, repository: repository, theme: theme)
         return
@@ -133,6 +140,7 @@
     func send(_ request: URLRequest) async throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
+      if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }
       if let scenario, scenario.isTranscript,
         let response = try TranscriptFixture.response(request, scenario: scenario, theme: theme)
       {

@@ -624,6 +624,34 @@
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-chat",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-chat",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-dashboard",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-dashboard",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

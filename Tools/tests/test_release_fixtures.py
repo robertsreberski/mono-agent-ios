@@ -63,6 +63,12 @@ class ReleaseFixtureTests(unittest.TestCase):
             with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
                 self.check(tool, leak)
 
+    def test_fidelity_fixture_and_scenarios_are_rejected(self):
+        for tool, leak in (("nm", b"ScreenFixture"), ("strings", b"fidelity-chat"),
+                           ("strings", b"fidelity-dashboard"), ("strings", b"Map three beds")):
+            with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
+                self.check(tool, leak)
+
     def test_dashboard_fixture_and_scenarios_are_rejected(self):
         for tool, leak in (("nm", b"$s9MonoAgent16DashboardFixtureO"), ("strings", b"dashboard-populated"),
                            ("strings", b"dashboard-empty"), ("strings", b"dashboard-offline"),

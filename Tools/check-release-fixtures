@@ -17,7 +17,7 @@ if not executable.is_file():
 # DEBUG dashboard fixture data and scenario names
 # and design-package preview helpers must all be compiled out of Release. `nm -a` also
 # lists debug-map source file names, so DEBUG-only files must not be named after markers.
-MARKERS = (b"ScriptedTransport", b"console.example.ts.net", b"DesignCatalog", b"design-catalog",
+MARKERS = (b"ScreenFixture", b"fidelity-chat", b"fidelity-dashboard", b"Map three beds", b"ScriptedTransport", b"console.example.ts.net", b"DesignCatalog", b"design-catalog",
            b"DesignPreviewMatrix", b"StoreScenario", b"ScenarioConsoleTransport", b"ScenarioEventSource",
            b"store-offline", b"store-streaming", b"store-unread", b"store-uncertain",
            b"DashboardFixture", b"dashboard-populated", b"dashboard-empty", b"dashboard-offline",

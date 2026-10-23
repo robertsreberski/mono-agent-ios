@@ -4,6 +4,22 @@ import XCTest
 
 @MainActor
 final class ScenarioTests: XCTestCase {
+  func testFidelityChatLight() {
+    capture("fidelity-chat", "light", expect: ["message-garden-plan", "composer-field"])
+  }
+  func testFidelityChatDark() {
+    capture("fidelity-chat", "dark", expect: ["message-garden-plan", "composer-field"])
+  }
+  func testFidelityDashboardLight() {
+    capture(
+      "fidelity-dashboard", "light",
+      expect: ["agent-strip", "recent-row-t-atlas-launch", "recent-row-seedling-notes"])
+  }
+  func testFidelityDashboardDark() {
+    capture(
+      "fidelity-dashboard", "dark",
+      expect: ["agent-strip", "recent-row-t-atlas-launch", "recent-row-seedling-notes"])
+  }
   func testConnectionEmptyLight() { capture("connection-empty", "light") }
   func testConnectionEditorLight() { captureEditor("light") }
   func testConnectionEditorDark() { captureEditor("dark") }
