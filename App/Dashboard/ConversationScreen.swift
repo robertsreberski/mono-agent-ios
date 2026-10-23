@@ -117,6 +117,9 @@ struct ConversationScreen: View {
       if let route = knownRoute {
         RouteBadge(model: route.label, effort: route.effort ?? "", detail: route.detail)
       }
+      if let threadID, let state = store.conversations[threadID] {
+        ConversationActivityHeader(state: state, store: store)
+      }
       if let thread, let project = DashboardModel.projectLabel(thread, projects: store.projects) {
         ProjectChip(project.name, color: LabelColor(serverValue: project.color))
       }

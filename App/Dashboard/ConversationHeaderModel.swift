@@ -6,7 +6,12 @@ import MonoAgentKit
 enum ConversationHeaderModel {
   static func status(_ thread: WebThread, confirmed: Bool) -> (kind: StatusKind, label: String) {
     if thread.runState.status == "running" {
-      return confirmed ? (.connecting, "Running") : (.stale, "Last known running")
+      return confirmed
+        ? (
+          .connecting,
+          thread.runState.activity?.phase == "asking" ? "Asking you a question" : "Running"
+        )
+        : (.stale, "Last known running")
     }
     if DashboardModel.presentation(thread).active {
       return confirmed

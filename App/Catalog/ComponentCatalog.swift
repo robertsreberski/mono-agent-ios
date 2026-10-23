@@ -101,6 +101,19 @@
                 "## Release notes\n- [x] **Bold** and `code`\n\n| Item | Status |\n| --- | --- |\n| Sample | Complete |"
             )
           }
+          catalogSection("Content disclosure") {
+            ContentDisclosure("catalog-details", expanded: .constant(true)) {
+              Text("Native detail content").designFont(.body)
+            } label: {
+              Label("Details", systemImage: "terminal").designFont(.headline)
+            }
+          }
+          catalogSection("Context and cost") {
+            ContextDisplay(
+              .init(
+                badge: "—", figure: "Context size not reported", status: "Not reported",
+                rows: [.init("Estimated cost", "Unknown")]), expanded: .constant(true))
+          }
           catalogSection("Route badge") {
             RouteBadge(
               model: "sample:large", effort: "high",

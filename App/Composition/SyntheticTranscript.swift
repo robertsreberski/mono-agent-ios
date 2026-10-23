@@ -42,6 +42,7 @@
         #"{"id":"turn-transcript","status":"running","model":"sample:large","effort":"high","startedAt":"2030-01-02T11:59:00Z"}"#
       )
       if scenario != .conversationStreaming { thread.runState.status = "complete" }
+      if JobFixture.matches(scenario) { thread.jobActivity = try JobFixture.activity(scenario) }
       thread.messageCount = scenario == .conversationLong ? 540 : 2
       return thread
     }
@@ -75,6 +76,7 @@
       return call
     }
     static func messages(_ scenario: StoreScenario, older: Bool = false) throws -> [WebMessage] {
+      if JobFixture.matches(scenario) { return try JobFixture.messages(scenario) }
       if scenario == .conversationLong {
         return try (older ? 0..<40 : 40..<540).map { index in
           var row = try message(
@@ -140,7 +142,7 @@
     static func fleet(_ scenario: StoreScenario) throws -> WebActiveThreads {
       var value = try DashboardFixture.fleet()
       value.threads = try replacingSummary(value.threads, scenario: scenario).filter {
-        $0.runState.status == "running"
+        DashboardModel.presentation($0).active
       }
       value.total = value.threads.count
       value.runningCounts = Dictionary(grouping: value.threads, by: \.sourceId).mapValues(\.count)
@@ -178,6 +180,12 @@
           "thread": try json(thread(scenario)), "messages": try json(messages(scenario)),
           "messagesNextCursor": scenario == .conversationLong ? .string("transcript-older") : .null,
         ])
+      } else if url.path == base + "/usage" {
+        value = .object(["usage": try json(JobFixture.usage())])
+      } else if url.path.hasPrefix(base + "/jobs/"),
+        let job = try JobFixture.jobs(scenario).first(where: { $0.jobId == url.lastPathComponent })
+      {
+        value = .object(["job": try json(job)])
       } else if url.path == base + "/messages" {
         value = .object([
           "messages": try json(messages(scenario, older: true)), "nextCursor": .null,

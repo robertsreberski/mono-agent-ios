@@ -3,7 +3,7 @@
 A native SwiftUI client for the mono-agent web console. It includes saved console
 connections, an offline-capable observable console store, a Liquid Glass design system
 ([MonoAgentDesign](Packages/MonoAgentDesign/README.md)) and the console dashboard. The
-conversation transcript includes live Markdown, reasoning and tool activity; the composer is still a placeholder. The connected console's theme (evergreen, ocean, plum or
+conversation transcript includes live Markdown, reasoning, tool activity, background jobs and subagents; the composer is still a placeholder. The connected console's theme (evergreen, ocean, plum or
 terracotta) styles the app; disconnected or unknown themes use evergreen.
 GPL-3.0-only; see [LICENSE](LICENSE).
 
@@ -80,7 +80,7 @@ and backgrounding, and is restored per console after the system discards the sce
   composer placeholder. Offline, refresh, storage and insecure-HTTP banners stay visible.
 
 Opening a conversation shows its ordered transcript, current route, reasoning disclosures,
-clustered tool calls and run attribution. Full tool bodies load only on request. Markdown
+clustered tool calls and run attribution. The header holds context/cost and a background-job shelf with grouped child turns, current work and collapsed history. Job clocks use server time; expanding output shows the available redacted preview (server truncation stays labelled). Job stop/full-log routes are not in the pinned contract. Peer questions are read-only, with answering reserved for the composer. Full tool bodies load only on request. Markdown
 supports GFM tables/task lists, selectable code with Copy and external links; HTML is literal
 text. Oversized/complex input shows an explicitly bounded preview. Scrolling follows live
 writes only while already at the bottom; otherwise use **Jump to latest**. Older history loads
@@ -128,7 +128,8 @@ scenarios are `store-offline`, `store-streaming`, `store-unread`, `store-uncerta
 Dashboard scenarios use synthetic agents and conversations at a fixed reference time:
 `dashboard-populated`, `dashboard-empty`, `dashboard-offline`, `dashboard-search` and
 `conversation-placeholder` (legacy alias for the transcript), `conversation-transcript`,
-`conversation-streaming`, `conversation-tools`, `conversation-long` (500 loaded messages plus
+`conversation-streaming`, `conversation-tools`, `conversation-jobs`, `conversation-job-stack`,
+`conversation-subagents`, `conversation-context`, `conversation-long` (500 loaded messages plus
 40 older rows and large collapsed outputs), `conversation-markdown`; `--fixture-theme ocean|plum|terracotta` changes the synthetic
 console theme. Release ignores these flags.
 
@@ -146,8 +147,8 @@ iPad Pro 13-inch (M5); if those names are absent, it logs a fallback to the firs
 available device in that family. CI uses the same selector. Or pass `--iphone "$IPHONE_UDID" --ipad "$IPAD_UDID"`.
 It runs the shared app test plan (app/Design Swift Testing and XCUI scenarios),
 waits for readiness identifiers and a non-blank rendered frame, and exports the labeled
-synthetic PNGs listed in `Tools/screenshot-matrix.json` for each device. That is 43 per
-device (86 in total):
+synthetic PNGs listed in `Tools/screenshot-matrix.json` for each device. That is 59 per
+device (118 in total):
 
 - the 12 connection screens (three states × two appearances × two devices; a connected
   console now shows its dashboard);
@@ -157,7 +158,8 @@ device (86 in total):
 - the catalog with the Reduce Transparency fallback;
 - the five dashboard scenarios in light and dark, the populated dashboard in the plum
   theme (dark) and at Accessibility XL text;
-- five transcript scenarios in light/dark, plus Markdown in plum and at Accessibility XL.
+- five transcript scenarios in light/dark, plus Markdown in plum and at Accessibility XL;
+- jobs, job stacks, subagents and context in light/dark, plum and Accessibility XL.
 
 `Artifacts/Screenshots/index.html` and `index.json` name the device, runtime, scenario,
 appearance, theme, text size and transparency. Both image dimensions are ≤ 2000 px.
@@ -198,9 +200,8 @@ also bundled in the app. Package.resolved files lock both package and app graphs
 The parser is off-main; input is capped at 65,536 UTF-8 bytes, long lines and excessive
 nesting/table widths fall back before parsing, and the value tree has node/depth/row limits.
 No HTML, images, embedded scripts or arbitrary URL schemes execute. Code display is limited
-to 16,384 UTF-8 bytes while Copy includes the entire supplied value. Deferred jobs/subagents,
-files/images/MCP/restart and ask/reply controls remain explicitly labelled for later features.
+to 16,384 UTF-8 bytes while Copy includes the entire supplied value. Files/images/MCP/restart and ask/reply controls remain explicitly labelled for later features.
 
 Focused capture: `./Tools/screenshots --transcript-only` runs app/Design unit tests and the
 12 transcript XCUI captures on both device families, without removing existing matrix entries.
-The default screenshot command still captures the complete matrix (43 images per device).
+The default screenshot command still captures the complete matrix (59 images per device).
