@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import MonoAgentDesign
 import SwiftUI
 
 @main
@@ -18,6 +19,9 @@ struct MonoAgentApp: App {
           ConsoleShell(model: model)
         #endif
       }
+      #if DEBUG
+        .prefersOpaqueSurfaces(model.opaqueFixtureSurfaces)
+      #endif
       .preferredColorScheme(model.appearance)
       .task { await model.start() }
       .task(id: model.storeCompositionKey) { await model.synchronizeStore() }

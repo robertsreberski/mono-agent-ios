@@ -17,13 +17,21 @@ struct TranscriptMessageView: View {
   var body: some View {
     let message = row.message
     VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
-      if isUser {
+      if message.role == "system" {
+        messageContent(message)
+          .padding(.vertical, 8).padding(.horizontal, 12)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .overlay(alignment: .leading) {
+            Rectangle().fill(WebColor.lineStrong.color).frame(width: 2)
+          }
+          .padding(.vertical, 18)
+      } else if isUser {
         UserBubble { messageContent(message) }
       } else {
         messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
       }
       // Web: the action row belongs to a settled message, not one still being written.
-      if message.status != "running" { actions(message) }
+      if message.status != "running" && message.role != "system" { actions(message) }
     }
     .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
     // The whole row (not only its glyphs) opens the message menu, as hovering it does on the web.
@@ -43,7 +51,12 @@ struct TranscriptMessageView: View {
         if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
           TranscriptActivityBand(parts: band.parts, message: message, store: store)
         } else if let part = band.parts.first {
-          TranscriptPartView(part: part, message: message, store: store)
+          if message.role == "system", case .text(let value) = part {
+            Text(value.text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
+              .textSelection(.enabled)
+          } else {
+            TranscriptPartView(part: part, message: message, store: store)
+          }
         }
       }
       ForEach(message.attachments, id: \.id) { attachment in

@@ -322,6 +322,7 @@ struct PeerQuestionAnswerSheet: View {
   let question: PeerProcessJobQuestion
   let submit: @MainActor (String) async throws -> Void
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
   @State private var values: [String: [String]] = [:]
   @State private var note = ""
   @State private var error: String?
@@ -399,10 +400,19 @@ struct PeerQuestionAnswerSheet: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .confirmationAction) {
-          Button("Add to Composer") { Task { await send() } }
-            .disabled(!open || !PeerQuestionForm.missingRequired(fields, values: values).isEmpty)
-            .accessibilityHint("Drafts the reply in the composer; you send it yourself")
-            .accessibilityIdentifier("peer-submit")
+          Button {
+            Task { await send() }
+          } label: {
+            if typeSize.isAccessibilitySize {
+              Image(systemName: "text.badge.plus")
+            } else {
+              Text("Add to Composer")
+            }
+          }
+          .accessibilityLabel("Add to Composer")
+          .disabled(!open || !PeerQuestionForm.missingRequired(fields, values: values).isEmpty)
+          .accessibilityHint("Drafts the reply in the composer; you send it yourself")
+          .accessibilityIdentifier("peer-submit")
         }
       }
     }

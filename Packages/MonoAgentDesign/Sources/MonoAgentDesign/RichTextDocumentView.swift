@@ -51,6 +51,7 @@ public struct RichTextDocumentView: View {
     if !block.prefix.isEmpty && !previous.prefix.isEmpty { return 0.3 * em }
     if !previous.prefix.isEmpty && block.prefix.isEmpty && block.depth > 0 { return 0.3 * em }
     if case .heading(let level) = block.kind { return level <= 2 ? 1.1 * em : 0.95 * em }
+    if case .heading(let level) = previous.kind { return 0.67 * headingSize(level) }
     return 0.85 * em
   }
   private func headingSize(_ level: Int) -> CGFloat {
@@ -96,6 +97,9 @@ public struct RichTextDocumentView: View {
         }
         Text(attributed(block.runs))
           .webFont(.prose)
+          // CSS line boxes retain half-leading above/below even a single line; SwiftUI's
+          // lineSpacing only inserts the leading BETWEEN lines.
+          .padding(.vertical, (1.62 - WebType.naturalLineHeight) * em / 2)
           .foregroundStyle(block.kind == .quote ? WebColor.textSoft.color : WebColor.text.color)
           .textSelection(.enabled)
           .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
@@ -141,6 +145,7 @@ struct MarkdownTableView: View {
   let rows: [[[RichDocument.Run]]]
   let attributed: ([RichDocument.Run]) -> AttributedString
   let compact: Bool
+  @ScaledMetric(relativeTo: .footnote) private var tableLeading: CGFloat = 2.5
   private var columns: Int { rows.map(\.count).max() ?? 0 }
   private var grid: some View {
     Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
@@ -158,7 +163,7 @@ struct MarkdownTableView: View {
               .fontWeight(index == 0 ? .semibold : .regular)
               .foregroundStyle(index == 0 ? WebColor.textSoft.color : WebColor.text.color)
               .lineLimit(index == 0 ? 1 : nil)
-              .padding(.vertical, compact ? 6 : 7)
+              .padding(.vertical, (compact ? 6 : 7) + tableLeading)
               .padding(.horizontal, compact ? 8 : 10)
               .frame(minWidth: 90, maxWidth: .infinity, alignment: .leading)
               .background { fill.map { $0.padding(.horizontal, -0.5) } }
@@ -218,7 +223,9 @@ public struct CodeDocumentView: View {
     let shape = RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
     return VStack(alignment: .leading, spacing: 4) {
       ScrollView(.horizontal) {
-        Text(verbatim: display)
+        // The parser supplies a terminal newline; unlike HTML pre, Text lays it out
+        // as another empty row. Remove it only for display; Copy keeps the full source.
+        Text(verbatim: display.hasSuffix("\n") ? String(display.dropLast()) : display)
           .webFont(.code)
           .foregroundStyle(WebColor.codeText.color)
           .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)

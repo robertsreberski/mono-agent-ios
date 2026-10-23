@@ -3,6 +3,10 @@ import UIKit
 import XCTest
 
 @MainActor final class ActivityScenarioTests: XCTestCase {
+  func testJobsOpaque() { capture("conversation-jobs", "light", variant: "opaque") }
+  func testContextOpaque() { capture("conversation-context", "light", variant: "opaque") }
+  func testStackOpaque() { capture("conversation-job-stack", "light", variant: "opaque") }
+  func testSubagentsOpaque() { capture("conversation-subagents", "light", variant: "opaque") }
   func testJobsLight() { capture("conversation-jobs", "light") }
   func testJobsDark() { capture("conversation-jobs", "dark") }
   func testJobsPlum() { capture("conversation-jobs", "dark", variant: "plum") }
@@ -98,6 +102,7 @@ import XCTest
       "--scenario", scenario, "--appearance", appearance, "--reset-test-data",
       "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
     ]
+    if variant == "opaque" { app.launchArguments += ["--fixture-opaque"] }
     if variant == "plum" { app.launchArguments += ["--fixture-theme", "plum"] }
     if variant == "ax3" {
       app.launchArguments += [

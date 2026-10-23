@@ -58,10 +58,10 @@ struct ConnectionEditor: View {
           SettingsGroup {
             Text(
               "Use only a trusted network or secure private tunnel. The console has no application login and grants powerful access to its agents."
-            )
+            ).webFont(.notice).foregroundStyle(WebColor.textMuted.color)
             Text(
               "On a physical device, localhost and loopback point to that device. Use your computer's LAN IP or Tailscale HTTPS URL instead."
-            )
+            ).webFont(.notice).foregroundStyle(WebColor.textMuted.color)
           }
           if let error {
             SettingsGroup("Could not save") { StatusIndicator(.failed, label: error) }

@@ -50,6 +50,9 @@ final class AppModel {
     @ObservationIgnored private(set) var composerScript: ComposerScript?
     /// Composer fixture scenarios add a synthetic attachment source to the attach menu.
     var offersSampleAttachments: Bool { storeScenario?.isComposer == true }
+    var opaqueFixtureSurfaces: Bool {
+      scenario != nil && ProcessInfo.processInfo.arguments.contains("--fixture-opaque")
+    }
   #else
     var offersSampleAttachments: Bool { false }
   #endif
