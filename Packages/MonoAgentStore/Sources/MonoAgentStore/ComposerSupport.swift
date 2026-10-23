@@ -29,6 +29,12 @@ public enum AskAnswerError: Error, Sendable, Equatable {
   case inactive(String?)
 }
 
+struct RunOverrideState {
+  var confirmed: WebThread
+  var latest: UUID
+  var pending: Set<UUID>
+}
+
 extension ConsoleStore {
   /// Loads (or refreshes) one agent's skill registry. Failures keep earlier items as stale.
   public func loadSkills(sourceID: String) async {
@@ -67,28 +73,44 @@ extension ConsoleStore {
   public func askSnapshot(threadID: String, interactionID: String?) async throws
     -> ChannelAskSnapshot?
   {
-    guard started, !backgrounded else { throw AskAnswerError.notReady }
+    guard started, !stopping, !stopped, !backgrounded else { throw AskAnswerError.notReady }
+    let generation = epoch
+    let selected = selection
+    let held = conversations[threadID]
+    let result: ChannelAskSnapshot?
     let byID =
       interactionID != nil
       && conversations[threadID].flatMap { state in
         agents.first { $0.sourceId == state.thread.sourceId }?.supportsAskById
       } != false
     if let interactionID, byID {
-      return try await api.askById(id: threadID, interactionId: interactionID, etag: nil)
+      result = try await api.askById(id: threadID, interactionId: interactionID, etag: nil)
         .valueRequired().ask
+    } else {
+      result = try await api.ask(id: threadID, etag: nil).valueRequired().ask
     }
-    let pending = try await api.ask(id: threadID, etag: nil).valueRequired().ask
-    if let interactionID, let pending, pending.interactionId != interactionID { return nil }
-    return pending
+    guard started, !stopping, !stopped, !backgrounded, epoch == generation,
+      selection == selected, conversations[threadID] === held, !Task.isCancelled
+    else { throw CancellationError() }
+    if let interactionID, let result, result.interactionId != interactionID { return nil }
+    return result
   }
 
   /// Submits AskUser answers through `POST /threads/:id/ask` (web `api.submitAsk`).
   public func answerAsk(
     threadID: String, interactionID: String, answers: [ChannelAskAnswer]
   ) async throws -> ChannelAskSnapshot? {
-    guard started, !backgrounded, connection == .live else { throw AskAnswerError.notReady }
+    guard started, !stopping, !stopped, !backgrounded, connection == .live else {
+      throw AskAnswerError.notReady
+    }
+    let generation = epoch
+    let selected = selection
+    let held = conversations[threadID]
     let result = try await api.answerAsk(
       id: threadID, body: .init(interactionId: interactionID, answers: answers))
+    guard started, !stopping, !stopped, !backgrounded, epoch == generation,
+      selection == selected, conversations[threadID] === held, !Task.isCancelled
+    else { throw CancellationError() }
     guard result.accepted else {
       throw result.code == "invalid_answer"
         ? AskAnswerError.incomplete : AskAnswerError.inactive(result.code)
@@ -100,38 +122,61 @@ extension ConsoleStore {
   /// through the thread-write queue so a following submission settles after it, and reverted
   /// with a visible error when the server refuses it. Empty strings mean "agent default".
   public func setRunOverride(threadID: String, model: String?, effort: String?) {
-    guard let state = conversations[threadID] else { return }
-    let previous = state.record.thread
-    var next = previous
-    if let model { next.runModel = model.isEmpty ? nil : model }
-    if let effort { next.runEffort = effort.isEmpty ? nil : effort }
-    state.record.thread = next
-    state.thread = next
+    guard started, !stopping, !stopped, !backgrounded,
+      let state = conversations[threadID]
+    else { return }
+    let token = UUID()
+    var tracking =
+      runOverrides[threadID]
+      ?? RunOverrideState(confirmed: state.thread, latest: token, pending: [])
+    tracking.latest = token
+    tracking.pending.insert(token)
+    runOverrides[threadID] = tracking
+    if let model { state.record.thread.runModel = model.isEmpty ? nil : model }
+    if let effort { state.record.thread.runEffort = effort.isEmpty ? nil : effort }
+    state.thread = state.record.thread
     let body = ApiPatchThread(
       model: model.map { $0.isEmpty ? .null : .value($0) } ?? .omitted,
       effort: effort.map { $0.isEmpty ? .null : .value($0) } ?? .omitted)
-    let api = api
     let generation = epoch
     enqueueThreadWrite(threadID: threadID) { [weak self] in
-      do {
-        let value = try await api.patchThread(id: threadID, body: body)
-        await self?.adoptOverride(value.thread, generation: generation)
-      } catch {
-        await self?.revertOverride(threadID, to: previous, generation: generation)
-        throw error
-      }
+      guard let self else { throw CancellationError() }
+      try await self.writeOverride(threadID, body: body, token: token, generation: generation)
     }
   }
-  func adoptOverride(_ thread: WebThread, generation: UInt64) {
-    guard epoch == generation else { return }
-    patchSummary(thread)
-    scheduleCache()
+
+  private func writeOverride(
+    _ threadID: String, body: ApiPatchThread, token: UUID, generation: UInt64
+  ) async throws {
+    guard started, !stopping, !stopped, !backgrounded, epoch == generation else {
+      finishOverride(threadID, token: token, saved: nil, generation: generation)
+      throw CancellationError()
+    }
+    do {
+      let value = try await api.patchThread(id: threadID, body: body)
+      finishOverride(threadID, token: token, saved: value.thread, generation: generation)
+    } catch {
+      finishOverride(threadID, token: token, saved: nil, generation: generation)
+      throw error
+    }
   }
-  func revertOverride(_ threadID: String, to thread: WebThread, generation: UInt64) {
-    guard epoch == generation, let state = conversations[threadID] else { return }
-    state.record.thread.runModel = thread.runModel
-    state.record.thread.runEffort = thread.runEffort
-    state.thread = state.record.thread
-    errorMessage = "The model or effort change was not saved. The previous setting is restored."
+
+  private func finishOverride(
+    _ threadID: String, token: UUID, saved: WebThread?, generation: UInt64
+  ) {
+    guard epoch == generation, var tracking = runOverrides[threadID] else { return }
+    tracking.pending.remove(token)
+    if let saved { tracking.confirmed = saved }
+    runOverrides[threadID] = tracking.pending.isEmpty ? nil : tracking
+    guard tracking.latest == token, let state = conversations[threadID] else { return }
+    if let saved {
+      patchSummary(saved)
+      scheduleCache()
+    } else {
+      state.record.thread.runModel = tracking.confirmed.runModel
+      state.record.thread.runEffort = tracking.confirmed.runEffort
+      state.thread = state.record.thread
+      errorMessage = "The model or effort change was not saved. The previous setting is restored."
+    }
   }
 }

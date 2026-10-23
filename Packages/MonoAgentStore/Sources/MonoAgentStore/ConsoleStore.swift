@@ -122,7 +122,10 @@ public final class ConsoleStore {
       uniquingKeysWith: { first, _ in first })
   }
   @ObservationIgnored var preparedHere: Set<String> = []
+  @ObservationIgnored var runOverrides: [String: RunOverrideState] = [:]
   @ObservationIgnored var retryIdentities: [String: SubmissionReference] = [:]
+  @ObservationIgnored var knownSubmissionReceipts: [String: WebSubmissionReceipt] = [:]
+  @ObservationIgnored var receiptOrder: [String] = []
   @ObservationIgnored var completedSubmissions: Set<String> = []
   @ObservationIgnored var retirementOrder: [String] = []
   @ObservationIgnored var draftClearOrder: [String] = []

@@ -7,6 +7,13 @@ public enum SubmissionError: Error {
   case rejected(String)
   case uncertain, journalFull, acknowledgementRequired, threadWriteInterrupted
 }
+/// Frozen authored context: `.none` is for quick replies, never the visible draft.
+public enum SubmissionDraftBinding: Sendable, Equatable {
+  case current
+  case none
+  case version(DraftKey, UUID?)
+}
+
 extension ConsoleStore {
   /// Thread creation is outside recovery, and is never retried by lifecycle effects.
   /// `retainingAttachments` keeps the new-conversation composer's staged files across this
@@ -29,11 +36,32 @@ extension ConsoleStore {
     await select(sourceID: value.thread.sourceId, threadID: value.thread.id)
     return value.thread.id
   }
+  /// Allocates an identity owned by this explicit attempt, independent of journal retirement.
+  public func prepareSubmission(_ input: ApiStartSubmission, threadID: String? = nil)
+    -> ApiStartSubmission
+  {
+    var input = input
+    input.submissionId = ""
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let digest = (try? encoder.encode(input)).map {
+      ConsoleNamespace.digest(String(decoding: $0, as: UTF8.self))
+    }
+    input.submissionId =
+      journal.pending.last {
+        $0.threadID == threadID && $0.payloadDigest == digest
+      }?.submissionID ?? UUID().uuidString.lowercased()
+    return input
+  }
   /// Explicit user action only. A prepared reference is durable before POST begins.
   public func submit(
     sourceID: String, threadID: String, input: ApiStartSubmission,
-    draftContext: DraftKey? = nil
+    draftContext: DraftKey? = nil, draftBinding: SubmissionDraftBinding = .current
   ) async throws -> WebSubmissionReceipt {
+    if let known = knownSubmissionReceipts[input.submissionId], known.threadId == threadID {
+      if known.outcome == "rejected" { throw SubmissionError.rejected(known.reason ?? "rejected") }
+      return known
+    }
     pruneTombstones()
     guard hydrated, !backgrounded, tombstones[threadID] == nil else {
       throw SubmissionError.notReady
@@ -61,9 +89,17 @@ extension ConsoleStore {
     let pending =
       journal.pending.last {
         $0.threadID == threadID && $0.payloadDigest == digest
+          && (input.submissionId.isEmpty || $0.submissionID == input.submissionId)
           && !completedSubmissions.contains($0.submissionID)
-      } ?? retryIdentities[threadID].flatMap { $0.payloadDigest == digest ? $0 : nil }
-    payload.submissionId = pending?.submissionID ?? UUID().uuidString.lowercased()
+      }
+      ?? retryIdentities[threadID].flatMap {
+        $0.payloadDigest == digest
+          && (input.submissionId.isEmpty || $0.submissionID == input.submissionId)
+          ? $0 : nil
+      }
+    payload.submissionId =
+      input.submissionId.isEmpty
+      ? pending?.submissionID ?? UUID().uuidString.lowercased() : input.submissionId
     let now = await clock.wallNow()
     guard epoch == generation, !backgrounded else { throw CancellationError() }
     let isLocalPreparation =
@@ -73,10 +109,27 @@ extension ConsoleStore {
       preparedHere.insert(payload.submissionId)
       completedSubmissions.remove(payload.submissionId)
     }
+    let boundKey: DraftKey
+    let boundVersion: UUID?
+    switch pending.map({ SubmissionDraftBinding.version($0.draftKey, $0.draftVersion) })
+      ?? draftBinding
+    {
+    case .current:
+      boundKey = pending?.draftKey ?? key
+      boundVersion =
+        pending == nil
+        ? authored.drafts.first { $0.key == key }?.version : pending?.draftVersion
+    case .none:
+      boundKey = key
+      boundVersion = nil
+    case .version(let key, let version):
+      boundKey = key
+      boundVersion = version
+    }
     var reference = SubmissionReference(
       threadID: threadID, submissionID: payload.submissionId,
-      payloadDigest: digest, draftKey: key,
-      draftVersion: authored.drafts.first { $0.key == key }?.version,
+      payloadDigest: digest, draftKey: boundKey,
+      draftVersion: boundVersion,
       dispatched: pending?.dispatched ?? false,
       createdAt: isLocalPreparation ? now : pending?.createdAt ?? now,
       attachmentIDs: payload.attachmentIds ?? [],
@@ -313,6 +366,10 @@ extension ConsoleStore {
     guard receipt.submissionId == reference.submissionID, receipt.threadId == reference.threadID,
       ["turn", "live-input", "rejected"].contains(receipt.outcome)
     else { throw SubmissionError.uncertain }
+    knownSubmissionReceipts[receipt.submissionId] = receipt
+    receiptOrder.removeAll { $0 == receipt.submissionId }
+    receiptOrder.append(receipt.submissionId)
+    while receiptOrder.count > 200 { knownSubmissionReceipts[receiptOrder.removeFirst()] = nil }
     let admitted = receipt.outcome != "rejected"
     // Known admission permanently retires retry identity, regardless of draft-clear durability.
     recordRetirement(reference.submissionID)

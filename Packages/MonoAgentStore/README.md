@@ -35,6 +35,12 @@ Screens must not instantiate API clients or submit directly.
 - Composer: `draft(sourceID:threadID:)`, `setDraft`, `canSend`, `canUpload`, `stageUploads`,
   `stagedAttachments`, `uploadProgress`, `discardStagedUpload(_:)`, `discardStagedUploads`,
   `createConversation(_:retainingAttachments:)`, and `submit`.
+  `prepareSubmission` allocates a frozen attempt identity (or reuses matching pending recovery).
+  Keep that input through explicit retries, even after receipt recovery retires the journal.
+  `submit(draftBinding:)` accepts an exact authored key/version or `.none` for quick replies;
+  retries never rebind a pending identity to a newer draft. Known receipts are held in a bounded
+  memory cache, so retry after recovery resolves without another POST; the frozen UUID still
+  provides server idempotency if that cache ages out.
   New conversations are created **before** submission recovery. Pass `draftContext` when
   the authored draft still belongs to a source's new-conversation context; pass the staged
   attachment IDs as `retainingAttachments` so creation's own selection change keeps them.
@@ -49,7 +55,10 @@ Screens must not instantiate API clients or submit directly.
   (exact by-id read when known, else the pending ask) and `answerAsk(…)` (`POST
   /threads/:id/ask`; `invalid_answer` → `AskAnswerError.incomplete`); `setRunOverride(threadID:
   model:effort:)` — optimistic per-conversation model/effort through `enqueueThreadWrite`,
-  reverted with a visible error when refused, so a following submission settles after it.
+  newest-choice publication with rollback to confirmed (not optimistic) settings when refused,
+  so a following submission settles after it. Stopped/stopping/backgrounded stores refuse writes
+  both at entry and queue execution. Ask reads/answers discard late results after lifetime,
+  selection or held-conversation replacement.
   `cancel(threadID:)` sends the contract's `user-stop` origin and adopts the returned thread.
 - `enqueueThreadWrite` serializes pending settings/project edits; `settleThreadWrites`
   completes before a submission POST. Each caller's 15-second deadline starts at enqueue,
