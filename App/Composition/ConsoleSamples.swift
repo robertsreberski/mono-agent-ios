@@ -15,6 +15,13 @@
     case dashboardOffline = "dashboard-offline"
     case dashboardSearch = "dashboard-search"
     case conversationPlaceholder = "conversation-placeholder"
+    case conversationTranscript = "conversation-transcript"
+    case conversationStreaming = "conversation-streaming"
+    case conversationTools = "conversation-tools"
+    case conversationLong = "conversation-long"
+    case conversationMarkdown = "conversation-markdown"
+
+    var isTranscript: Bool { rawValue.hasPrefix("conversation-") }
 
     /// Dashboard scenarios use the richer `DashboardFixture`; store scenarios keep the golden.
     var isDashboard: Bool {
@@ -30,7 +37,7 @@
     /// Fixture launch state the dashboard applies once the Store is ready.
     var launchQuery: String? { self == .dashboardSearch ? DashboardFixture.searchQuery : nil }
     var launchThreadID: String? {
-      self == .conversationPlaceholder ? DashboardFixture.openThreadID : nil
+      isTranscript ? DashboardFixture.openThreadID : nil
     }
 
     /// Scenario.bootstrap is the fictional composition derived from the pinned C1 golden.
@@ -39,7 +46,8 @@
     ) async throws {
       if isDashboard {
         try await DashboardFixture.prepare(
-          store, repository: repository, empty: self == .dashboardEmpty, theme: theme)
+          store, repository: repository, empty: self == .dashboardEmpty, theme: theme,
+          transcript: isTranscript ? self : nil)
         return
       }
       let bootstrap = try JSONDecoder().decode(ApiBootstrap.self, from: Scenario.bootstrap.data)
@@ -86,6 +94,11 @@
     }
     func send(_ request: URLRequest) throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
+      if let scenario, scenario.isTranscript,
+        let response = try TranscriptFixture.response(request, scenario: scenario, theme: theme)
+      {
+        return response
+      }
       if let scenario, scenario.isDashboard {
         guard
           let response = try DashboardFixture.response(
@@ -150,8 +163,10 @@
   actor ScenarioEventSource: ConsoleEventSource {
     let scenario: StoreScenario?
     var continuation: AsyncThrowingStream<StreamUpdate, any Error>.Continuation?
+    var script: Task<Void, Never>?
     init(_ scenario: StoreScenario?) { self.scenario = scenario }
     func subscribe(thread: String?, capacity: Int) -> AsyncThrowingStream<StreamUpdate, any Error> {
+      script?.cancel()
       continuation?.finish()
       let pair = AsyncThrowingStream<StreamUpdate, any Error>.makeStream()
       continuation = pair.continuation
@@ -166,9 +181,25 @@
           pair.continuation.yield(.event(generation: 1, gap: .initial, ready))
         }
       }
+      if scenario == .conversationStreaming, thread == DashboardFixture.openThreadID {
+        script = Task {
+          for index in 1...8 {
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            guard !Task.isCancelled else { return }
+            if let event = try? TranscriptFixture.delta(index) {
+              pair.continuation.yield(.event(generation: 1, gap: .initial, event))
+              if index == 8, let terminal = try? TranscriptFixture.terminalTurn() {
+                pair.continuation.yield(.event(generation: 1, gap: .initial, terminal))
+              }
+            }
+          }
+        }
+      }
       return pair.stream
     }
     func cancel() {
+      script?.cancel()
+      script = nil
       continuation?.finish()
       continuation = nil
     }

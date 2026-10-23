@@ -30,7 +30,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--iphone")
 parser.add_argument("--ipad")
 parser.add_argument("--family", choices=["iPhone", "iPad"], help="Run one CI matrix leg; default runs both")
+parser.add_argument("--transcript-only", action="store_true", help="Focused transcript XCUI captures; preserves the full default matrix")
 args = parser.parse_args()
+if args.transcript_only:
+    EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in {
+        "conversation-transcript", "conversation-streaming", "conversation-tools", "conversation-long", "conversation-markdown"}}
 if bool(args.iphone) != bool(args.ipad):
     parser.error("Supply both --iphone and --ipad, or neither for dynamic selection")
 if args.iphone:
@@ -90,7 +94,8 @@ def capture(family, device):
             "-destination", f"platform=iOS Simulator,id={device['udid']}",
             "-derivedDataPath", ".build/Xcode", "-resultBundlePath", str(result),
             "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never",
-            "CODE_SIGNING_ALLOWED=NO", "test")
+            "CODE_SIGNING_ALLOWED=NO", "test",
+            *(["-only-testing:MonoAgentUITests/TranscriptScenarioTests", "-only-testing:MonoAgentTests"] if args.transcript_only else []))
     except subprocess.CalledProcessError as error:
         test_failure = error
     finally:

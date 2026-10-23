@@ -73,6 +73,9 @@ extension ConsoleStore {
     let mapped = rows.filter { acceptSummary($0, fetchedAt: fetchedAt) }.map { row -> WebThread in
       noteSummary(row)
       patchSummary(row, listed: true)
+      if let detail = conversations[row.id]?.record.thread, detail.revision >= row.revision {
+        return detail
+      }
       let held = old.first { $0.id == row.id }
       return held.map { $0.revision >= row.revision ? $0 : row } ?? row
     }
@@ -109,6 +112,7 @@ extension ConsoleStore {
         if let state = conversations[id], began == (observations[id] ?? 0) {
           state.freshness = .fresh
           state.runningConfirmed = true
+          noteSummary(state.thread)
         }
       case .modified(let value, let validator):
         let now = await clock.wallNow()
@@ -134,6 +138,7 @@ extension ConsoleStore {
           !wasSelected || selection == selected
         else { return }
         hold(record)
+        patchSummary(record.thread)
         conversations[id]?.etag = validator
         conversations[id]?.freshness = began == (observations[id] ?? 0) ? .fresh : .stale
         noteSummary(record.thread)
@@ -205,6 +210,9 @@ extension ConsoleStore {
     value.threads = incoming.threads.filter { acceptSummary($0, fetchedAt: fetchedAt) }.map { row in
       noteSummary(row)
       patchSummary(row, listed: true)
+      if let detail = conversations[row.id]?.record.thread, detail.revision >= row.revision {
+        return detail
+      }
       if let held = activeFleet?.threads.first(where: { $0.id == row.id }),
         held.revision >= row.revision
       {
@@ -342,7 +350,10 @@ extension ConsoleStore {
       } while self.repairDirty.contains(key) || self.repairWanted[key] != nil
     }
   }
-  public func repairToolOutput(threadID: String, messageID: String, toolCallID: String) async {
+  @discardableResult
+  public func repairToolOutput(threadID: String, messageID: String, toolCallID: String) async
+    -> Bool
+  {
     let generation = epoch
     do {
       let result = try await api.toolCall(
@@ -350,7 +361,7 @@ extension ConsoleStore {
       guard epoch == generation, !tombstones.keys.contains(threadID),
         let state = conversations[threadID],
         let index = state.record.messages.firstIndex(where: { $0.id == messageID })
-      else { return }
+      else { return false }
       if case .modified(let value, _) = result {
         var message = state.record.messages[index]
         guard
@@ -360,13 +371,13 @@ extension ConsoleStore {
             default: return false
             }
           })
-        else { return }
+        else { return false }
         let current = message.parts[slot]
         let ids: Set<String>
         switch value.part {
         case .toolCall(let tool), .subagent(let tool):
           ids = Set([tool.toolCallId] + (tool.calls ?? []).map(\.toolCallId))
-        default: return
+        default: return false
         }
         // The read may have raced a rewrite. Install full bodies only under matching digests.
         let merged = try DeltaReducer.apply(
@@ -376,7 +387,9 @@ extension ConsoleStore {
         state.record.repairedToolCallIDs.formUnion(ids)
         state.publish()
         scheduleCache()
+        return merged[0] != current
       }
     } catch { if epoch == generation { errorMessage = "Full tool output could not be loaded." } }
+    return false
   }
 }

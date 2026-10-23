@@ -4,9 +4,7 @@ import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
 
-/// The conversation destination. The transcript and composer belong to later features; until
-/// then this shows the conversation's header (title, agent, running state) and a clearly
-/// labelled placeholder body. It owns the Store's selection and visible-transcript signal.
+/// Store-only conversation destination. Visibility remains owned by the route lifecycle.
 struct ConversationScreen: View {
   let model: AppModel
   let store: ConsoleStore
@@ -34,19 +32,26 @@ struct ConversationScreen: View {
   }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: DesignSpacing.lg) {
-        header
-        placeholder
+    VStack(spacing: 0) {
+      if let threadID, let state = store.conversations[threadID] {
+        ConversationTranscript(state: state, store: store) { header }
+      } else {
+        ScrollView {
+          VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+            header
+            placeholder
+          }
+          .padding(DesignSpacing.lg)
+          .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
+          .frame(maxWidth: .infinity)
+        }
       }
-      .padding(DesignSpacing.lg)
-      .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
-      .frame(maxWidth: .infinity)
     }
     .background(theme.palette.canvas.color)
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .navigationSubtitle(agent?.label ?? "Agent unavailable")
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier(
       model.isReady && store.hydrated ? "scenario-ready" : "conversation-loading"
     )
@@ -86,14 +91,17 @@ struct ConversationScreen: View {
 
   private var runStatus: (kind: StatusKind, label: String)? {
     guard let thread else { return nil }
-    if thread.runState.status == "running" {
-      let confirmed =
-        store.conversations[thread.id]?.runningConfirmed == true
-        || store.isRunningConfirmed(threadID: thread.id)
-      return confirmed ? (.connecting, "Running") : (.stale, "Last known running")
-    }
-    if let error = DashboardModel.outcomeError(thread) { return (.failed, error) }
-    return (.disconnected, "Idle")
+    return ConversationHeaderModel.status(
+      thread, confirmed: store.isRunningConfirmed(threadID: thread.id))
+  }
+
+  private var knownRoute: ConversationHeaderModel.Route? {
+    guard let thread else { return nil }
+    let state = store.conversations[thread.id]
+    let latest = state?.orderedMessageIDs.reversed().lazy.compactMap {
+      state?.messageStates[$0]?.message.attribution
+    }.first(where: ConversationHeaderModel.hasReportedModel)
+    return ConversationHeaderModel.route(thread, agent: agent, latest: latest)
   }
 
   private var header: some View {
@@ -105,6 +113,9 @@ struct ConversationScreen: View {
       ViewThatFits(in: .horizontal) {
         HStack(spacing: DesignSpacing.md) { facts }
         VStack(alignment: .leading, spacing: DesignSpacing.sm) { facts }
+      }
+      if let route = knownRoute {
+        RouteBadge(model: route.label, effort: route.effort ?? "", detail: route.detail)
       }
       if let thread, let project = DashboardModel.projectLabel(thread, projects: store.projects) {
         ProjectChip(project.name, color: LabelColor(serverValue: project.color))
@@ -137,13 +148,13 @@ struct ConversationScreen: View {
       .accessibilityIdentifier("composer-placeholder")
     } else {
       EmptyStateView(
-        "Transcript coming soon", systemImage: "text.bubble",
+        "Loading conversation", systemImage: "text.bubble",
         message:
-          "Placeholder: messages, tool activity and replies arrive in a later update."
+          "Waiting for the conversation history. Pull to refresh if it remains unavailable."
       )
       .contentSurface()
       .accessibilityElement(children: .combine)
-      .accessibilityIdentifier("transcript-placeholder")
+      .accessibilityIdentifier("transcript-loading")
     }
   }
 }

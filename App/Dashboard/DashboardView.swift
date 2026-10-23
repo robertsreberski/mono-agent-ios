@@ -101,6 +101,7 @@ struct DashboardView: View {
     .navigationTitle(selectedAgent?.label ?? consoleName)
     .navigationSubtitle(DashboardBanner.subtitle(console: consoleName, inputs: statusInputs))
     .toolbar { toolbar }
+    .contentMargins(.bottom, DesignMetrics.minimumHitTarget + DesignSpacing.lg, for: .scrollContent)
     .searchable(
       text: $query,
       placement: sizeClass == .regular

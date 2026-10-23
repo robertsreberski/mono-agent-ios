@@ -95,9 +95,23 @@
             .contentSurface()
           }
           catalogSection("States") { StateSpecimens() }
-          catalogSection("Rich Markdown slot") {
-            RichMarkdownPlaceholder(
-              source: "## Release notes\n- **Bold** and `code` stay raw.\n- Tables render later.")
+          catalogSection("Rich documents") {
+            RichTextDocumentView(
+              source:
+                "## Release notes\n- [x] **Bold** and `code`\n\n| Item | Status |\n| --- | --- |\n| Sample | Complete |"
+            )
+          }
+          catalogSection("Route badge") {
+            RouteBadge(
+              model: "sample:large", effort: "high",
+              detail: "Current settings · inherited agent defaults")
+          }
+          catalogSection("Activity disclosure") {
+            ActivityDisclosure(
+              "Read ×2", summary: "sample.md, outline.md", detail: "42ms", expanded: .constant(true)
+            ) {
+              CodeDocumentView(source: "Synthetic output", language: "Output")
+            }
           }
           catalogSection("Composer bar shell") {
             Text("Pinned below: layout-only glass shell. Content scrolls beneath it.")

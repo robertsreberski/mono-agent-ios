@@ -65,7 +65,7 @@ struct MergeAndSafetyTests {
             JSONValue.self, from: JSONEncoder().encode(tool(digest: "old-digest", truncated: false))
           )
         ])))
-    await repair.value
+    #expect(await repair.value == false)
     let part = try #require(h.store.conversations["thread-example"]?.messages[0].parts[0])
     guard case .toolCall(let value) = part else {
       Issue.record("Expected tool")

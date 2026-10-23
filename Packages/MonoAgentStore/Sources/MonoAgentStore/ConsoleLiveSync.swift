@@ -136,6 +136,8 @@ extension ConsoleStore {
       if let id = envelope.threadId {
         if let state = conversations[id] {
           state.record.thread.runState = payload.turn
+          // Lean batches message bodies, never the run metadata shared with list rows.
+          state.thread = state.record.thread
           state.runningConfirmed = true
           publish(state, terminal: payload.turn.status != "running")
         }

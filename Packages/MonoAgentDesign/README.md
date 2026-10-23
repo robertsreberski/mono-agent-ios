@@ -78,7 +78,10 @@ colour is never the only cue.
 | States | `EmptyStateView`, `ErrorStateView`, `LoadingStateView` | Optional single action |
 | Section header | `SectionHeader(_:detail:accessory:)` | Header trait; optional trailing accessory |
 | Composer shell | `ComposerBarShell(leading:field:trailing:)` | Layout only: one `GlassEffectContainer`, readable width. No drafts or sending |
-| Markdown slot | `RichMarkdownPlaceholder(source:)` | **Placeholder**: shows raw source, labelled as such, until the rich renderer arrives |
+| Rich documents | `RichTextDocumentView(source:)`, `RichDocument.parse(_:)` | Bounded off-main GFM parsing, native selectable inline text; HTML stays literal. Exact swift-markdown 0.7.3 / swift-cmark 0.9.0; see root README and bundled ThirdPartyNotices |
+| Code | `CodeDocumentView(source:language:)` | Horizontal scroller, accessible selectable monospaced text, copy; bounded display with explicit notice |
+| Activity | `ActivityDisclosure(_:summary:status:detail:identifier:expanded:content:)` | Value-driven expansion, lazy payload construction, non-colour status and VoiceOver expansion state |
+| Route | `RouteBadge(model:effort:detail:)` | Read-only route label with full accessible provenance, not evidence of a run |
 
 Every component file has `#Preview`s across the four themes, dark mode, accessibility sizes
 and/or the opaque fallback. Previews and their `DesignPreviewMatrix` helper are DEBUG-only.

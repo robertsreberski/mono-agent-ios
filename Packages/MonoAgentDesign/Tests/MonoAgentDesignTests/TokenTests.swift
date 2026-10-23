@@ -52,7 +52,7 @@ struct TokenTests {
     #expect(UnreadMarker.accessibilityText(for: 250) == "250 unread")
   }
 
-  @Test func markdownSlotIsLabelledAsAPlaceholder() {
-    #expect(RichMarkdownPlaceholder.label.localizedStandardContains("placeholder"))
+  @Test func richDocumentHasAnExplicitWorkBound() {
+    #expect(RichDocument.maximumBytes == 65_536)
   }
 }

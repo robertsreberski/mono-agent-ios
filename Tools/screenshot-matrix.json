@@ -222,6 +222,92 @@
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-transcript",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-transcript",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-streaming",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-streaming",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-tools",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-tools",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-long",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-long",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "dark",
+      "variant": "plum",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "light",
+      "variant": "ax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }
