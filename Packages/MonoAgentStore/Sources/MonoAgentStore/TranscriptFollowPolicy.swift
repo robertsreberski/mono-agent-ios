@@ -43,7 +43,7 @@ public struct TranscriptFollowPolicy: Sendable, Equatable {
   public var shouldShowJump: Bool { !following && !atBottom && !paging }
   public var shouldFollowWrite: Bool { following && !paging }
   public func shouldScrollAfterWrite(_ metrics: TranscriptScrollMetrics) -> Bool {
-    shouldFollowWrite && metrics.distanceFromBottom > 1
+    shouldFollowWrite && !metrics.contentFits && metrics.distanceFromBottom > 1
   }
   public mutating func beginPaging() {
     following = false
