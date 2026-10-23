@@ -98,7 +98,7 @@ struct ConversationTranscript<Header: View>: View {
     } action: {
       viewportWidth = $0
     }
-    .scrollDismissesKeyboard(.interactively)
+    .scrollDismissesKeyboard(.immediately)
     .scrollPosition($scrollPosition)
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     // Short transcripts sit at the top; bottom alignment left a gap that revealed the refresh

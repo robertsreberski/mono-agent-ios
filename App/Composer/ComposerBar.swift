@@ -517,9 +517,22 @@ struct ComposerOverlay: View {
             }
           }
         }
-        .frame(maxHeight: 220)
+        .frame(maxHeight: 310)
         .fixedSize(horizontal: false, vertical: true)
-        .contentSurface(padding: DesignSpacing.xs)
+        // Web `.composer-trigger-popover`: raised, 1 px line-strong, radius 12, shadow-lg,
+        // padding 5, at most 320 pt wide, anchored 9 pt in from the composer's leading edge.
+        .padding(5)
+        .background(
+          WebColor.surfaceRaised.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(WebColor.lineStrong.color, lineWidth: 1)
+        )
+        .webShadow(.large)
+        .frame(maxWidth: 320)
+        .padding(.leading, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
           "\(skills.count + commands.count) suggestion\(skills.count + commands.count == 1 ? "" : "s")"
@@ -528,9 +541,6 @@ struct ComposerOverlay: View {
       }
       ComposerStatusLine(controller: controller)
     }
-    .padding(.horizontal, DesignSpacing.md)
-    .frame(maxWidth: DesignMetrics.readableWidth + 2 * DesignSpacing.md)
-    .frame(maxWidth: .infinity)
   }
 }
 

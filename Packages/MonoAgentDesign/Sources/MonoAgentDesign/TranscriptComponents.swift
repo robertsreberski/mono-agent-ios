@@ -15,13 +15,22 @@ public struct UserBubble<Content: View>: View {
       topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 4,
       topTrailingRadius: 16, style: .continuous)
     let regular = sizeClass == .regular
-    TrailingFractionLayout(fraction: regular ? 0.78 : WebMetrics.bubbleWidth, cap: 650) {
-      content
-        .padding(.vertical, regular ? 11 : 9)
-        .padding(.horizontal, regular ? 15 : 12)
-        .background(WebColor.surfaceSubtle.color, in: shape)
-        .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
-    }
+    content
+      .padding(.vertical, regular ? 11 : 9)
+      .padding(.horizontal, regular ? 15 : 12)
+      .background(WebColor.surfaceSubtle.color, in: shape)
+      .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+      .fixedSize(horizontal: false, vertical: true)
+      // At most 88% (78% on tablets) of the column, capped at 650; the bubble keeps its own
+      // width inside that box on the trailing edge.
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .containerRelativeFrame(.horizontal, alignment: .trailing) { length, _ in
+        let gutter = regular ? WebSpace.transcriptGutterRegular : WebSpace.transcriptGutter
+        return min(
+          650,
+          max(0, min(length, WebMetrics.column) - 2 * gutter)
+            * (regular ? 0.78 : WebMetrics.bubbleWidth))
+      }
   }
 }
 

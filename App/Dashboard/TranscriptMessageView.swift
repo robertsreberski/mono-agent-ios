@@ -22,12 +22,12 @@ struct TranscriptMessageView: View {
       } else {
         messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
       }
-      actions(message)
+      // Web: the action row belongs to a settled message, not one still being written.
+      if message.status != "running" { actions(message) }
     }
     .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
     .quotable(message)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(role)
     .accessibilityIdentifier("message-" + message.id)
   }
 
@@ -88,8 +88,10 @@ struct TranscriptMessageView: View {
             message.createdAt, now: context.date.addingTimeInterval(store.serverClockOffset))
         )
         .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
+        // The role is spoken with the time, as the old visible "You"/"Assistant" header was.
         .accessibilityLabel(
-          TranscriptPresentation.date(message.createdAt)?.formatted() ?? "Time unavailable")
+          role + ", "
+            + (TranscriptPresentation.date(message.createdAt)?.formatted() ?? "time unavailable"))
       }
       .padding(.horizontal, isUser ? 0 : 7)
       .opacity(message.parts.isEmpty ? 0 : 1)

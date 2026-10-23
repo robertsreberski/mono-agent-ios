@@ -46,7 +46,7 @@ struct ConversationScreen: View {
             .frame(maxWidth: WebMetrics.column)
             .frame(maxWidth: .infinity)
         }
-        .scrollDismissesKeyboard(.interactively)
+        .scrollDismissesKeyboard(.immediately)
       }
     }
     .conversationComposer(
@@ -159,28 +159,34 @@ struct ConversationScreen: View {
           store.tags.first { $0.id == id && $0.sourceId == thread.sourceId }
         }
       } ?? []
-    if project != nil || !tags.isEmpty {
-      HStack(spacing: 6) {
-        if let project {
-          ProjectBadge(project.name, color: LabelColor(serverValue: project.color))
-        }
-        if project != nil && !tags.isEmpty {
+    HStack(spacing: 6) {
+      if let project {
+        ProjectBadge(project.name, color: LabelColor(serverValue: project.color))
+      }
+      if project != nil && !tags.isEmpty {
+        Text("·").webFont(.breadcrumb).foregroundStyle(WebColor.textMuted.color)
+      }
+      ForEach(tags.prefix(2), id: \.id) { tag in
+        TagBadge(tag.name, color: LabelColor(serverValue: tag.color))
+          .padding(.horizontal, 8)
+          .frame(minHeight: 20)
+          .background(WebColor.surfaceHover.color, in: Capsule())
+      }
+      // The last reported route (model · effort) the old header carried, quietly.
+      if let route = knownRoute {
+        if project != nil || !tags.isEmpty {
           Text("·").webFont(.breadcrumb).foregroundStyle(WebColor.textMuted.color)
         }
-        ForEach(tags.prefix(2), id: \.id) { tag in
-          TagBadge(tag.name, color: LabelColor(serverValue: tag.color))
-            .padding(.horizontal, 8)
-            .frame(minHeight: 20)
-            .background(WebColor.surfaceHover.color, in: Capsule())
-        }
+        RouteBadge(model: route.label, effort: route.effort ?? "", detail: route.detail)
+          .layoutPriority(-1)
       }
-      .lineLimit(1)
     }
+    .lineLimit(1)
   }
 
-  /// Web `.chat-status`: a dot and the uppercase state ("Ready" when idle).
+  /// Web `.chat-status`: a dot and the uppercase state.
   private func runStateBadge(_ status: (kind: StatusKind, label: String)) -> some View {
-    let label = status.kind == .disconnected && status.label == "Idle" ? "Ready" : status.label
+    let label = status.label
     let color: Color =
       switch status.kind {
       case .connecting: WebColor.jobProgress.color
