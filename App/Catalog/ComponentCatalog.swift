@@ -95,6 +95,14 @@
             }
             .contentSurface()
           }
+          catalogSection("Reply images") {
+            ScrollView(.horizontal) {
+              HStack(spacing: 6) {
+                ReplyImageTile(name: "Sample picture", size: "128 KiB", image: nil, phase: .load) {}
+                ReplyImageTile(name: "Sample picture", size: "128 KiB", image: nil) {}
+              }
+            }
+          }
           catalogSection("Reply files") {
             ReplyFileCard(name: "report.pdf", mediaType: "application/pdf", sizeBytes: 4096) {}
             ReplyFileCard(

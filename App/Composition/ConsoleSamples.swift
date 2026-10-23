@@ -25,6 +25,7 @@
     case conversationJobs = "conversation-jobs"
     case conversationJobStack = "conversation-job-stack"
     case conversationSubagents = "conversation-subagents"
+    case conversationImages = "conversation-images"
     case conversationReplyFiles = "conversation-reply-files"
     case conversationContext = "conversation-context"
     // Composer (C8): scripted send/upload/ask round trips through the synthetic Store.

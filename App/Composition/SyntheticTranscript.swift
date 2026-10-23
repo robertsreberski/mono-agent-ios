@@ -76,6 +76,7 @@
       return call
     }
     static func messages(_ scenario: StoreScenario, older: Bool = false) throws -> [WebMessage] {
+      if scenario == .conversationImages { return try RichReplyFixture.images() }
       if scenario == .conversationReplyFiles { return try RichReplyFixture.files() }
       if JobFixture.matches(scenario) { return try JobFixture.messages(scenario) }
       if scenario == .conversationLong {

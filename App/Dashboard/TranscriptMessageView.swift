@@ -8,6 +8,7 @@ struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
   let startsTurn: Bool
+  @State private var gallery = ReplyMessageGallery()
   private var isUser: Bool { row.message.role == "user" }
   private var role: String {
     isUser ? "You" : row.message.role == "assistant" ? "Assistant" : "System"
@@ -39,6 +40,17 @@ struct TranscriptMessageView: View {
     .quotable(message)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message-" + message.id)
+    .fullScreenCover(
+      isPresented: Binding(get: { gallery.openID != nil }, set: { if !$0 { gallery.openID = nil } })
+    ) {
+      ReplyLightbox(
+        images: gallery.images(in: message),
+        selected: Binding(
+          get: { gallery.openID ?? "" }, set: { gallery.openID = $0 }
+        )
+      ) { gallery.openID = nil }
+    }
+    .onDisappear { if gallery.openID == nil { gallery.clear(store: store) } }
   }
 
   @ViewBuilder private func messageContent(_ message: WebMessage) -> some View {
@@ -50,6 +62,12 @@ struct TranscriptMessageView: View {
       ForEach(TranscriptPresentation.activityBands(message.parts)) { band in
         if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
           TranscriptActivityBand(parts: band.parts, message: message, store: store)
+        } else if band.parts.allSatisfy(TranscriptPresentation.isReplyImage) {
+          ReplyImagesView(
+            parts: band.parts.compactMap {
+              if case .attachment(let value) = $0 { return value }
+              return nil
+            }, message: message, store: store, gallery: gallery)
         } else if let part = band.parts.first {
           if message.role == "system", case .text(let value) = part {
             Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import CoreGraphics
 import Foundation
 import MonoAgentKit
 
@@ -91,7 +92,20 @@ extension ConsoleStore {
   public func releaseReplyFile(_ lease: ReplyFileLease) async {
     try? await replyFiles.release(lease)
   }
-  public func clearReplyFileCache() async throws { try await replyFiles.clear() }
+  public func clearReplyFileCache() async throws {
+    try await replyFiles.clear()
+    await replyImages.clear()
+  }
+  public func decodeReplyImage(_ lease: ReplyFileLease) async throws -> CGImage {
+    let generation = epoch
+    let selected = selection
+    guard enabled, started, !stopping, !backgrounded else { throw ReplyDownloadFailure.unavailable }
+    let image = try await replyImages.image(at: lease.url, lean: effectiveDataMode == .lean)
+    guard epoch == generation, selection == selected, enabled, started, !stopping, !backgrounded,
+      !Task.isCancelled
+    else { throw CancellationError() }
+    return image
+  }
 
   func replyAttachment(threadID: String, messageID: String, partID: String) -> ReplyAttachmentPart?
   {

@@ -5,6 +5,25 @@ import XCTest
 @MainActor final class ReplyScenarioTests: XCTestCase {
   func testFilesLight() { files("light") }
   func testFilesDark() { files("dark") }
+  func testImagesLight() { images("light") }
+  func testImagesDark() { images("dark") }
+
+  private func images(_ appearance: String) {
+    let app = launch("conversation-images", appearance)
+    let first = app.buttons["View sample-landscape-1.png"]
+    XCTAssertTrue(first.waitForExistence(timeout: 10))
+    capture(app, "conversation-images", appearance)
+    first.tap()
+    XCTAssertTrue(element(app, "reply-lightbox").waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Share sample-landscape-1.png"].exists)
+    capture(app, "conversation-images", appearance, variant: "lightbox")
+    app.buttons["Next image"].tap()
+    XCTAssertTrue(app.buttons["Share sample-landscape-2.png"].waitForExistence(timeout: 5))
+    element(app, "reply-lightbox-pages").pinch(withScale: 2, velocity: 1)
+    app.buttons["Close image"].tap()
+    XCTAssertTrue(first.waitForExistence(timeout: 5))
+    app.terminate()
+  }
 
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
     app.descendants(matching: .any).matching(identifier: id).firstMatch
