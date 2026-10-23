@@ -140,20 +140,25 @@ struct McpAppIsolationTests {
             const base = `http://127.0.0.1:${port}`;
             const attempt = fn => { try { fn(); } catch {} };
             attempt(() => fetch(base + '/fetch').catch(() => {}));
+            attempt(() => {const source=new EventSource(base+'/events');setTimeout(()=>source.close(),1000);});
+            if(typeof WebTransport==='function')attempt(()=>{const transport=new WebTransport(`https://127.0.0.1:${port}/transport`);transport.ready.catch(()=>{});});
             attempt(() => { const x = new XMLHttpRequest(); x.open('GET', base + '/xhr'); x.send(); });
             attempt(() => new WebSocket(`ws://127.0.0.1:${port}/socket`));
             attempt(() => navigator.sendBeacon(base + '/beacon', 'canary'));
             attempt(() => { const img = new Image(); img.src = base + '/img'; document.body.append(img); });
             attempt(() => {
               const style = document.createElement('style');
-              style.textContent = `body{background-image:url(${base}/css)}@font-face{font-family:canary;src:url(${base}/font)}p{font-family:canary}`;
+              style.textContent = `@import url(${base}/import);body{background-image:url(${base}/css)}@font-face{font-family:canary;src:url(${base}/font)}p{font-family:canary}`;
               document.head.append(style); const p=document.createElement('p');p.textContent='font canary';document.body.append(p);
             });
+            attempt(()=>{const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+              const image=document.createElementNS('http://www.w3.org/2000/svg','image');image.setAttribute('href',base+'/svg-image');svg.append(image);document.body.append(svg);});
             for (const tag of ['audio','video']) attempt(() => {
               const media = document.createElement(tag); media.src = base + '/' + tag;
               media.preload = 'auto'; document.body.append(media); media.load();
             });
             attempt(() => {
+              // Sandbox lacks allow-forms: this is a sandbox-blocked probe, not CSP attribution.
               const form = document.createElement('form'); form.action = base + '/form';
               document.body.append(form); form.submit();
             });
@@ -163,7 +168,7 @@ struct McpAppIsolationTests {
             });
 
           }
-          deliver({marker:'attempted-network'});
+          deliver({marker:'attempted-network',webTransportPresent:typeof WebTransport==='function'});
           """), delegate: recorder)
     try await attach(host)
     defer { host.close() }
@@ -175,6 +180,10 @@ struct McpAppIsolationTests {
     print(
       "MCP sink counts console=\(console.inboundConnections)/\(console.requests)/\(console.datagrams) evil=\(evil.inboundConnections)/\(evil.requests)/\(evil.datagrams)"
     )
+    print(
+      "MCP optional WebTransport present: \(recorder.deliveries.last?["webTransportPresent"] ?? "unknown")"
+    )
+    #expect(!host.isRetired)
     #expect(console.inboundConnections == 0)
     #expect(console.requests == 0)
     #expect(console.datagrams == 0)
@@ -298,8 +307,10 @@ struct McpAppIsolationTests {
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     let original = try #require(recorder.deliveries.first)
+    let originalIdentity = host.debugTransportIdentity
     try await probe(host)
     try await waitUntil { recorder.deliveries.count == 2 || host.isRetired }
+    #expect(host.debugTransportIdentity == originalIdentity)
     print(
       "MCP file route \(route): actions=\(host.navigationDecisions), responses=\(host.responseDecisions), retired=\(host.retirementReason ?? "none")"
     )
@@ -765,6 +776,113 @@ struct McpAppIsolationTests {
         $0["jsonrpc"] as? String == "2.0" && $0["nonce"] == nil && $0["generation"] == nil
       })
     #expect(result["reply"] as? [String: Any] != nil)
+  }
+
+  @Test func isolatedWorldWebRtcPositiveControlReachesSinks() async throws {
+    let console = try await sink()
+    let evil = try await sink()
+    defer {
+      console.stop()
+      evil.stop()
+    }
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
+    try await attach(host)
+    defer { host.close() }
+    let ports = [console.port, evil.port].map(String.init).joined(separator: ",")
+    let started = try await host.webView.callAsyncJavaScript(
+      """
+      window.rtcPositiveControls=[];
+      for(const port of [\(ports)]){
+        const rtc=new RTCPeerConnection({iceServers:[{urls:`stun:127.0.0.1:${port}`},
+          {urls:`turn:127.0.0.1:${port}?transport=tcp`,username:'canary',credential:'fictional'}]});
+        window.rtcPositiveControls.push(rtc);rtc.createDataChannel('control');
+        await rtc.setLocalDescription(await rtc.createOffer());
+      }
+      return 'started';
+      """, arguments: [:], in: nil, contentWorld: McpAppBridgeListener.world)
+    #expect(started as? String == "started")
+    for sink in [console, evil] {
+      try await waitUntil { sink.datagrams > 0 || sink.nonHttpBytes > 0 }
+      #expect(sink.datagrams > 0 || sink.nonHttpBytes > 0)
+      #expect(sink.requests == 0)
+    }
+    #expect(!host.isRetired)
+    print(
+      "MCP WebKit RTC positive control console=\(console.inboundConnections)/\(console.datagrams)/\(console.nonHttpBytes), evil=\(evil.inboundConnections)/\(evil.datagrams)/\(evil.nonHttpBytes)"
+    )
+  }
+
+  @Test func contentRulesAloneBlockWebSockets() async throws {
+    let console = try await sink()
+    let evil = try await sink()
+    defer {
+      console.stop()
+      evil.stop()
+    }
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
+    try await attach(host)
+    defer { host.close() }
+    let ports = [console.port, evil.port].map(String.init).joined(separator: ",")
+    // The outer shell has no connect-src/default-src restriction: CSP cannot block this probe.
+    #expect(!McpAppShellSchemeHandler.contentSecurityPolicy.contains("connect-src"))
+    #expect(!McpAppShellSchemeHandler.contentSecurityPolicy.contains("default-src"))
+    let script = """
+      await Promise.all([\(ports)].map(port=>new Promise(resolve=>{
+        const socket=new WebSocket(`ws://127.0.0.1:${port}/socket-control`);
+        socket.onerror=()=>resolve();socket.onopen=()=>{socket.close();resolve();};
+        setTimeout(resolve,1000);
+      })));return 'attempted';
+      """
+    _ = try await host.webView.callAsyncJavaScript(
+      script, arguments: [:], in: nil, contentWorld: .page)
+    #expect(console.inboundConnections == 0 && evil.inboundConnections == 0)
+    #expect(!host.isRetired)
+    // Test-only positive control removes ONLY the rule list, keeping identical shell/CSP/runtime.
+    host.webView.configuration.userContentController.removeAllContentRuleLists()
+    _ = try await host.webView.callAsyncJavaScript(
+      script, arguments: [:], in: nil, contentWorld: .page)
+    try await waitUntil { console.requests > 0 && evil.requests > 0 }
+    #expect(console.inboundConnections > 0 && evil.inboundConnections > 0)
+    #expect(console.requestLines.contains("GET /socket-control HTTP/1.1"))
+    #expect(evil.requestLines.contains("GET /socket-control HTTP/1.1"))
+    #expect(!host.isRetired)
+  }
+
+  @Test(arguments: ["anchor-ping", "meta-refresh"])
+  func additionalNavigationProbesRetireWithoutSinkHits(_ route: String) async throws {
+    let console = try await sink()
+    let evil = try await sink()
+    defer {
+      console.stop()
+      evil.stop()
+    }
+    let command: String
+    if route == "anchor-ping" {
+      command =
+        "const a=document.createElement('a');a.href='\(console.origin)/navigation';a.ping='\(evil.origin)/ping';document.body.append(a);a.click();"
+    } else {
+      command =
+        "const meta=document.createElement('meta');meta.httpEquiv='refresh';meta.content='0;url=\(console.origin)/refresh';document.head.append(meta);"
+    }
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          deliver({marker:'navigation-probe-starting'});setTimeout(()=>{\(command)},50);
+          """), delegate: recorder)
+    try await attach(host)
+    defer { host.close() }
+    try await probe(host)
+    try await waitUntil { host.isRetired }
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(console.inboundConnections == 0 && evil.inboundConnections == 0)
+    #expect(console.requests == 0 && evil.requests == 0)
+    #expect(recorder.deliveries.count == 2)
+    #expect(host.retirementReason == "Navigation rejected")
   }
 
 }

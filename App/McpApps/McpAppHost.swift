@@ -21,10 +21,14 @@ final class McpAppHost: NSObject {
   {
     let document = try McpSecureDocument(html: html)
     let rules = try await WKContentRuleListStore.default().compileContentRuleList(
-      forIdentifier: "mono-mcp-deny-network-v1",
+      forIdentifier: "mono-mcp-allow-local-documents-v2",
       encodedContentRuleList:
         """
-        [{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]
+        [{"trigger":{"url-filter":".*"},"action":{"type":"block"}},
+         {"trigger":{"url-filter":"^mono-mcp-host:"},"action":{"type":"ignore-previous-rules"}},
+         {"trigger":{"url-filter":"^about:"},"action":{"type":"ignore-previous-rules"}},
+         {"trigger":{"url-filter":"^data:"},"action":{"type":"ignore-previous-rules"}},
+         {"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}}]
         """)
     guard let rules else { throw URLError(.cannotLoadFromNetwork) }
     let host = try McpAppHost(document: document, rules: rules)

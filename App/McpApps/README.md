@@ -6,18 +6,26 @@ not JSON-RPC method semantics or native effects. The transcript placeholder rema
 Each host owns a nonpersistent website data store, content controller, fixed custom-scheme
 shell, and scripts-only sandboxed srcdoc. The shell's response-header envelope CSP and
 the inner document's canonical meta CSP apply together. No console URL, headers,
-capability, or credential enters WebKit. HTTP/HTTPS content rules are compiled before load.
+capability, or credential enters WebKit. A deny-by-default content rule list allows only mono-mcp-host:, about:, data: and blob:
+documents/resources; all other URL loads, including HTTP(S) and WS(S), are blocked. The rules
+are compiled before load.
 Only the initial shell/srcdoc navigation is allowed. A rejected navigation or second iframe
 load retires the session. File attempts rejected internally by WebKit before any load leave
 the original document/session intact; tests verify its per-document marker. Native file
 requests reaching navigation policy are rejected. All future loads still retire.
 
-The isolated-world listener requires a trusted MessageEvent from the current inner window,
-an opaque origin, and the current nonce/generation. Swift independently checks the main
+The app posts raw JSON-RPC to window.parent, just like the web SDK. The isolated-world
+listener requires a trusted MessageEvent from the current inner window, an opaque origin
+and exactly one frame load. It privately wraps the payload with nonce/generation; neither
+secret leaves that world. Native replies/notifications relay raw JSON-RPC back to the opaque
+inner window with targetOrigin "*". Swift independently checks the main
 WKFrameInfo, shell URL/origin, session identity and serialized envelope byte cap. HTML's
 2 MiB cap counts secured UTF-8 bytes, not JSON-escaped transport bytes. The bridge cap is
-1 MiB + 64 KiB including its native transport envelope. Host owners must call `close()`
-when disposing a host. Fresh hosts never reuse a session identity.
+1 MiB + 64 KiB including its native transport envelope. Native serialization does not escape slashes, matching JSON.stringify byte accounting.
+Owners should call `close()` for prompt disposal; isolated deinit also retires the document
+and removes handlers/scripts. A strong webView-owned policy survives a released host and
+defaults to cancel/deny, even when the view is retained elsewhere. Fresh hosts never reuse
+a session identity. Link previews, context menus and link/image drag interactions are denied.
 
 ## WebRTC mitigation and residual limits
 
@@ -42,9 +50,15 @@ Because these new frames cannot load, this does not establish injection timing i
 otherwise permitted nested realm. All tested WebRTC variants are normal zero-hit assertions;
 the historical known issue is not suppressed as an expected failure anymore.
 
-Ordinary fetch/XHR/WebSocket/beacon/resource/form and numeric-loopback prefetch/preconnect/
-DNS-prefetch probes also record zero inbound connections with the full policy stack. Tests
-use TCP/UDP positive controls and no live console. These bounded runtime tests do not prove
+Ordinary fetch/XHR/WebSocket/EventSource/beacon/resource and numeric-loopback prefetch/preconnect/
+DNS-prefetch probes also record zero inbound connections without retiring the host. Form
+submission is sandbox-blocked (no allow-forms); WebTransport is tested when present. CSS
+@import and SVG images are covered. Separate anchor-ping and HTTP meta-refresh attempts
+are stopped by retirement/navigation policy, not credited to resource blocking alone. Tests
+use native TCP/UDP positive controls and a real WebKit-originated isolated-world STUN/TURN
+control that must reach both sinks. An outer-shell WebSocket test (no restrictive connect-src)
+proves the content rules block sockets independently; removing only the rules permits the
+same WebKit socket to reach the sinks. There is no live console. These bounded runtime tests do not prove
 DNS-name privacy, eliminate unknown JavaScript-realm bypasses, or attribute every result to
 CSP versus content rules versus navigation policy. Keep the sandbox and navigation gate;
 do not rely on global removal alone or advertise a general network firewall.
