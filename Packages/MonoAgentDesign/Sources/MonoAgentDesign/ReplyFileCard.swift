@@ -27,12 +27,13 @@ public struct ReplyFileCard: View {
   }
   public var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      ViewThatFits(in: .horizontal) {
+      if !typeSize.isAccessibilitySize {
         HStack(spacing: 10) {
           icon
           copy
-          button
+          button.fixedSize()
         }
+      } else {
         VStack(alignment: .leading, spacing: 4) {
           HStack(spacing: 10) {
             icon

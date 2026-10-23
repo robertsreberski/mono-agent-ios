@@ -127,7 +127,9 @@ extension ConsoleStore {
           state.operationID = latest.id
           return
         }
-      } catch { /* Retain uncertainty; never automatically retry a mutation. */  }
+      } catch {
+        // Retain uncertainty; never automatically retry a mutation.
+      }
       guard valid() else { return }
       state.requestUnknown =
         "Couldn't confirm the request was received — check the agent. You can retry."

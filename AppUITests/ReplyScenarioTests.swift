@@ -7,6 +7,21 @@ import XCTest
   func testFilesDark() { files("dark") }
   func testImagesLight() { images("light") }
   func testImagesDark() { images("dark") }
+  func testSingleImageLight() { imageVariant("single", "light") }
+  func testSingleImageDark() { imageVariant("single", "dark") }
+  func testEmptyGalleryLight() { imageVariant("empty", "light") }
+  func testEmptyGalleryDark() { imageVariant("empty", "dark") }
+  private func imageVariant(_ variant: String, _ appearance: String) {
+    let app = launch("conversation-images-" + variant, appearance)
+    if variant == "single" {
+      XCTAssertTrue(app.buttons["View sample-landscape-1.png"].waitForExistence(timeout: 10))
+    } else {
+      XCTAssertTrue(app.staticTexts["No images attached."].waitForExistence(timeout: 5))
+      XCTAssertFalse(element(app, "reply-image-row").exists)
+    }
+    capture(app, "conversation-images", appearance, variant: variant)
+    app.terminate()
+  }
   func testRestartLight() { restart("light") }
   func testRestartDark() { restart("dark") }
 
@@ -43,7 +58,21 @@ import XCTest
     capture(app, "conversation-images", appearance, variant: "lightbox")
     app.buttons["Next image"].tap()
     XCTAssertTrue(app.buttons["Share sample-landscape-2.png"].waitForExistence(timeout: 5))
-    element(app, "reply-lightbox-pages").pinch(withScale: 2, velocity: 1)
+    let zoom = app.descendants(matching: .any).matching(identifier: "reply-image-zoom")
+      .allElementsBoundByIndex.first { $0.isHittable }
+    XCTAssertNotNil(zoom)
+    zoom?.pinch(withScale: 2, velocity: 1)
+    let diagnostic = XCTAttachment(screenshot: app.screenshot())
+    diagnostic.name = "zoom-diagnostic"
+    diagnostic.lifetime = .keepAlways
+    add(diagnostic)
+    XCTAssertNotEqual(zoom?.value as? String, "Zoom 100 percent")
+    XCTAssertTrue(
+      (zoom?.value as? String)?.hasPrefix("Zoom ") == true,
+      "Zoom AX value: \(String(describing: zoom?.value)); \(zoom?.debugDescription ?? "absent")")
+    zoom?.tap(withNumberOfTaps: 2, numberOfTouches: 1)
+    app.swipeLeft()
+    XCTAssertTrue(app.buttons["Share sample-landscape-3.png"].waitForExistence(timeout: 5))
     app.buttons["Close image"].tap()
     XCTAssertTrue(first.waitForExistence(timeout: 5))
     app.terminate()
@@ -85,7 +114,6 @@ import XCTest
     XCTAssertTrue(app.buttons["Save to Files"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Share"].exists)
     XCTAssertTrue(app.buttons["Preview"].exists)
-    app.buttons["Cancel"].tap()
     app.terminate()
   }
 }

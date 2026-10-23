@@ -71,13 +71,10 @@ public struct ReplyLightbox: View {
   private var index: Int { images.firstIndex { $0.id == selected } ?? 0 }
   public var body: some View {
     VStack(spacing: 12) {
-      TabView(selection: $selected) {
-        ForEach(images) { item in
-          ZoomableReplyImage(image: item.image)
-            .accessibilityLabel(item.name).tag(item.id)
-        }
-      }.tabViewStyle(.page(indexDisplayMode: .never))
-        .accessibilityIdentifier("reply-lightbox-pages")
+      if let current {
+        ZoomableReplyImage(image: current.image, name: current.name, step: step)
+          .id(current.id)
+      }
       HStack(spacing: 6) {
         if images.count > 1 {
           control("Previous image", "chevron.left") { step(-1) }
@@ -98,6 +95,7 @@ public struct ReplyLightbox: View {
     }.padding(12).background(
       Color(red: 7 / 255, green: 10 / 255, blue: 8 / 255).opacity(0.94).ignoresSafeArea()
     )
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("reply-lightbox")
     .accessibilityAction(.escape, close)
   }
@@ -112,35 +110,66 @@ public struct ReplyLightbox: View {
   }
 }
 
-private struct ZoomableReplyImage: UIViewRepresentable {
+private struct ZoomableReplyImage: View {
   let image: UIImage
-  func makeCoordinator() -> Coordinator { Coordinator() }
-  func makeUIView(context: Context) -> UIScrollView {
-    let scroll = UIScrollView()
-    scroll.delegate = context.coordinator
-    scroll.minimumZoomScale = 1
-    scroll.maximumZoomScale = 5
-    scroll.showsVerticalScrollIndicator = false
-    scroll.showsHorizontalScrollIndicator = false
-    let view = context.coordinator.image
-    view.contentMode = .scaleAspectFit
-    view.isAccessibilityElement = true
-    view.accessibilityTraits = .image
-    scroll.addSubview(view)
-    return scroll
-  }
-  func updateUIView(_ scroll: UIScrollView, context: Context) {
-    let view = context.coordinator.image
-    if view.image !== image {
-      scroll.setZoomScale(1, animated: false)
-      view.image = image
+  let name: String
+  let step: (Int) -> Void
+  @State private var scale: CGFloat = 1
+  @State private var baseline: CGFloat = 1
+  @State private var offset = CGSize.zero
+  @State private var dragStart = CGSize.zero
+  var body: some View {
+    GeometryReader { geometry in
+      Image(uiImage: image).resizable().scaledToFit()
+        .frame(width: geometry.size.width, height: geometry.size.height)
+        .scaleEffect(scale).offset(offset)
+        .frame(width: geometry.size.width, height: geometry.size.height)
+        .clipped().contentShape(Rectangle())
+        .gesture(
+          MagnifyGesture().onChanged { value in
+            scale = min(5, max(1, baseline * value.magnification))
+            if scale == 1 {
+              offset = .zero
+              dragStart = .zero
+            }
+          }.onEnded { _ in baseline = scale }
+        )
+        .simultaneousGesture(
+          DragGesture().onChanged { value in
+            guard scale > 1 else { return }
+            let x = geometry.size.width * (scale - 1) / 2
+            let y = geometry.size.height * (scale - 1) / 2
+            offset = CGSize(
+              width: min(x, max(-x, dragStart.width + value.translation.width)),
+              height: min(y, max(-y, dragStart.height + value.translation.height)))
+          }.onEnded { value in
+            if scale <= 1.01, abs(value.translation.width) > 50,
+              abs(value.translation.width) > abs(value.translation.height)
+            {
+              step(value.translation.width < 0 ? 1 : -1)
+            } else {
+              dragStart = offset
+            }
+          }
+        )
+        .onTapGesture(count: 2) {
+          scale = 1
+          baseline = 1
+          offset = .zero
+          dragStart = .zero
+        }
+        .accessibilityElement().accessibilityLabel(name)
+        .accessibilityValue("Zoom \(Int(scale * 100)) percent")
+        .accessibilityIdentifier("reply-image-zoom")
+        .accessibilityAdjustableAction { direction in
+          scale = direction == .increment ? min(5, scale + 0.5) : max(1, scale - 0.5)
+          baseline = scale
+          if scale == 1 {
+            offset = .zero
+            dragStart = .zero
+          }
+        }
     }
-    view.frame = scroll.bounds
-    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-  }
-  final class Coordinator: NSObject, UIScrollViewDelegate {
-    let image = UIImageView()
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? { image }
   }
 }
 

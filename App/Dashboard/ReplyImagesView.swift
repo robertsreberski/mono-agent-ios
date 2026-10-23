@@ -16,6 +16,15 @@ import SwiftUI
   var failures: [String: String] = [:]
   var openID: String?
   private var generation = 0
+  private var tasks: [String: Task<Void, Never>] = [:]
+  func request(_ part: ReplyAttachmentPart, message: WebMessage, store: ConsoleStore) {
+    guard tasks[part.id] == nil else { return }
+    let generation = generation
+    tasks[part.id] = Task {
+      await load(part, message: message, store: store)
+      if self.generation == generation { tasks[part.id] = nil }
+    }
+  }
 
   func load(_ part: ReplyAttachmentPart, message: WebMessage, store: ConsoleStore) async {
     guard !loading.contains(part.id) else { return }
@@ -27,7 +36,7 @@ import SwiftUI
     let generation = generation
     loading.insert(part.id)
     failures[part.id] = nil
-    defer { loading.remove(part.id) }
+    defer { if self.generation == generation { loading.remove(part.id) } }
     var held: ReplyFileLease?
     do {
       let lease = try await store.downloadReplyAttachment(
@@ -47,6 +56,9 @@ import SwiftUI
   }
   func clear(store: ConsoleStore) {
     generation += 1
+    for task in tasks.values { task.cancel() }
+    tasks = [:]
+    loading = []
     let leases = loaded.values.map(\.lease)
     loaded = [:]
     failures = [:]
@@ -91,9 +103,14 @@ struct ReplyImagesView: View {
               }.accessibilityIdentifier("reply-image-" + part.id)
             }
           }.frame(width: 190 * 4 / 3)
-            .task(id: ReplyImageIdentity(part: part)) {
+            .onAppear {
               if store.effectiveDataMode != .lean {
-                await gallery.load(part, message: message, store: store)
+                gallery.request(part, message: message, store: store)
+              }
+            }
+            .onChange(of: ReplyImageIdentity(part: part)) {
+              if store.effectiveDataMode != .lean {
+                gallery.request(part, message: message, store: store)
               }
             }
         }

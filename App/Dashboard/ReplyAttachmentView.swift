@@ -21,7 +21,9 @@ struct ReplyAttachmentView: View {
   var body: some View {
     ReplyFileCard(
       name: part.name, mediaType: part.mediaType, sizeBytes: part.sizeBytes, phase: phase,
-      status: loading ? "Refreshing download access…" : failure?.message
+      status: loading
+        ? "Refreshing download access…"
+        : failure?.message ?? (phase == .tooLarge ? ReplyDownloadFailure.tooLarge.message : nil)
     ) { if lease != nil { actions = true } else { download() } }
     .accessibilityIdentifier("reply-file-" + part.id)
     .confirmationDialog(part.name, isPresented: $actions, titleVisibility: .visible) {
@@ -51,7 +53,7 @@ struct ReplyAttachmentView: View {
     case .unavailable, .integrity: return .unavailable
     case .tooLarge: return .tooLarge
     case .expired: return .expired
-    case .interrupted: return .error
+    case .interrupted, .cacheFull: return .error
     case nil: return part.sizeBytes > ReplyFileCache.maximumFileBytes ? .tooLarge : .available
     }
   }

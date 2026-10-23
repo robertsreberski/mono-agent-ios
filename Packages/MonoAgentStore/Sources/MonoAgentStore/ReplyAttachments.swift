@@ -4,10 +4,11 @@ import Foundation
 import MonoAgentKit
 
 public enum ReplyDownloadFailure: Error, Sendable, Equatable {
-  case unavailable, expired, tooLarge, integrity, interrupted
+  case unavailable, expired, tooLarge, integrity, interrupted, cacheFull
   public init(_ error: any Error) {
     switch error {
-    case ReplyContentError.tooLarge, is ReplyFileCacheError: self = .tooLarge
+    case ReplyContentError.tooLarge: self = .tooLarge
+    case is ReplyFileCacheError: self = .cacheFull
     case ReplyContentError.integrity: self = .integrity
     case ReplyContentError.unavailable, CapabilityError.missingURL, CapabilityError.invalidURL:
       self = .unavailable
@@ -28,6 +29,7 @@ public enum ReplyDownloadFailure: Error, Sendable, Equatable {
     case .unavailable: "This file is no longer available."
     case .expired: "Download access expired. Refresh and try again."
     case .tooLarge: "This file is too large to download."
+    case .cacheFull: "The download cache is full. Close other files and try again."
     case .integrity: "The downloaded file failed integrity validation."
     case .interrupted: "The download was interrupted. Check your connection and try again."
     }

@@ -109,6 +109,7 @@ opaque web fill (`floatingGlass(in:tint:opaqueFill:)`).
 | Code | `CodeDocumentView(source:language:)` | Horizontal scroller, accessible selectable monospaced text, copy; bounded display with explicit notice |
 | Activity | `ActivityDisclosure(_:summary:status:detail:identifier:expanded:content:)` | Value-driven expansion, lazy payload construction, non-colour status and VoiceOver expansion state |
 | Content disclosure | `ContentDisclosure(_:expanded:content:label:)` | Opaque native button, independent nested identifiers, lazy payload, minimum hit target |
+| Rich replies | `ReplyFileCard`, `ReplyFailureCard`, `ReplyImageTile`, `ReplyLightbox`, `RestartProposalCard` | Value-driven opaque web surfaces; local-image lightbox has swipe, bounded zoom, share and floating chrome; restart requires explicit confirmation actions |
 | Context/cost | `ContextDisplay(_:expanded:)`, `ContextDisplayContent` | Value-only disclosure; header or composer placement, explicit unknown/partial labels, AX-stacked rows |
 | Route | `RouteBadge(model:effort:detail:)` | Read-only route label with full accessible provenance, not evidence of a run |
 

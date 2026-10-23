@@ -26,6 +26,8 @@
     case conversationJobStack = "conversation-job-stack"
     case conversationSubagents = "conversation-subagents"
     case conversationRestartCard = "conversation-restart-card"
+    case conversationImagesSingle = "conversation-images-single"
+    case conversationImagesEmpty = "conversation-images-empty"
     case conversationImages = "conversation-images"
     case conversationReplyFiles = "conversation-reply-files"
     case conversationContext = "conversation-context"
@@ -40,6 +42,10 @@
     case conversationAskForm = "conversation-ask-form"
     case conversationQuickReplies = "conversation-quick-replies"
     case peerQuestionSheet = "peer-question-sheet"
+
+    var isReplyImageScenario: Bool {
+      [.conversationImages, .conversationImagesSingle, .conversationImagesEmpty].contains(self)
+    }
 
     var isTranscript: Bool { rawValue.hasPrefix("conversation-") || self == .fidelityChat }
     var isFidelity: Bool { self == .fidelityChat || self == .fidelityDashboard }

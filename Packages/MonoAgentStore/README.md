@@ -93,6 +93,26 @@ origin are weak barriers and can also be repaired by a fresh authoritative equal
   false for a stale/no-op/failed repair, so a UI cannot claim a successful load. Full tool repairs survive
 preview writes only while server digests match.
 
+## Rich reply parts
+
+- `downloadReplyAttachment(threadID:messageID:partID:)` resolves only a held part of the
+  selected conversation and returns a `ReplyFileLease` containing a local URL. Release it
+  after preview/export. Late lifetime, selection or part-identity changes are discarded.
+  Kit owns fresh access, one access-expiry renewal, identity/integrity checks and bounded
+  binary transfer; neither UI nor disk cache receives capability URLs.
+- `ReplyFileCache` retains at most 64 MiB / 24 files / 24 hours, 32 MiB per file. Active
+  leases prevent eviction; a full pinned cache refuses another insertion. Disk contains
+  bytes with hashed identity names only, excluded from backup and protected on iOS.
+  `clearReplyFileCache` removes unleased bytes and decoded retention.
+- `decodeReplyImage(_:)` uses `ReplyImageCache`'s off-main ImageIO actor: raster-only,
+  source <=40 million pixels / 16,384 per edge, decoded <=2,048 per edge. Decoded retention
+  is 24 images / 32 MiB / 60s (lean: 8 / 8 MiB / 20s). Active UI images are not retained-cache entries.
+- `restartProposalState`, `restartUnavailableReason`, `requestRestartConfirmation`,
+  `cancelRestartConfirmation`, `confirmRestart` and `pollRestartProposal` own ephemeral
+  proposal state. Only a confirmed available proposal can POST, never automatically.
+  Polling is caller-cancellable and uses the injected clock; lost POST recovery requires
+  latest-operation correlation with this exact persisted proposal, never a mutation retry.
+
 ## Persistence and recovery
 
 `ConsoleRepository` separates cache, authored state, and journal operations.

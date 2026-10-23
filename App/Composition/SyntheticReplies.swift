@@ -89,10 +89,13 @@
       part.sizeBytes = try imageBytes(index).count
       return part
     }
-    static func images() throws -> [WebMessage] {
+    static func images(_ scenario: StoreScenario) throws -> [WebMessage] {
       var message = try TranscriptFixture.message(
         id: "sample-assistant", role: "assistant", text: "Here are the sample landscapes.")
-      message.parts += try (0..<3).map { .attachment(try imagePart($0)) }
+      let count =
+        scenario == .conversationImagesEmpty ? 0 : scenario == .conversationImagesSingle ? 1 : 3
+      if count == 0 { message.parts = [.text(.init(text: "No images attached."))] }
+      message.parts += try (0..<count).map { .attachment(try imagePart($0)) }
       return [message]
     }
     static func response(_ request: URLRequest, scenario: StoreScenario) throws -> HTTPResponse? {
@@ -104,14 +107,14 @@
           return HTTPResponse(data: try JSONEncoder().encode(restartOperation(outcome: "success")))
         }
       }
-      guard [.conversationReplyFiles, .conversationImages].contains(scenario),
+      guard scenario == .conversationReplyFiles || scenario.isReplyImageScenario,
         let url = request.url,
         url.path.contains("/reply-attachments/")
       else { return nil }
       let segments = url.path.split(separator: "/")
       guard segments.count == 9 else { return nil }
       let id = String(segments[7])
-      if scenario == .conversationImages {
+      if scenario.isReplyImageScenario {
         let index = Int(id.replacingOccurrences(of: "image-", with: "")) ?? 0
         if url.path.hasSuffix("/access") {
           var part = try imagePart(index)
