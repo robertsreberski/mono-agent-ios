@@ -84,33 +84,13 @@ public actor CapabilityService {
   public func mcpResource(_ part: McpAppPart, reference: ReplyPartReference) async throws
     -> ApiMcpAppResource
   {
-    guard let url = part.resourceUrl else { throw CapabilityError.missingURL }
-    let query = try builder.capabilityQuery(url, route: .mcpAppResource, reference: reference)
-    do {
-      return try await api.mcpAppResource(
-        threadId: reference.threadId, messageId: reference.messageId, partId: reference.partId,
-        query: query, etag: nil
-      ).valueRequired()
-    } catch let error as APIError where error.code == "reply_access_expired" {
-      let renewed = try await api.mcpAppAccess(
-        threadId: reference.threadId, messageId: reference.messageId, partId: reference.partId)
-      guard let url = renewed.part.resourceUrl else { throw CapabilityError.missingURL }
-      let query = try builder.capabilityQuery(url, route: .mcpAppResource, reference: reference)
-      return try await api.mcpAppResource(
-        threadId: reference.threadId, messageId: reference.messageId, partId: reference.partId,
-        query: query, etag: nil
-      ).valueRequired()
-    }
+    try await loadMcpApp(part, reference: reference).resource
   }
-  /// This is an explicit mutation, never automatically replayed even on expiry.
-  /// Refresh access first when the user elects to retry an MCP request.
+
+  /// Compatibility entry point. Only resources/read is automatically renewed/retried.
   public func mcpRequest(_ body: ApiMcpAppRequest, part: McpAppPart, reference: ReplyPartReference)
     async throws -> ApiMcpAppResult
   {
-    guard let url = part.bridgeUrl else { throw CapabilityError.missingURL }
-    let query = try builder.capabilityQuery(url, route: .mcpAppRequest, reference: reference)
-    return try await api.mcpAppRequest(
-      threadId: reference.threadId, messageId: reference.messageId, partId: reference.partId,
-      query: query, body: body)
+    try await requestMcpApp(body, published: part, access: part, reference: reference).result
   }
 }

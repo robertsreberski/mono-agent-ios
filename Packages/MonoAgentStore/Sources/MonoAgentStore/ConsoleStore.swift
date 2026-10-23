@@ -71,6 +71,8 @@ public final class ConsoleStore {
   @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
   @ObservationIgnored let replyImages = ReplyImageCache()
   @ObservationIgnored let replyFiles: ReplyFileCache
+  @ObservationIgnored var mcpApps: [ReplyPartReference: McpAppAccess] = [:]
+  @ObservationIgnored let capabilities: CapabilityService
   @ObservationIgnored let api: any ConsoleAPI
   @ObservationIgnored let events: any ConsoleEventSource
   @ObservationIgnored let repository: any ConsoleRepository
@@ -148,6 +150,7 @@ public final class ConsoleStore {
     namespace = ConsoleNamespace(profile: profile)
     self.replyFiles = replyFiles ?? .live(namespace: profile.id.uuidString + namespace.identity)
     self.api = api
+    capabilities = CapabilityService(endpoint: profile.endpoint, api: api)
     self.events = events
     self.repository = repository
     self.clock = clock
@@ -232,6 +235,7 @@ public final class ConsoleStore {
   public func select(sourceID: String, archived: Bool = false, threadID: String? = nil) async {
     pruneTombstones()
     selection &+= 1
+    invalidateMcpApps()
     visible = false
     selectedBucket = BucketKey(sourceID: sourceID, archived: archived)
     selectedThreadID = threadID

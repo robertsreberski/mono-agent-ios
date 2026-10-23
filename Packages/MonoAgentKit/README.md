@@ -96,3 +96,10 @@ match all route descriptors and replay all 11 delta vectors. Network smoke tests
 request-local URLProtocol fixtures, with no global mutable mock registry; supervisor tests
 inject byte streams and a manual clock. The advisory scheduled/manual workflow compares
 upstream main and never updates the pin.
+
+MCP access uses `CapabilityService.loadMcpApp`, `renewMcpAppAccess` and `requestMcpApp`.
+Loads/results return the current access so callers never keep expired URLs after renewal.
+Every published field except renewable URLs must match; both capability paths and their
+shared query identity are checked before use/adoption. Only resource loads and resources/read
+renew once on access expiry. Confirmed effects never replay. APIClient reuses the bounded
+HTTPTransport overload for 4 MiB resource JSON and 1 MiB result JSON, including error bodies.
