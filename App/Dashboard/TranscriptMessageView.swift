@@ -36,16 +36,8 @@ struct TranscriptMessageView: View {
   @ViewBuilder private func messageContent(_ message: WebMessage) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       if let quote = message.quote {
-        Text(quote.text)
-          .font(.system(size: 11)).lineSpacing(3).lineLimit(4)
-          .foregroundStyle(WebColor.textSoft.color)
-          .padding(.vertical, 8).padding(.horizontal, 10)
-          .background(WebColor.surface.color.opacity(0.68), in: RoundedRectangle(cornerRadius: 7))
-          .overlay(alignment: .leading) {
-            Rectangle().fill(WebColor.lineStrong.color).frame(width: 2)
-          }
-          .textSelection(.enabled)
-          .accessibilityLabel("Quote: " + quote.text)
+        MessageQuote(quote.text)
+
       }
       ForEach(TranscriptPresentation.activityBands(message.parts)) { band in
         if band.parts.allSatisfy(TranscriptPresentation.isActivity) {

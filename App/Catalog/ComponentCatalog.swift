@@ -120,6 +120,16 @@
               model: "sample:large", effort: "high",
               detail: "Current settings · inherited agent defaults")
           }
+          catalogSection("Answer surfaces") {
+            VStack(alignment: .leading, spacing: 14) {
+              MessageQuote("A fictional passage from the sample plan.")
+              ChoiceRow(
+                "Reserve now", detail: "Keep a sample packet", selected: true, multiple: false)
+              TextField("Custom reply", text: .constant("")).webInput()
+              Button("Submit answer") {}.buttonStyle(WebSubmitButtonStyle())
+              Button("Tell me more") {}.buttonStyle(WebReplyButtonStyle())
+            }.webFormCard()
+          }
           catalogSection("Sheet parts") {
             VStack(spacing: 0) {
               WebSheetHeader("Run settings", subtitle: "Choose the next turn's route") {}

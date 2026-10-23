@@ -18,6 +18,7 @@ struct AskUserCard: View {
   @State private var unavailable = false
   @State private var draft = AskFormDraft()
   @State private var error: String?
+  @Environment(\.consoleTheme) private var theme
 
   private var expectedID: String? {
     AskForm.interactionID(call.structuredResult) ?? AskForm.interactionID(call.result)
@@ -42,20 +43,25 @@ struct AskUserCard: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.md) {
-      HStack(spacing: DesignSpacing.sm) {
-        StatusIndicator(
-          interrupted ? .failed : terminal == nil ? .connecting : .online,
-          label: interrupted ? "Question interrupted" : "Input needed")
-        Spacer()
-      }
+    VStack(alignment: .leading, spacing: 14) {
+      Label(
+        interrupted ? "Question interrupted" : "Input needed",
+        systemImage: interrupted ? "exclamationmark.circle" : "questionmark.circle"
+      )
+      .webFont(.jobTitle)
+      .foregroundStyle(interrupted ? WebColor.textMuted.color : WebColor.text.color)
       .accessibilityAddTraits(.isHeader)
       if let contextMessage {
-        Text(contextMessage).designFont(.body).textSelection(.enabled)
+        ScrollView {
+          Text(contextMessage).webFont(.askContext).foregroundStyle(WebColor.textSoft.color)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(12).textSelection(.enabled)
+        }
+        .frame(maxHeight: 280).fixedSize(horizontal: false, vertical: true)
+        .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 8))
       }
       content
     }
-    .contentSurface()
+    .webFormCard()
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Question from the agent")
     .accessibilityIdentifier("ask-card")
@@ -68,9 +74,9 @@ struct AskUserCard: View {
     } else if let snapshot, let terminal {
       VStack(alignment: .leading, spacing: DesignSpacing.xs) {
         Text(terminal == "answered" ? "Answers submitted." : "Question \(terminal).")
-          .designFont(.headline)
+          .webFont(.askLegend)
         ForEach(AskForm.summary(snapshot), id: \.self) { line in
-          Text(line).designFont(.supporting).foregroundStyle(.secondary)
+          Text(line).webFont(.askContext).foregroundStyle(WebColor.textSoft.color)
         }
       }
       .accessibilityElement(children: .combine)
@@ -79,23 +85,30 @@ struct AskUserCard: View {
       form(snapshot)
     } else if let terminal {
       Text(terminal == "answered" ? "Answers submitted." : "Question \(terminal).")
-        .designFont(.headline).accessibilityIdentifier("ask-complete")
+        .webFont(.askLegend).accessibilityIdentifier("ask-complete")
     } else if unavailable {
       Text("Question unavailable. It may have expired, been evicted, or the agent may be offline.")
-        .designFont(.supporting).foregroundStyle(.secondary)
+        .webFont(.askContext).foregroundStyle(WebColor.textSoft.color)
     } else {
-      Label("Preparing the questions…", systemImage: "hourglass").designFont(.supporting)
+      Label("Preparing the questions…", systemImage: "hourglass").webFont(.askContext)
     }
   }
 
   private func form(_ snapshot: ChannelAskSnapshot) -> some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+    VStack(alignment: .leading, spacing: 16) {
       ForEach(Array(snapshot.questions.enumerated()), id: \.element.id) { index, question in
         let prior =
           index < snapshot.activeQuestionIndex
           ? snapshot.answers.first { $0.questionId == question.id } : nil
         QuestionFields(
-          question: question, draft: $draft, prior: prior, disabled: prior != nil || submitting)
+          question: question, draft: $draft, prior: prior, disabled: prior != nil || submitting
+        )
+        .padding(.bottom, index < snapshot.questions.count - 1 ? 16 : 0)
+        .overlay(alignment: .bottom) {
+          if index < snapshot.questions.count - 1 {
+            Rectangle().fill(WebColor.line.color).frame(height: 1)
+          }
+        }
       }
       if let error {
         StatusIndicator(.failed, label: error).accessibilityIdentifier("ask-error")
@@ -106,7 +119,7 @@ struct AskUserCard: View {
             ? "Choose at least one answer for “\(missing.header)”."
             : "Choose one answer or write a custom reply for “\(missing.header)”."
         )
-        .designFont(.caption).foregroundStyle(.secondary)
+        .webFont(.askDetail).foregroundStyle(WebColor.textSoft.color)
       }
       Button(
         submitting
@@ -114,7 +127,7 @@ struct AskUserCard: View {
       ) {
         Task { await submit(snapshot) }
       }
-      .designButtonStyle(.primary)
+      .buttonStyle(WebSubmitButtonStyle())
       .disabled(!AskForm.isComplete(snapshot, draft) || submitting)
       .accessibilityIdentifier("ask-submit")
     }
@@ -210,14 +223,15 @@ private struct QuestionFields: View {
   @Binding var draft: AskFormDraft
   let prior: ChannelAskAnswer?
   let disabled: Bool
+  @Environment(\.consoleTheme) private var theme
 
   var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-      VStack(alignment: .leading, spacing: DesignSpacing.xxs) {
-        Text(question.header).designFont(.caption).foregroundStyle(.secondary)
-        Text(question.question).designFont(.headline)
+    VStack(alignment: .leading, spacing: 10) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(question.header).webFont(.contextEyebrow).foregroundStyle(theme.palette.accent.color)
+        Text(question.question).webFont(.askLegend)
         if question.multiSelect {
-          Text("Choose any").designFont(.caption).foregroundStyle(.secondary)
+          Text("Choose any").webFont(.askDetail).foregroundStyle(WebColor.textSoft.color)
         }
       }
       .accessibilityElement(children: .combine)
@@ -243,7 +257,7 @@ private struct QuestionFields: View {
           get: { prior?.customReply ?? draft.custom[question.id] ?? "" },
           set: { draft.setCustom($0, for: question) }), axis: .vertical
       )
-      .textFieldStyle(.roundedBorder)
+      .webInput()
       .lineLimit(1...4)
       .disabled(disabled)
       .accessibilityLabel("Custom reply for \(question.header)")
@@ -290,17 +304,14 @@ struct QuickRepliesView: View {
           sending = false
         }
       }
-      .designButtonStyle(.secondary)
+      .buttonStyle(WebReplyButtonStyle())
       .disabled(disabled)
       .accessibilityIdentifier("quick-reply-" + label)
     }
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: DesignSpacing.sm) { buttons }
-      VStack(alignment: .leading, spacing: DesignSpacing.sm) { buttons }
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Suggested replies")
-    .accessibilityIdentifier("quick-replies")
+    WebFlowLayout(spacing: 8, lineSpacing: 8) { buttons }
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("Suggested replies")
+      .accessibilityIdentifier("quick-replies")
   }
 }
 
@@ -335,7 +346,7 @@ struct PeerQuestionAnswerSheet: View {
         ForEach(fields) { field in
           Section {
             if let description = field.description {
-              Text(description).designFont(.caption).foregroundStyle(.secondary)
+              Text(description).webFont(.askDetail).foregroundStyle(WebColor.textSoft.color)
             }
             ForEach(field.options, id: \.self) { option in
               Button {
@@ -367,17 +378,22 @@ struct PeerQuestionAnswerSheet: View {
         }
         Section("Note to your agent") {
           TextField("Optional context", text: $note, axis: .vertical)
+            .webInput()
             .disabled(!open)
             .accessibilityIdentifier("peer-note")
         }
         Section("Raw form") {
-          Text("questionId " + question.questionId).designFont(.caption)
+          Text("questionId " + question.questionId).webFont(.askDetail)
           CodeDocumentView(source: rawSchema, language: "JSON schema")
         }
         if let error {
           StatusIndicator(.failed, label: error)
         }
       }
+      .scrollContentBackground(.hidden)
+      .background(WebColor.surfaceSubtle.color)
+      .webFont(.contextNote)
+      .listRowBackground(WebColor.surfaceRaised.color)
       .navigationTitle("Peer question")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

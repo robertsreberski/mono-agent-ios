@@ -204,7 +204,7 @@ public struct QuotePreview: View {
       Image(systemName: "quote.opening").font(.system(size: 10, weight: .semibold))
         .foregroundStyle(theme.palette.accent.color)
         .accessibilityHidden(true)
-      Text(text).font(.system(size: 11)).foregroundStyle(WebColor.textMuted.color).lineLimit(3)
+      Text(text).webFont(.quote).foregroundStyle(WebColor.textMuted.color).lineLimit(3)
       Spacer(minLength: 0)
       if let onDismiss {
         Button("Remove quote", systemImage: "xmark", action: onDismiss)
@@ -244,32 +244,32 @@ public struct ChoiceRow: View {
   }
 
   public var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: DesignSpacing.sm) {
+    HStack(alignment: .firstTextBaseline, spacing: 9) {
       Image(
         systemName: multiple
           ? (selected ? "checkmark.square.fill" : "square")
           : (selected ? "largecircle.fill.circle" : "circle")
       )
-      .foregroundStyle(selected ? theme.palette.accent.color : .secondary)
+      .foregroundStyle(selected ? theme.palette.accent.color : WebColor.textMuted.color)
       .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: DesignSpacing.xxs) {
-        Text(label).designFont(.body).foregroundStyle(.primary)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(label).webFont(.effortOption).foregroundStyle(WebColor.text.color)
         if let detail, !detail.isEmpty {
-          Text(detail).designFont(.caption).foregroundStyle(.secondary)
+          Text(detail).webFont(.askDetail).foregroundStyle(WebColor.textSoft.color)
         }
       }
       Spacer(minLength: 0)
     }
-    .padding(DesignSpacing.sm)
+    .padding(10)
     .frame(maxWidth: .infinity, minHeight: DesignMetrics.minimumHitTarget, alignment: .leading)
     .background(
-      selected ? theme.palette.accentSoft.color : DesignColor.contentSurface,
+      selected ? theme.palette.accentSoft.color : WebColor.surface.color,
       in: RoundedRectangle(cornerRadius: DesignRadius.sm)
     )
     .overlay {
       RoundedRectangle(cornerRadius: DesignRadius.sm).stroke(
-        selected ? theme.palette.accent.color : DesignColor.separator,
-        lineWidth: selected ? 1.5 : 0.5)
+        selected ? theme.palette.accent.color : WebColor.line.color,
+        lineWidth: 1)
     }
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)

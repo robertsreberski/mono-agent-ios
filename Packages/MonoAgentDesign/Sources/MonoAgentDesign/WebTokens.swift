@@ -185,6 +185,7 @@ public enum WebType: CaseIterable, Sendable {
   /// `.connection-banner` (phone): 10.
   case banner
   case sheetTitle, sheetSubtitle, optionName, optionID, effortOption
+  case askLegend, askContext, askDetail, quote, quickReply
   case contextFigure, contextFigureRegular, contextNote, contextEyebrow
 
   public struct Spec: Sendable, Equatable {
@@ -254,6 +255,11 @@ public enum WebType: CaseIterable, Sendable {
     case .stepTime: Spec(size: 9, weight: .regular, mono: true, tabular: true, textStyle: .caption2)
     case .attachment: Spec(size: 11, weight: .regular, textStyle: .caption)
     case .banner: Spec(size: 10, weight: .regular, textStyle: .caption2)
+    case .askLegend: Spec(size: 13, weight: .semibold, lineHeight: 1.45, textStyle: .subheadline)
+    case .askContext: Spec(size: 12, weight: .regular, lineHeight: 1.55, textStyle: .footnote)
+    case .askDetail: Spec(size: 11, weight: .regular, lineHeight: 1.45, textStyle: .caption)
+    case .quote: Spec(size: 11, weight: .regular, lineHeight: 1.45, textStyle: .caption)
+    case .quickReply: Spec(size: 14, weight: .regular, textStyle: .subheadline)
     case .sheetTitle: Spec(size: 14, weight: .semibold, textStyle: .headline)
     case .sheetSubtitle: Spec(size: 10.5, weight: .regular, lineHeight: 1.45, textStyle: .caption2)
     case .optionName: Spec(size: 14, weight: .semibold, textStyle: .subheadline)
