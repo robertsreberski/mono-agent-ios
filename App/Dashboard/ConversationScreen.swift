@@ -14,6 +14,7 @@ struct ConversationScreen: View {
   @State private var onScreen = false
   /// A new conversation created by this screen's composer (C8); the route stays unchanged.
   @State private var createdThreadID: String?
+  @State private var screenWidth: CGFloat = 402
 
   private var threadID: String? { route.threadID ?? createdThreadID }
   private var sourceID: String { route.sourceID ?? "" }
@@ -36,27 +37,34 @@ struct ConversationScreen: View {
   var body: some View {
     VStack(spacing: 0) {
       if let threadID, let state = store.conversations[threadID] {
-        ConversationTranscript(state: state, store: store) { header }
+        ConversationTranscript(state: state, store: store) { EmptyView() }
       } else {
         ScrollView {
-          VStack(alignment: .leading, spacing: DesignSpacing.lg) {
-            header
-            placeholder
-          }
-          .padding(DesignSpacing.lg)
-          .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
-          .frame(maxWidth: .infinity)
+          placeholder
+            .padding(.horizontal, WebSpace.transcriptGutter)
+            .padding(.top, 24)
+            .frame(maxWidth: WebMetrics.column)
+            .frame(maxWidth: .infinity)
         }
+        .scrollDismissesKeyboard(.interactively)
       }
     }
     .conversationComposer(
       store: store, route: route, createdThreadID: $createdThreadID,
       sampleAttachments: model.offersSampleAttachments
     )
-    .background(theme.palette.canvas.color)
+    .background(theme.palette.panel.color.ignoresSafeArea())
+    .onGeometryChange(for: CGFloat.self) {
+      $0.size.width
+    } action: {
+      screenWidth = $0
+    }
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
-    .navigationSubtitle(agent?.label ?? "Agent unavailable")
+    .toolbar { headerToolbar }
+    // Web chat header: panel at 94% over the transcript; the system bar keeps its glass back.
+    .toolbarBackground(theme.palette.panel.color.opacity(0.94), for: .navigationBar)
+    .toolbarBackgroundVisibility(.visible, for: .navigationBar)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(
       model.isReady && store.hydrated ? "scenario-ready" : "conversation-loading"
@@ -110,55 +118,131 @@ struct ConversationScreen: View {
     return ConversationHeaderModel.route(thread, agent: agent, latest: latest)
   }
 
+  // MARK: Header (web `.chat-header`)
+
+  @ToolbarContentBuilder private var headerToolbar: some ToolbarContent {
+    ToolbarItem(placement: .principal) {
+      // The system centres the principal item; giving it all the room between the 44 pt back
+      // button and the trailing tile keeps the web's leading-aligned title block.
+      header.frame(width: max(120, screenWidth - 2 * (16 + 44 + 6)), alignment: .leading)
+    }
+    .sharedBackgroundVisibility(.hidden)
+    ToolbarItem(placement: .topBarTrailing) { detailsMenu }
+      .sharedBackgroundVisibility(.hidden)
+  }
+
+  /// Breadcrumb (project · tags) above the 13 pt title and its run state, left-aligned beside
+  /// the back button as on the web phone header.
   private var header: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-      Text(title)
-        .designFont(.screenTitle)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityAddTraits(.isHeader)
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: DesignSpacing.md) { facts }
-        VStack(alignment: .leading, spacing: DesignSpacing.sm) { facts }
-      }
-      if let route = knownRoute {
-        RouteBadge(model: route.label, effort: route.effort ?? "", detail: route.detail)
-      }
-      if let thread, let project = DashboardModel.projectLabel(thread, projects: store.projects) {
-        ProjectChip(project.name, color: LabelColor(serverValue: project.color))
+    VStack(alignment: .leading, spacing: 3) {
+      breadcrumb
+      HStack(alignment: .firstTextBaseline, spacing: 7) {
+        Text(title)
+          .webFont(.conversationTitle)
+          .foregroundStyle(WebColor.text.color)
+          .lineLimit(1)
+          .accessibilityAddTraits(.isHeader)
+        if let runStatus { runStateBadge(runStatus) }
       }
     }
-    .contentSurface()
+    .padding(.horizontal, 2)
+    .frame(maxWidth: 560, alignment: .leading)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("conversation-header")
   }
 
-  @ViewBuilder private var facts: some View {
-    Label(agent?.label ?? "Agent unavailable", systemImage: "person.crop.square")
-      .designFont(.supporting)
-      .foregroundStyle(.secondary)
-    if let runStatus {
-      StatusChip(runStatus.kind, label: runStatus.label)
-        .accessibilityIdentifier("conversation-run-state")
+  @ViewBuilder private var breadcrumb: some View {
+    let project = thread.flatMap { DashboardModel.projectLabel($0, projects: store.projects) }
+    let tags =
+      thread.map { thread in
+        thread.tagIds.compactMap { id in
+          store.tags.first { $0.id == id && $0.sourceId == thread.sourceId }
+        }
+      } ?? []
+    if project != nil || !tags.isEmpty {
+      HStack(spacing: 6) {
+        if let project {
+          ProjectBadge(project.name, color: LabelColor(serverValue: project.color))
+        }
+        if project != nil && !tags.isEmpty {
+          Text("·").webFont(.breadcrumb).foregroundStyle(WebColor.textMuted.color)
+        }
+        ForEach(tags.prefix(2), id: \.id) { tag in
+          TagBadge(tag.name, color: LabelColor(serverValue: tag.color))
+            .padding(.horizontal, 8)
+            .frame(minHeight: 20)
+            .background(WebColor.surfaceHover.color, in: Capsule())
+        }
+      }
+      .lineLimit(1)
     }
   }
 
+  /// Web `.chat-status`: a dot and the uppercase state ("Ready" when idle).
+  private func runStateBadge(_ status: (kind: StatusKind, label: String)) -> some View {
+    let label = status.kind == .disconnected && status.label == "Idle" ? "Ready" : status.label
+    let color: Color =
+      switch status.kind {
+      case .connecting: WebColor.jobProgress.color
+      case .failed: WebColor.danger.color
+      case .stale: WebColor.textMuted.color
+      default: theme.palette.accent.color
+      }
+    return HStack(spacing: 5) {
+      Image(systemName: status.kind == .stale ? "circle.dotted" : "circle.fill")
+        .font(.system(size: 6, weight: .bold))
+        .foregroundStyle(color)
+      Text(label)
+        .font(.system(size: 10, weight: .semibold)).tracking(0.7).textCase(.uppercase)
+        .foregroundStyle(WebColor.textMuted.color)
+        .lineLimit(1)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(status.label)
+    .accessibilityIdentifier("conversation-run-state")
+  }
+
+  /// The web header's trailing "…" tile. iOS has no conversation actions yet, so it shows the
+  /// facts the old in-transcript header carried: agent, state and the route's provenance.
+  private var detailsMenu: some View {
+    Menu {
+      Section(agent?.label ?? "Agent unavailable") {
+        if let runStatus { Text(runStatus.label) }
+        if let route = knownRoute {
+          Text(route.label + (route.effort.map { " · " + $0 } ?? ""))
+          Text(route.provenance)
+        }
+      }
+    } label: {
+      Label("Conversation details", systemImage: "ellipsis")
+    }
+    .menuStyle(.button)
+    .buttonStyle(WebTileButtonStyle())
+    .accessibilityIdentifier("conversation-details")
+  }
+
+  /// The web empty chat: no card and no second title (the header already names it), only a
+  /// quiet line in the column.
   @ViewBuilder private var placeholder: some View {
     if threadID == nil {
-      EmptyStateView(
-        "New conversation", systemImage: "square.and.pencil",
-        message:
-          "Write the first message below. The conversation is created when you send it."
-      )
-      .contentSurface()
-      .accessibilityElement(children: .combine)
-      .accessibilityIdentifier("composer-placeholder")
+      Text("Write the first message below. The conversation is created when you send it.")
+        .webFont(.system)
+        .foregroundStyle(WebColor.textMuted.color)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 48)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("composer-placeholder")
     } else {
-      EmptyStateView(
-        "Loading conversation", systemImage: "text.bubble",
-        message:
-          "Waiting for the conversation history. Pull to refresh if it remains unavailable."
-      )
-      .contentSurface()
+      VStack(spacing: 8) {
+        ProgressView()
+        Text("Waiting for the conversation history. Pull to refresh if it remains unavailable.")
+          .webFont(.system)
+          .foregroundStyle(WebColor.textMuted.color)
+          .multilineTextAlignment(.center)
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.top, 48)
       .accessibilityElement(children: .combine)
       .accessibilityIdentifier("transcript-loading")
     }

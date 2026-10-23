@@ -14,23 +14,31 @@ struct ConversationTranscript<Header: View>: View {
   @State private var scrollPosition = ScrollPosition(idType: String.self)
   @State private var heldCompaction: String?
   @Environment(\.consoleTheme) private var theme
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  @State private var viewportWidth: CGFloat = 0
+  /// Web `--column-padding` plus whatever centres the 880 pt column on wide screens.
+  private func inset(regular: Bool) -> CGFloat {
+    let gutter = regular ? WebSpace.transcriptGutterRegular : WebSpace.transcriptGutter
+    return gutter + max(0, (viewportWidth - WebMetrics.column) / 2)
+  }
   init(state: ConversationState, store: ConsoleStore, @ViewBuilder header: () -> Header) {
     self.state = state
     self.store = store
     self.header = header()
   }
   var body: some View {
+    let regular = sizeClass == .regular
     ScrollView {
-      VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+      VStack(alignment: .leading, spacing: 0) {
         // Keep the header eager: lazy offscreen headers can disappear from the AX hierarchy.
         header
-        LazyVStack(alignment: .leading, spacing: DesignSpacing.lg) {
-          historyStatus
+        // Web `.message-list`: 23 pt rhythm on phones, 28 on tablets; no avatar rail.
+        LazyVStack(
+          alignment: .leading, spacing: regular ? WebSpace.sectionGapRegular : WebSpace.sectionGap
+        ) {
+          historyStatus.padding(.horizontal, inset(regular: regular))
           if let cursor = state.nextCursor {
-            Button(
-              paging ? "Loading history…" : "Load older messages",
-              systemImage: "clock.arrow.circlepath"
-            ) {
+            Button {
               let anchor =
                 state.orderedMessageIDs.first { visibleIDs.contains($0) }
                 ?? state.orderedMessageIDs.first
@@ -42,32 +50,55 @@ struct ConversationTranscript<Header: View>: View {
                 paging = false
                 policy.paging = false
               }
-            }.disabled(paging).accessibilityIdentifier("transcript-load-older").id(
-              "paging-" + cursor)
+            } label: {
+              Label(
+                paging ? "Loading history…" : "Load older messages",
+                systemImage: "clock.arrow.circlepath")
+            }
+            .buttonStyle(WebQuietPillStyle())
+            .frame(maxWidth: .infinity)
+            .disabled(paging).accessibilityIdentifier("transcript-load-older").id(
+              "paging-" + cursor
+            )
+            .padding(.horizontal, inset(regular: regular))
           }
           ForEach(Array(state.orderedMessageIDs.enumerated()), id: \.element) { index, id in
             if let row = state.messageStates[id] {
               TranscriptMessageView(row: row, store: store, startsTurn: startsTurn(index, id: id))
+                .padding(.horizontal, inset(regular: regular))
                 .id(id)
             }
           }
           if let pending = heldCompaction, !hasCompactionResult(since: pending) {
-            Label("Compacting context… · manual", systemImage: "arrow.triangle.2.circlepath")
-              .designFont(.supporting).accessibilityIdentifier("manual-compaction-running")
+            TranscriptMarkerRow(
+              "Compacting context… · manual", systemImage: "arrow.triangle.2.circlepath"
+            )
+            .accessibilityIdentifier("manual-compaction-running")
+            .padding(.horizontal, inset(regular: regular))
           }
           if state.orderedMessageIDs.isEmpty {
-            EmptyStateView(
-              "No messages yet", systemImage: "text.bubble",
-              message: "This conversation has no loaded messages.")
+            Text("This conversation has no loaded messages.")
+              .webFont(.system).foregroundStyle(WebColor.textMuted.color)
+              .frame(maxWidth: .infinity)
           }
           Color.clear.frame(height: DesignSpacing.sm).id("transcript-bottom")
         }
         .scrollTargetLayout()
       }
-      .padding(DesignSpacing.lg)
-      .frame(maxWidth: DesignMetrics.readableWidth)
+      // Web `--column-padding`: 24/12/8 on phones, 38/24/20 on tablets, column ≤ 880.
+      .padding(.top, regular ? 38 : 24)
+      .padding(.bottom, regular ? 20 : 8)
+      // The scroll target layout spans the viewport and every row carries the gutter (the
+      // ≤ 880 column is centred by the inset). Anchored scrolls to a row then never offset the
+      // column sideways, which an inset target layout did.
       .frame(maxWidth: .infinity)
     }
+    .onGeometryChange(for: CGFloat.self) {
+      $0.size.width
+    } action: {
+      viewportWidth = $0
+    }
+    .scrollDismissesKeyboard(.interactively)
     .scrollPosition($scrollPosition)
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     // Short transcripts sit at the top; bottom alignment left a gap that revealed the refresh
@@ -101,18 +132,32 @@ struct ConversationTranscript<Header: View>: View {
       if policy.shouldShowJump {
         HStack {
           Spacer()
-          Button("Jump to latest", systemImage: "arrow.down") {
+          // Web `.scroll-bottom`: a 36 pt circle floating above the dock edge (glass here).
+          Button {
             policy.jump()
             scrollPosition.scrollTo(edge: .bottom)
-          }.designButtonStyle(.secondary, placement: .floating)
-            .accessibilityIdentifier("jump-to-latest")
+          } label: {
+            Label("Jump to latest", systemImage: "arrow.down")
+              .labelStyle(.iconOnly)
+              .font(.system(size: 13, weight: .semibold))
+              .foregroundStyle(WebColor.textSoft.color)
+              .frame(width: WebMetrics.tile, height: WebMetrics.tile)
+              .floatingGlass(in: Circle(), opaqueFill: WebColor.surfaceRaised.color)
+              .frame(
+                minWidth: DesignMetrics.minimumHitTarget,
+                minHeight: DesignMetrics.minimumHitTarget
+              )
+              .contentShape(Circle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("jump-to-latest")
           Spacer()
-        }.padding(DesignSpacing.sm)
+        }.padding(.bottom, 4)
       }
     }
     .contentMargins(.bottom, DesignSpacing.xxl, for: .scrollContent)
-    .scrollEdgeEffectStyle(.hard, for: .bottom)
-    .background(theme.palette.canvas.color)
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .background(theme.palette.panel.color)
     .refreshable { await store.refreshDetail(state.thread.id) }
     .task(id: state.thread.compaction?.startedAt) {
       if let value = state.thread.compaction, value.status == "running", value.trigger == "manual",
@@ -134,11 +179,12 @@ struct ConversationTranscript<Header: View>: View {
       .accessibilityIdentifier("history-truncated")
     }
     if state.freshness != .fresh {
-      StatusIndicator(.stale, label: "History may be stale · pull to refresh")
-        .accessibilityIdentifier("transcript-stale")
+      TranscriptNotice(
+        "History may be stale · pull to refresh", systemImage: "clock.arrow.circlepath"
+      )
+      .accessibilityIdentifier("transcript-stale")
     } else {
-      Label("History up to date", systemImage: "checkmark.circle").designFont(.caption)
-        .foregroundStyle(.secondary)
+      TranscriptNotice("History up to date", systemImage: "checkmark")
         .accessibilityIdentifier("transcript-fresh")
     }
     if let error = store.errorMessage {
