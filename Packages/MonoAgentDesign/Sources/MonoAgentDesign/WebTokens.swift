@@ -188,6 +188,7 @@ public enum WebType: CaseIterable, Sendable {
   case askLegend, askContext, askDetail, quote, quickReply
   case contextFigure, contextFigureRegular, contextNote, contextEyebrow
   case settingsTitle, stateTitle, stateBody, notice, bannerRegular
+  case replyName, replyMeta, replyAction, replyFailureCode, replyFailure, restartCopy
 
   public struct Spec: Sendable, Equatable {
     public var size: CGFloat
@@ -204,6 +205,13 @@ public enum WebType: CaseIterable, Sendable {
 
   public var spec: Spec {
     switch self {
+    case .replyName: Spec(size: 12, weight: .bold, textStyle: .subheadline)
+    case .replyMeta: Spec(size: 10, weight: .regular, lineHeight: 1.4, textStyle: .caption2)
+    case .replyAction: Spec(size: 10, weight: .bold, textStyle: .caption2)
+    case .replyFailureCode:
+      Spec(size: 9, weight: .bold, tracking: 0.06, uppercase: true, textStyle: .caption2)
+    case .replyFailure: Spec(size: 11, weight: .regular, textStyle: .caption)
+    case .restartCopy: Spec(size: 13, weight: .regular, textStyle: .subheadline)
     case .settingsTitle:
       Spec(size: 16, weight: .bold, tracking: -0.01, lineHeight: 1.25, textStyle: .headline)
     case .stateTitle:

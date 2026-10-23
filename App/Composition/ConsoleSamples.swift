@@ -25,6 +25,7 @@
     case conversationJobs = "conversation-jobs"
     case conversationJobStack = "conversation-job-stack"
     case conversationSubagents = "conversation-subagents"
+    case conversationReplyFiles = "conversation-reply-files"
     case conversationContext = "conversation-context"
     // Composer (C8): scripted send/upload/ask round trips through the synthetic Store.
     case composerEmpty = "composer-empty"
@@ -141,6 +142,9 @@
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
       if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }
+      if let scenario, let response = try RichReplyFixture.response(request, scenario: scenario) {
+        return response
+      }
       if let scenario, scenario.isTranscript,
         let response = try TranscriptFixture.response(request, scenario: scenario, theme: theme)
       {

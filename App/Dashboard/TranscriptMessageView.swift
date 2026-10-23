@@ -149,7 +149,7 @@ struct TranscriptPartView: View {
     case .error(let value):
       ConnectionBanner(.problem, title: value.code ?? "Agent error", message: value.message)
     case .failure(let value):
-      ConnectionBanner(.problem, title: value.code, message: value.message)
+      ReplyFailureCard(code: value.code, message: value.message)
     case .subagent(let value):
       SubagentPartView(call: value, message: message, store: store)
     case .processJob(let value):
@@ -157,9 +157,7 @@ struct TranscriptPartView: View {
     case .processJobWake(let value):
       ProcessJobWakeView(wake: value)
     case .attachment(let value):
-      DeferredTranscriptPart(
-        title: value.name, kind: value.mediaType.hasPrefix("image/") ? "Image" : "Reply file",
-        feature: "File viewer")
+      ReplyAttachmentView(part: value, message: message, store: store)
     case .mcpApp(let value):
       DeferredTranscriptPart(
         title: value.title ?? value.toolName, kind: "MCP app", feature: "App viewer")

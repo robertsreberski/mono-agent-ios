@@ -45,8 +45,8 @@ extension RequestBuilder {
   }
 }
 public actor CapabilityService {
-  private let api: any ConsoleAPI
-  private let builder: RequestBuilder
+  let api: any ConsoleAPI
+  let builder: RequestBuilder
   public init(endpoint: ConsoleEndpoint, api: any ConsoleAPI) {
     self.api = api
     builder = RequestBuilder(endpoint: endpoint)

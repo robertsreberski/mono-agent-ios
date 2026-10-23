@@ -95,6 +95,15 @@
             }
             .contentSurface()
           }
+          catalogSection("Reply files") {
+            ReplyFileCard(name: "report.pdf", mediaType: "application/pdf", sizeBytes: 4096) {}
+            ReplyFileCard(
+              name: "archive.zip", mediaType: "application/zip", sizeBytes: 1024,
+              phase: .unavailable, status: "This file is no longer available."
+            ) {}
+            ReplyFailureCard(
+              code: "artifact_not_found", message: "The requested artifact was not found.")
+          }
           catalogSection("Settings") {
             SettingsGroup("Console") {
               TextField("Display name", text: .constant("Sample console")).settingsField()
