@@ -110,7 +110,7 @@ public struct TranscriptNotice: View {
         Image(systemName: systemImage).font(.system(size: 9, weight: .semibold))
           .accessibilityHidden(true)
       }
-      Text(text).webFont(.messageAction)
+      Text(text).webFont(.notice)
     }
     .foregroundStyle(WebColor.textMuted.color)
     .frame(maxWidth: .infinity)

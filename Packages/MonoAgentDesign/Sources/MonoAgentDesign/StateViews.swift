@@ -9,25 +9,30 @@ private struct StateLayout<Icon: View, Action: View>: View {
   @ViewBuilder let action: () -> Action
 
   var body: some View {
-    VStack(spacing: DesignSpacing.md) {
+    VStack(spacing: 9) {
       icon()
-        .font(.system(.largeTitle))
+        .font(.system(size: 24))
+        .frame(width: 60, height: 60)
+        .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 20))
+        .padding(.bottom, 14)
         .accessibilityHidden(true)
       Text(title)
-        .designFont(.sectionTitle)
+        .webFont(.stateTitle)
+        .foregroundStyle(WebColor.text.color)
+        .fixedSize(horizontal: false, vertical: true)
         .multilineTextAlignment(.center)
         .accessibilityAddTraits(.isHeader)
       if let message {
         Text(message)
-          .designFont(.supporting)
-          .foregroundStyle(.secondary)
+          .webFont(.stateBody)
+          .foregroundStyle(WebColor.textMuted.color)
           .multilineTextAlignment(.center)
           .fixedSize(horizontal: false, vertical: true)
       }
       action()
     }
-    .padding(.vertical, DesignSpacing.xl)
-    .padding(.horizontal, DesignSpacing.lg)
+    .padding(.vertical, 32)
+    .padding(.horizontal, 17)
     .frame(maxWidth: .infinity)
   }
 }

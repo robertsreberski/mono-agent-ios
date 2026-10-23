@@ -9,6 +9,7 @@ struct ConnectionEditor: View {
   let console: SavedConsole?
   let onSaved: (UUID) -> Void
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.consoleTheme) private var theme
   @State private var name: String
   @State private var address: String
   @State private var acknowledged: Bool
@@ -28,44 +29,53 @@ struct ConnectionEditor: View {
 
   var body: some View {
     NavigationStack {
-      Form {
-        Section("Console") {
-          TextField("Display name (optional)", text: $name)
-          TextField("http:// or https:// root URL", text: $address)
-            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-            .accessibilityIdentifier("console-url")
-          Text(
-            "Use a hostname or IP and optional port, with no path prefix. No request is made until you tap Connect."
-          )
-          .designFont(.caption).foregroundStyle(.secondary)
-        }
-        if let endpoint, endpoint.isInsecure {
-          Section("Insecure HTTP") {
-            StatusIndicator(
-              .insecure,
-              label:
-                "HTTP traffic is not encrypted and can be read or changed by others on the network."
+      ScrollView {
+        VStack(alignment: .leading, spacing: 18) {
+          SettingsGroup("Console") {
+            TextField("Display name (optional)", text: $name).settingsField()
+            TextField("http:// or https:// root URL", text: $address).settingsField()
+              .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+              .accessibilityIdentifier("console-url")
+            Text(
+              "Use a hostname or IP and optional port, with no path prefix. No request is made until you tap Connect."
             )
-            if !endpoint.isLocalHost {
-              Toggle(
-                "I understand the risk of plaintext HTTP to this non-local host",
-                isOn: $acknowledged)
+            .webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+          }
+          if let endpoint, endpoint.isInsecure {
+            SettingsGroup("Insecure HTTP") {
+              StatusIndicator(
+                .insecure,
+                label:
+                  "HTTP traffic is not encrypted and can be read or changed by others on the network."
+              )
+              if !endpoint.isLocalHost {
+                Toggle(
+                  "I understand the risk of plaintext HTTP to this non-local host",
+                  isOn: $acknowledged)
+              }
             }
           }
+          SettingsGroup {
+            Text(
+              "Use only a trusted network or secure private tunnel. The console has no application login and grants powerful access to its agents."
+            )
+            Text(
+              "On a physical device, localhost and loopback point to that device. Use your computer's LAN IP or Tailscale HTTPS URL instead."
+            )
+          }
+          if let error {
+            SettingsGroup("Could not save") { StatusIndicator(.failed, label: error) }
+          }
         }
-        Section {
-          Text(
-            "Use only a trusted network or secure private tunnel. The console has no application login and grants powerful access to its agents."
-          )
-          Text(
-            "On a physical device, localhost and loopback point to that device. Use your computer's LAN IP or Tailscale HTTPS URL instead."
-          )
-        }
-        if let error {
-          Section("Could not save") { StatusIndicator(.failed, label: error) }
-        }
+        .webFont(.notice)
+        .padding(.horizontal, 17)
+        .padding(.vertical, 20)
+        .frame(maxWidth: 674)
+        .frame(maxWidth: .infinity)
       }
+      .background(theme.palette.panel.color)
       .navigationTitle(console == nil ? "Add console" : "Edit console")
+      .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         // System toolbars supply Liquid Glass; the confirmation action is prominent.

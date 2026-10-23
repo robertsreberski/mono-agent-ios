@@ -608,6 +608,22 @@
       "textSize": "accessibility XL (AX3)",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "light",
+      "variant": "editor",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "dark",
+      "variant": "editor",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

@@ -95,6 +95,12 @@
             }
             .contentSurface()
           }
+          catalogSection("Settings") {
+            SettingsGroup("Console") {
+              TextField("Display name", text: .constant("Sample console")).settingsField()
+              Text("Connect only to a console you trust.").webFont(.notice)
+            }
+          }
           catalogSection("States") { StateSpecimens() }
           catalogSection("Rich documents") {
             RichTextDocumentView(

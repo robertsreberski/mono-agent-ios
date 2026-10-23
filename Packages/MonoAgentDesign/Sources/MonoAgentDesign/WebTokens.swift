@@ -187,6 +187,7 @@ public enum WebType: CaseIterable, Sendable {
   case sheetTitle, sheetSubtitle, optionName, optionID, effortOption
   case askLegend, askContext, askDetail, quote, quickReply
   case contextFigure, contextFigureRegular, contextNote, contextEyebrow
+  case settingsTitle, stateTitle, stateBody, notice, bannerRegular
 
   public struct Spec: Sendable, Equatable {
     public var size: CGFloat
@@ -203,6 +204,13 @@ public enum WebType: CaseIterable, Sendable {
 
   public var spec: Spec {
     switch self {
+    case .settingsTitle:
+      Spec(size: 16, weight: .bold, tracking: -0.01, lineHeight: 1.25, textStyle: .headline)
+    case .stateTitle:
+      Spec(size: 23, weight: .bold, tracking: -0.025, lineHeight: 1.18, textStyle: .title2)
+    case .stateBody: Spec(size: 13, weight: .regular, lineHeight: 1.55, textStyle: .subheadline)
+    case .notice: Spec(size: 11, weight: .regular, textStyle: .caption)
+    case .bannerRegular: Spec(size: 11, weight: .regular, textStyle: .caption)
     case .eyebrow:
       Spec(size: 10, weight: .bold, tracking: 0.14, uppercase: true, textStyle: .caption2)
     case .sectionCount:
