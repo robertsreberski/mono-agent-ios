@@ -26,6 +26,8 @@ struct TranscriptMessageView: View {
       if message.status != "running" { actions(message) }
     }
     .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    // The whole row (not only its glyphs) opens the message menu, as hovering it does on the web.
+    .contentShape(Rectangle())
     .quotable(message)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message-" + message.id)
