@@ -83,7 +83,7 @@ struct TranscriptMessageView: View {
           gallery: gallery)
       }
       if message.attachments.contains(where: { !$0.isUploadedImage }) {
-        WebFlowLayout(spacing: 6, lineSpacing: 6) {
+        WebFlowLayout(spacing: 6, lineSpacing: 6, alignTrailing: isUser) {
           ForEach(message.attachments.filter { !$0.isUploadedImage }, id: \.id) { attachment in
             ReplyAttachmentView(upload: attachment, message: message, store: store)
           }
