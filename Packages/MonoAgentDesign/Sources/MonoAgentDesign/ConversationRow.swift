@@ -76,13 +76,18 @@ public struct ConversationRowContent: Sendable {
   public var detail: String?
   /// Extra spoken context placed after the title (for example "on Atlas Research").
   public var accessibilityContext: String?
+  /// The trailing route badge (`model · effort`), drawn under the time as on the web.
+  public var route: String?
+  /// A disclosure chevron (project rows).
+  public var chevron: Bool = false
 
   public init(
     leading: Leading, title: AttributedString, time: String? = nil,
     timeAccessibility: String? = nil, unread: Bool = false, scheduled: Bool = false,
     activity: ActivityState? = nil, preview: AttributedString? = nil,
     previewPending: Bool = false, project: Chip? = nil, tags: [Chip] = [],
-    detail: String? = nil, accessibilityContext: String? = nil
+    detail: String? = nil, accessibilityContext: String? = nil, route: String? = nil,
+    chevron: Bool = false
   ) {
     self.leading = leading
     self.title = title
@@ -97,6 +102,8 @@ public struct ConversationRowContent: Sendable {
     self.tags = tags
     self.detail = detail
     self.accessibilityContext = accessibilityContext
+    self.route = route
+    self.chevron = chevron
   }
 
   /// How many tag chips a row draws before folding the rest into "+N".
@@ -124,118 +131,196 @@ public struct ConversationRowContent: Sendable {
   }
 }
 
-/// One dense list row. Opaque list content — never glass. Text wraps at accessibility sizes.
+/// One dense web-console list row (`.thread-trigger`, `.project-trigger`, running card body):
+/// 30 pt glyph column, 12/650 title with trailing time, a 10 pt subtitle line with project, tags
+/// and the route badge. Opaque list content — never glass. Text wraps at accessibility sizes.
 public struct ConversationRow: View {
   private let content: ConversationRowContent
   @Environment(\.consoleTheme) private var theme
   @Environment(\.dynamicTypeSize) private var typeSize
-  @ScaledMetric(relativeTo: .body) private var leadingSide: CGFloat = 32
-
+  @ScaledMetric(relativeTo: .subheadline) private var glyph: CGFloat = WebMetrics.rowGlyph
+  @ScaledMetric(relativeTo: .caption2) private var dot: CGFloat = 6
   public init(_ content: ConversationRowContent) { self.content = content }
-
   public var body: some View {
     // At accessibility sizes the leading tile moves above the text so lines keep full width.
     let layout =
       typeSize.isAccessibilitySize
-      ? AnyLayout(VStackLayout(alignment: .leading, spacing: DesignSpacing.sm))
-      : AnyLayout(HStackLayout(alignment: .top, spacing: DesignSpacing.md))
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: WebSpace.rowCopyGap))
+      : AnyLayout(HStackLayout(alignment: .center, spacing: WebSpace.rowGap))
     layout {
-      leading.frame(width: leadingSide, height: leadingSide)
-      VStack(alignment: .leading, spacing: DesignSpacing.xxs) {
+      leading.frame(width: glyph, height: glyph)
+      VStack(alignment: .leading, spacing: WebSpace.rowCopyGap) {
         titleLine
         previewLine
-        chipsLine
-        if let time = content.time, typeSize.isAccessibilitySize {
-          Text(time).designFont(.caption).foregroundStyle(.secondary)
-        }
+        if typeSize.isAccessibilitySize { accessibilityExtras }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
+      if content.chevron {
+        Image(systemName: "chevron.right")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(WebColor.textMuted.color)
+          .accessibilityHidden(true)
+      }
     }
-    .padding(.vertical, DesignSpacing.xxs)
+    .padding(.vertical, WebSpace.rowPaddingVertical)
+    .padding(.horizontal, WebSpace.rowPaddingHorizontal)
+    .frame(minHeight: WebMetrics.rowHeight)
+    .contentShape(Rectangle())
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(content.accessibilityLabel)
   }
-
   @ViewBuilder private var leading: some View {
-    let shape = RoundedRectangle(cornerRadius: DesignRadius.sm, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: WebRadius.small, style: .continuous)
     switch content.leading {
     case .symbol(let name, _, let tone):
       Image(systemName: name)
-        .font(.system(.callout, weight: .semibold))
-        .foregroundStyle(tone.color(in: theme).color)
+        .font(.system(size: 13, weight: .regular))
+        .foregroundStyle(
+          tone == .neutral ? WebColor.textSoft.color : tone.color(in: theme).color
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .tertiarySystemFill), in: shape)
     case .monogram(let initials, _):
       Text(initials)
-        .font(.system(.caption, design: .rounded, weight: .bold))
-        .foregroundStyle(theme.palette.accentStrong.color)
+        .webFont(.agentBadge)
+        .foregroundStyle(WebColor.text.color)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(theme.palette.accentSoft.color, in: shape)
+        .background(theme.palette.canvas.color, in: shape)
     case .folder(let color):
-      Image(systemName: "folder.fill")
-        .font(.system(.callout, weight: .semibold))
+      Image(systemName: "folder")
+        .font(.system(size: 13, weight: .medium))
         .foregroundStyle(color.ink(in: theme).color)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(color.tint(in: theme).color, in: shape)
     }
   }
-
   private var titleLine: some View {
-    HStack(alignment: .firstTextBaseline, spacing: DesignSpacing.xs) {
+    HStack(alignment: .firstTextBaseline, spacing: WebSpace.sectionHeadBottom) {
       Text(content.title)
-        .designFont(.body)
-        .fontWeight(content.unread ? .semibold : .medium)
-        .foregroundStyle(.primary)
+        .webFont(.rowTitle)
+        .foregroundStyle(WebColor.text.color)
         .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-      if content.unread { UnreadMarker() }
       if content.scheduled {
         Image(systemName: "alarm")
-          .imageScale(.small)
-          .foregroundStyle(.secondary)
+          .font(.system(size: 9))
+          .foregroundStyle(WebColor.textMuted.color)
       }
-      Spacer(minLength: DesignSpacing.xs)
+      Spacer(minLength: WebSpace.rowCopyGap)
+      if content.unread {
+        Circle().fill(theme.palette.accent.color).frame(width: dot, height: dot)
+          .accessibilityHidden(true)
+      }
       if let time = content.time, !typeSize.isAccessibilitySize {
-        Text(time).designFont(.caption).foregroundStyle(.secondary).monospacedDigit()
+        Text(time).webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
+          .lineLimit(1).fixedSize()
       }
     }
   }
-
   @ViewBuilder private var previewLine: some View {
     let preview = content.preview.flatMap { $0.characters.isEmpty ? nil : $0 }
-    if content.activity != nil || preview != nil {
-      HStack(alignment: .firstTextBaseline, spacing: DesignSpacing.xs) {
-        if let activity = content.activity { ActivityIndicator(activity) }
-        if let preview {
-          Text(preview)
-            .designFont(.supporting)
-            .foregroundStyle(content.previewPending ? .tertiary : .secondary)
-            .lineLimit(typeSize.isAccessibilitySize ? 4 : 1)
+    let tags = content.tags.prefix(ConversationRowContent.visibleTagLimit)
+    let overflow = content.tags.count - tags.count
+    HStack(alignment: .firstTextBaseline, spacing: 6) {
+      if let activity = content.activity {
+        Circle()
+          .fill(activity == .running ? theme.palette.accent.color : WebColor.textMuted.color)
+          .frame(width: dot, height: dot)
+          .overlay {
+            if activity == .lastKnown {
+              Circle().strokeBorder(WebColor.textMuted.color, lineWidth: 1)
+                .background(Circle().fill(Color.clear))
+            }
+          }
+          .accessibilityHidden(true)
+      }
+      if let project = content.project {
+        ProjectBadge(project.name, color: project.color)
+          .layoutPriority(1)
+      }
+      if let preview {
+        Text(preview)
+          .webFont(.rowSubtitle)
+          .foregroundStyle(WebColor.textMuted.color)
+          .lineLimit(typeSize.isAccessibilitySize ? 4 : 1)
+      }
+      if !typeSize.isAccessibilitySize {
+        Spacer(minLength: 4)
+        ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
+          TagBadge(tag.name, color: tag.color)
+        }
+        if overflow > 0 {
+          Text("+\(overflow)").webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+        }
+        if let detail = content.detail {
+          Text(detail).webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+            .lineLimit(1).fixedSize()
+        }
+        if let route = content.route {
+          Text(route).webFont(.rowSubtitle).foregroundStyle(WebColor.textSoft.color)
+            .lineLimit(1).fixedSize()
         }
       }
     }
   }
-
-  @ViewBuilder private var chipsLine: some View {
+  @ViewBuilder private var accessibilityExtras: some View {
     let tags = content.tags.prefix(ConversationRowContent.visibleTagLimit)
-    let overflow = content.tags.count - tags.count
-    if content.project != nil || !tags.isEmpty || content.detail != nil {
-      WrappingRow(spacing: DesignSpacing.xs) { chips(Array(tags), overflow: overflow) }
-        .padding(.top, DesignSpacing.xxs)
+    if content.project != nil || !tags.isEmpty || content.detail != nil || content.route != nil
+      || content.time != nil
+    {
+      WrappingRow(spacing: 6) {
+        ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
+          TagBadge(tag.name, color: tag.color)
+        }
+        if let detail = content.detail {
+          Text(detail).webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+        }
+        if let route = content.route {
+          Text(route).webFont(.rowSubtitle).foregroundStyle(WebColor.textSoft.color)
+        }
+        if let time = content.time {
+          Text(time).webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
+        }
+      }
     }
   }
+}
 
-  @ViewBuilder
-  private func chips(_ tags: [ConversationRowContent.Chip], overflow: Int) -> some View {
-    if let project = content.project { ProjectChip(project.name, color: project.color) }
-    ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
-      TagChip(tag.name, color: tag.color)
+/// The web `.thread-project` badge: folder glyph and the project name in its ink, no fill.
+public struct ProjectBadge: View {
+  private let name: String
+  private let color: LabelColor
+  @Environment(\.consoleTheme) private var theme
+  public init(_ name: String, color: LabelColor = .standard) {
+    self.name = name
+    self.color = color
+  }
+  public var body: some View {
+    HStack(spacing: 4) {
+      Image(systemName: "folder").font(.system(size: 9, weight: .medium))
+      Text(name).webFont(.chip).lineLimit(1)
     }
-    if overflow > 0 {
-      Text("+\(overflow)").designFont(.caption).foregroundStyle(.secondary)
+    .foregroundStyle(color.ink(in: theme).color)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Project \(name)")
+  }
+}
+
+/// The web row tag: a separator dot, a colour dot and the tag name.
+public struct TagBadge: View {
+  private let name: String
+  private let color: LabelColor
+  @Environment(\.consoleTheme) private var theme
+  @ScaledMetric(relativeTo: .caption2) private var dot: CGFloat = 5
+  public init(_ name: String, color: LabelColor = .standard) {
+    self.name = name
+    self.color = color
+  }
+  public var body: some View {
+    HStack(spacing: 5) {
+      Circle().fill(color.ink(in: theme).color).frame(width: dot, height: dot)
+      Text(name).webFont(.rowSubtitle).foregroundStyle(WebColor.textSoft.color).lineLimit(1)
     }
-    if let detail = content.detail {
-      Text(detail).designFont(.caption).foregroundStyle(.secondary)
-    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Tag \(name)")
   }
 }
 

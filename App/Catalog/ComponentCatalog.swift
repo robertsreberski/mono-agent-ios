@@ -80,6 +80,7 @@
         VStack(alignment: .leading, spacing: DesignSpacing.xl) {
           header
           catalogSection("Themes") { ThemeRows() }
+          catalogSection("Web tokens") { WebTokenSpecimens() }
           catalogSection("Buttons") { ButtonSpecimens() }
           catalogSection("Status") { StatusSpecimens() }
           catalogSection("Unread markers") { UnreadSpecimens() }
@@ -206,6 +207,53 @@
         SectionHeader(title)
         content()
       }
+    }
+  }
+
+  /// The web console's surface/text/line roles, type scale and floating tile/pill controls.
+  private struct WebTokenSpecimens: View {
+    @Environment(\.consoleTheme) private var theme
+    private let roles: [(String, AdaptiveColor)] = [
+      ("surface", WebColor.surface), ("raised", WebColor.surfaceRaised),
+      ("subtle", WebColor.surfaceSubtle), ("hover", WebColor.surfaceHover),
+      ("line", WebColor.line), ("line-strong", WebColor.lineStrong),
+      ("text-soft", WebColor.textSoft), ("text-muted", WebColor.textMuted),
+      ("progress", WebColor.jobProgress), ("delegation", WebColor.delegation),
+    ]
+    var body: some View {
+      VStack(alignment: .leading, spacing: WebSpace.sectionHeadBottom) {
+        FlowLayout {
+          ForEach(roles, id: \.0) { role in
+            VStack(spacing: 2) {
+              RoundedRectangle(cornerRadius: WebRadius.small).fill(role.1.color)
+                .frame(width: 44, height: 28)
+                .overlay(
+                  RoundedRectangle(cornerRadius: WebRadius.small).stroke(WebColor.line.color))
+              Text(role.0).webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
+            }
+            .accessibilityElement(children: .combine)
+          }
+        }
+        Eyebrow("Eyebrow · 10 / 700")
+        Text("Atlas").webFont(.agentName).foregroundStyle(WebColor.text.color)
+        Text("Row title 12 / 650").webFont(.rowTitle).foregroundStyle(WebColor.text.color)
+        Text("Row subtitle 10").webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+        Text("Prose 13.5 / 1.62 keeps the web's reading rhythm across two lines of text.")
+          .webFont(.prose).foregroundStyle(WebColor.text.color)
+        HStack(spacing: WebSpace.tileGap) {
+          Button("Consoles", systemImage: "slider.horizontal.3") {}.buttonStyle(
+            WebTileButtonStyle())
+          Button("New", systemImage: "plus") {}.buttonStyle(WebTileButtonStyle(.accent))
+          Spacer()
+          Button {
+          } label: {
+            Label("Archived", systemImage: "archivebox")
+          }
+          .buttonStyle(WebQuietPillStyle())
+        }
+      }
+      .padding(WebSpace.dashboardGutter)
+      .background(theme.palette.panel.color, in: RoundedRectangle(cornerRadius: WebRadius.medium))
     }
   }
 

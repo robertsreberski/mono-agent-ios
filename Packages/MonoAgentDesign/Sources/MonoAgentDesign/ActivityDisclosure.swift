@@ -23,28 +23,82 @@ public struct ActivityDisclosure<Content: View>: View {
     _expanded = expanded
     self.content = content
   }
+  /// Web `.activity-row` summary: 18 pt glyph column (7 pt status dot in a 3 pt tint ring),
+  /// 11.5/650 label, 10.5 muted preview, mono time and a chevron; 44 pt on touch, radius 9.
   public var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+    VStack(alignment: .leading, spacing: 0) {
       Button {
         expanded.toggle()
       } label: {
-        HStack(spacing: DesignSpacing.sm) {
-          VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-            StatusIndicator(status, label: title)
-            if !summary.isEmpty {
-              Text(summary).designFont(.supporting).foregroundStyle(.secondary).lineLimit(2)
+        HStack(alignment: .center, spacing: 8) {
+          // A dot at rest; running and failed rows change shape too, never colour alone.
+          Group {
+            if status.tone == .danger || status == .connecting {
+              Image(systemName: status.tone == .danger ? "xmark" : "circle.lefthalf.filled")
+                .font(.system(size: 7, weight: .black))
+                .foregroundStyle(dotColor)
+                .frame(width: 7, height: 7)
+            } else {
+              Circle().fill(dotColor).frame(width: 7, height: 7)
             }
-            if let detail { Text(detail).designFont(.caption).foregroundStyle(.secondary) }
-          }.frame(maxWidth: .infinity, alignment: .leading)
-          Image(systemName: expanded ? "chevron.down" : "chevron.right").accessibilityHidden(true)
-        }.padding(.vertical, DesignSpacing.sm).contentShape(Rectangle())
-      }.buttonStyle(.plain).foregroundStyle(.primary)
+          }
+          .padding(3)
+          .background(Circle().fill(dotColor.opacity(0.18)))
+          .frame(width: 18)
+          .accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+              Text(title).webFont(.activityRowLabel).foregroundStyle(WebColor.text.color)
+                .lineLimit(1)
+              if !summary.isEmpty {
+                Text(summary).webFont(.activityMeta).foregroundStyle(WebColor.textMuted.color)
+                  .lineLimit(1)
+              }
+            }
+            if let detail, !detail.isEmpty {
+              Text(detail).font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(WebColor.textMuted.color).lineLimit(1)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          Image(systemName: "chevron.down")
+            .font(.system(size: 10, weight: .semibold))
+            .rotationEffect(.degrees(expanded ? 0 : -90))
+            .foregroundStyle(WebColor.textMuted.color)
+            .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 8)
+        .frame(minHeight: DesignMetrics.minimumHitTarget)
+        .contentShape(Rectangle())
+      }.buttonStyle(WebRowButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+          [title, summary, detail ?? ""]
+            .filter { !$0.isEmpty }.joined(separator: ", ")
+        )
         .accessibilityValue(expanded ? "Expanded" : "Collapsed")
         .accessibilityHint("Double tap to \(expanded ? "collapse" : "expand") activity")
         .accessibilityIdentifier(identifier)
-      if expanded { content().padding(.leading, DesignSpacing.sm) }
+      if expanded {
+        VStack(alignment: .leading, spacing: 7) { content() }
+          .padding(.leading, 10)
+          .overlay(alignment: .leading) {
+            Rectangle().fill(WebColor.line.color).frame(width: 1)
+          }
+          .padding(.leading, 16)
+          .padding(.trailing, 2)
+          .padding(.bottom, 6)
+      }
     }
-
+  }
+  private var dotColor: Color {
+    switch status.tone {
+    case .danger: WebColor.danger.color
+    case .warning: WebColor.jobProgress.color
+    case .success: WebColor.success.color
+    default:
+      status == .connecting ? WebColor.jobProgress.color : WebColor.textMuted.color
+    }
   }
 }
 #if DEBUG

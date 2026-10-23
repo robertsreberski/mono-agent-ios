@@ -46,7 +46,8 @@ public struct AgentTile: View {
   private let badge: Badge?
   @Environment(\.consoleTheme) private var theme
   @Environment(\.colorSchemeContrast) private var contrast
-  @ScaledMetric(relativeTo: .headline) private var side: CGFloat = 48
+  @ScaledMetric(relativeTo: .footnote) private var side: CGFloat = WebMetrics.agentSquare
+  @ScaledMetric(relativeTo: .caption2) private var badgeSide: CGFloat = 16
 
   public init(
     initials: String, caption: String? = nil, presence: Presence = .online,
@@ -81,86 +82,93 @@ public struct AgentTile: View {
 
   public var body: some View {
     let palette = theme.palette
-    let shape = RoundedRectangle(cornerRadius: DesignRadius.md, style: .continuous)
-    VStack(spacing: DesignSpacing.xs) {
+    let shape = RoundedRectangle(cornerRadius: WebRadius.medium, style: .continuous)
+    // Web `.agent-chip`: 44 pt square on app-bg with an inset 1 px line-strong ring; the active
+    // agent gets an inset 2 px accent ring. Offline is dashed and dimmed, degraded is ringed in
+    // the warning hue and carries a symbol, so presence never relies on colour alone.
+    VStack(spacing: 5) {
       Text(initials)
-        .font(.system(.headline, design: .rounded, weight: .bold))
-        .foregroundStyle(selected ? palette.onAccent.color : Color.primary)
+        .webFont(.agentInitials)
+        .foregroundStyle(
+          presence == .offline && !selected ? WebColor.textMuted.color : WebColor.text.color
+        )
         .frame(width: side, height: side)
-        .background {
-          shape.fill(selected ? palette.accent.color : Color(uiColor: .tertiarySystemFill))
-        }
+        .background { shape.fill(palette.canvas.color) }
         .overlay {
-          if presence == .offline && !selected {
-            shape.strokeBorder(
-              Color.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-          } else if contrast == .increased {
-            shape.strokeBorder(Color.primary.opacity(0.6), lineWidth: 1)
+          if selected {
+            shape.inset(by: 1).stroke(palette.accent.color, lineWidth: 2)
+          } else if presence == .offline {
+            shape.inset(by: 0.5).stroke(
+              WebColor.lineStrong.color, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+          } else if presence == .degraded {
+            shape.inset(by: 1).stroke(WebColor.warning.color, lineWidth: 2)
+          } else {
+            shape.inset(by: 0.5).stroke(
+              contrast == .increased ? WebColor.textMuted.color : WebColor.lineStrong.color,
+              lineWidth: 1)
           }
         }
-        .opacity(presence == .offline && !selected ? 0.75 : 1)
+        .opacity(presence == .offline && !selected ? 0.55 : 1)
         .overlay(alignment: .topLeading) {
           if pinned {
             Image(systemName: "star.fill")
-              .font(.system(.caption2, weight: .bold))
+              .font(.system(size: 8, weight: .bold))
               .foregroundStyle(DesignColor.warning.color)
-              .padding(DesignSpacing.xxs)
-              .background(DesignColor.opaqueControlSurface.color, in: Circle())
-              .offset(x: -DesignSpacing.xs, y: -DesignSpacing.xs)
+              .padding(2)
+              .background(palette.panel.color, in: Circle())
+              .offset(x: -5, y: -5)
           }
         }
         .overlay(alignment: .topTrailing) {
-          corner.offset(x: DesignSpacing.sm, y: -DesignSpacing.sm)
+          corner.offset(x: 6, y: -6)
         }
         .overlay(alignment: .bottomTrailing) {
-          Image(systemName: presence.status.systemImage)
-            .font(.system(.caption2, weight: .bold))
-            .foregroundStyle(presence.status.tone.color(in: theme).color)
-            .padding(DesignSpacing.xxs)
-            .background(DesignColor.opaqueControlSurface.color, in: Circle())
-            .offset(x: DesignSpacing.xs, y: DesignSpacing.xs)
+          if presence != .online {
+            Image(systemName: presence.status.systemImage)
+              .font(.system(size: 8, weight: .bold))
+              .foregroundStyle(presence.status.tone.color(in: theme).color)
+              .padding(2)
+              .background(palette.panel.color, in: Circle())
+              .offset(x: 5, y: 5)
+          }
         }
       if let caption {
         Text(caption)
-          .designFont(.caption)
-          .fontWeight(selected ? .semibold : .regular)
-          .foregroundStyle(selected ? Color.primary : Color.secondary)
+          .webFont(.agentLabel)
+          .foregroundStyle(selected ? WebColor.text.color : WebColor.textSoft.color)
           .lineLimit(1)
-          .frame(maxWidth: side + DesignSpacing.lg)
+          .frame(maxWidth: side + 4)
       }
     }
-    .padding(.top, DesignSpacing.sm)
-    .padding(.horizontal, DesignSpacing.xs)
+    .frame(minWidth: 48)
+    .padding(.top, 6)
     .accessibilityElement(children: .ignore)
   }
-
   @ViewBuilder private var corner: some View {
     let palette = theme.palette
     switch badge {
     case .running(let count):
-      HStack(spacing: DesignSpacing.xxs) {
-        Image(systemName: "bolt.fill").imageScale(.small)
-        Text(UnreadMarker.badgeText(for: count) ?? String(count)).monospacedDigit()
-      }
-      .font(.system(.caption2, weight: .bold))
-      .foregroundStyle(palette.onAccent.color)
-      .padding(.horizontal, DesignSpacing.xs + DesignSpacing.xxs)
-      .padding(.vertical, DesignSpacing.xxs)
-      .background(palette.accent.color, in: Capsule())
+      // Web `.agent-chip-badge`: 16 pt accent disc with the on-accent count.
+      Text(UnreadMarker.badgeText(for: count) ?? String(count))
+        .webFont(.agentBadge)
+        .foregroundStyle(palette.onAccent.color)
+        .padding(.horizontal, 4)
+        .frame(minWidth: badgeSide, minHeight: badgeSide)
+        .background(palette.accent.color, in: Capsule())
+        .overlay { Capsule().stroke(palette.panel.color, lineWidth: 2) }
     case .unread(let count):
       Text(count > 99 ? "99+" : String(count))
-        .font(.system(.caption2, weight: .bold)).monospacedDigit()
-        .foregroundStyle(Color.primary)
-        .padding(.horizontal, DesignSpacing.xs + DesignSpacing.xxs)
-        .padding(.vertical, DesignSpacing.xxs)
-        .background(DesignColor.opaqueControlSurface.color, in: Capsule())
+        .webFont(.agentBadge)
+        .foregroundStyle(palette.accentStrong.color)
+        .padding(.horizontal, 4)
+        .frame(minWidth: badgeSide, minHeight: badgeSide)
+        .background(palette.panel.color, in: Capsule())
         .overlay { Capsule().strokeBorder(palette.accent.color, lineWidth: 1.5) }
     case nil:
       EmptyView()
     }
   }
 }
-
 #if DEBUG
   #Preview("Agent tiles — themes") {
     DesignPreviewMatrix {

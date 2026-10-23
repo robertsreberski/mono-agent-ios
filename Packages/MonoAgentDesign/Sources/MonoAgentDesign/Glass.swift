@@ -32,10 +32,15 @@ struct SurfacePolicy {
 
 extension View {
   /// The single sanctioned custom glass entry point, with accessibility fallbacks.
+  ///
+  /// `opaqueFill` is the Reduce Transparency replacement (defaults to `tint`, then the opaque
+  /// control surface), so web-styled controls keep their web fill when glass is off.
   public func floatingGlass<S: Shape>(
-    in shape: S, tint: Color? = nil, interactive: Bool = false
+    in shape: S, tint: Color? = nil, interactive: Bool = false, opaqueFill: Color? = nil
   ) -> some View {
-    modifier(FloatingGlassModifier(shape: shape, tint: tint, interactive: interactive))
+    modifier(
+      FloatingGlassModifier(
+        shape: shape, tint: tint, interactive: interactive, opaqueFill: opaqueFill))
   }
 
   /// Applies the themed button treatment for a prominence and placement.
@@ -56,6 +61,7 @@ struct FloatingGlassModifier<S: Shape>: ViewModifier {
   let shape: S
   let tint: Color?
   let interactive: Bool
+  var opaqueFill: Color? = nil
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.prefersOpaqueSurfaces) private var prefersOpaque
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -75,13 +81,15 @@ struct FloatingGlassModifier<S: Shape>: ViewModifier {
     } else {
       content
         .background {
-          shape.fill(tint ?? DesignColor.opaqueControlSurface.color)
-            .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+          shape.fill(opaqueFill ?? tint ?? DesignColor.opaqueControlSurface.color)
+            .shadow(color: .black.opacity(opaqueFill == nil ? 0.12 : 0), radius: 6, y: 2)
         }
         .overlay {
-          shape.stroke(
-            increased ? Color.primary.opacity(0.6) : DesignColor.separator,
-            lineWidth: increased ? 1 : 0.5)
+          if increased || opaqueFill == nil {
+            shape.stroke(
+              increased ? Color.primary.opacity(0.6) : DesignColor.separator,
+              lineWidth: increased ? 1 : 0.5)
+          }
         }
     }
   }
