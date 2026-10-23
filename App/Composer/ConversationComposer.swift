@@ -57,17 +57,6 @@ private struct ConversationComposerMount: ViewModifier {
   func body(content: Content) -> some View {
     content
       .environment(\.composerActions, actions)
-      .toolbar {
-        // One way to lower the keyboard for any field on the screen (composer, ask forms).
-        ToolbarItemGroup(placement: .keyboard) {
-          Spacer()
-          Button("Hide Keyboard", systemImage: "keyboard.chevron.compact.down") {
-            UIApplication.shared.sendAction(
-              #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-          }
-          .accessibilityIdentifier("composer-hide-keyboard")
-        }
-      }
       .safeAreaBar(edge: .bottom) {
         if let controller {
           ComposerBar(controller: controller)

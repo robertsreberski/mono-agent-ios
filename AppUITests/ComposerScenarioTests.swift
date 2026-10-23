@@ -346,9 +346,16 @@ import XCTest
     }
     return target.exists
   }
+  /// The keyboard lowers by dragging the transcript (`scrollDismissesKeyboard`), as there is
+  /// no separate dismiss button any more.
   private func dismissKeyboard(_ app: XCUIApplication) {
-    let hide = app.buttons["composer-hide-keyboard"].firstMatch
-    if app.keyboards.firstMatch.exists, hide.exists { hide.tap() }
+    guard app.keyboards.firstMatch.exists else { return }
+    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    let target = transcript.exists ? transcript : app.scrollViews.firstMatch
+    let from = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+    from.press(
+      forDuration: 0.05,
+      thenDragTo: target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
   }
   private func capture(
     _ app: XCUIApplication, _ scenario: String, _ appearance: String, variant: String?

@@ -11,6 +11,7 @@ struct ModelSelectorMenu: View {
   /// Icon only; the summary stays in the accessibility value.
   var compact = false
   @Environment(\.horizontalSizeClass) private var sizeClass
+  @Environment(\.consoleTheme) private var theme
   var body: some View {
     let agent = controller.agent
     let summary = ModelOptions.summary(
@@ -18,21 +19,43 @@ struct ModelSelectorMenu: View {
     Menu {
       if let agent { ModelMenuContent(controller: controller, agent: agent) }
     } label: {
-      HStack(spacing: DesignSpacing.xxs) {
-        Image(systemName: controller.hasRunOverride ? "cpu.fill" : "cpu")
+      // Web `.model-selector__trigger` in the composer: model name 12/650, the effort as an
+      // uppercase accent badge, and a trailing chevron; transparent, 32 pt high.
+      let parts = summary.components(separatedBy: " · ")
+      HStack(spacing: 6) {
         if !compact {
-          Text(summary).lineLimit(1).fixedSize()
-          if controller.hasRunOverride && sizeClass == .regular {
-            Text("custom").designFont(.caption).foregroundStyle(.secondary).fixedSize()
+          Text(parts.first ?? summary)
+            .webFont(.modelName).foregroundStyle(WebColor.text.color)
+            .lineLimit(1).truncationMode(.middle)
+          if parts.count > 1 {
+            Text(parts.dropFirst().joined(separator: " · "))
+              .webFont(.effortBadge)
+              .foregroundStyle(theme.palette.accent.color)
+              .lineLimit(1)
+              .padding(.horizontal, 6).padding(.vertical, 3)
+              .background(theme.palette.accentSoft.color, in: RoundedRectangle(cornerRadius: 5))
+              .fixedSize()
           }
+          if controller.hasRunOverride && sizeClass == .regular {
+            Text("custom").webFont(.composerHint).foregroundStyle(WebColor.textMuted.color)
+              .fixedSize()
+          }
+        } else {
+          Image(systemName: controller.hasRunOverride ? "cpu.fill" : "cpu")
+            .foregroundStyle(WebColor.textSoft.color)
         }
-        Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(WebColor.textMuted.color)
       }
-      .designFont(.supporting)
+      .padding(.leading, 7).padding(.trailing, 5)
+      .frame(minHeight: WebMetrics.quietControl)
       .frame(minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget)
       .contentShape(Rectangle())
     }
-    .buttonStyle(.borderless)
+    .menuStyle(.button)
+    .buttonStyle(.plain)
     .disabled(agent == nil || agent?.status == "offline")
     .accessibilityLabel("Model and reasoning effort")
     .accessibilityValue(

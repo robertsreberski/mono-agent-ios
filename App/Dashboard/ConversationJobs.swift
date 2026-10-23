@@ -48,6 +48,8 @@ struct ConversationJobStack: View {
     let finished = items.filter { !$0.bucket(now: now).current }
     return ContentDisclosure("job-stack", expanded: $expanded) {
       VStack(alignment: .leading, spacing: DesignSpacing.md) {
+        Rectangle().fill(WebColor.line.color).frame(height: 1).padding(.horizontal, -10)
+          .accessibilityHidden(true)
         ForEach(current) { item in group(item, now: now) }
         if !finished.isEmpty || state.nextCursor != nil {
           DisclosureGroup("History · \(finished.count) finished", isExpanded: $history) {
@@ -61,18 +63,7 @@ struct ConversationJobStack: View {
         }
       }.padding(.top, DesignSpacing.sm)
     } label: {
-      VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-        Label("Background jobs", systemImage: "terminal").designFont(.headline)
-        Text(JobShelf.summary(items, now: now)).designFont(.caption)
-        if !expanded {
-          ForEach(current.prefix(3)) { item in
-            JobStateLabel(
-              job: item.lead(now: now), now: now,
-              title: item.instanceID ?? JobPresentation.title(item.newest))
-          }
-          if current.count > 3 { Text("+\(current.count - 3) more").designFont(.caption) }
-        }
-      }
+      JobShelfSummary(items: items, current: current, expanded: expanded, now: now)
     }
   }
   @ViewBuilder private func group(_ item: JobShelfItem, now: Date) -> some View {
@@ -85,6 +76,136 @@ struct ConversationJobStack: View {
         job: item.newest, threadID: state.thread.id, store: store, now: now,
         disclosures: disclosures, onAnswerPeerQuestion: onAnswerPeerQuestion)
     }
+  }
+}
+
+/// The web `.process-job-stack-toggle` content. Closed: the current jobs inline (glyph + agent
+/// id in the delegation colour, or the command tool), "+n" for what does not fit, then a count
+/// chip per finished bucket. Open: a chip for every bucket. Spoken as "Background jobs, …".
+struct JobShelfSummary: View {
+  let items: [JobShelfItem]
+  let current: [JobShelfItem]
+  let expanded: Bool
+  let now: Date
+  var body: some View {
+    let counts = JobShelf.counts(items, now: now)
+    let chips = JobShelfBucket.allCases.filter { bucket in
+      (counts[bucket] ?? 0) > 0 && (expanded || !bucket.current)
+    }
+    HStack(spacing: 10) {
+      if !expanded && !current.isEmpty {
+        ViewThatFits(in: .horizontal) {
+          ForEach((1...current.count).reversed(), id: \.self) { shown in entries(shown) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      HStack(spacing: 5) {
+        ForEach(chips, id: \.self) { bucket in
+          JobCountChip(bucket: bucket, count: counts[bucket] ?? 0)
+        }
+      }
+      .fixedSize()
+      if expanded || current.isEmpty { Spacer(minLength: 0) }
+    }
+    .padding(.leading, 1)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Background jobs, " + JobShelf.summary(items, now: now))
+  }
+  private func entries(_ shown: Int) -> some View {
+    HStack(spacing: 5) {
+      ForEach(Array(current.prefix(shown).enumerated()), id: \.element.id) { index, item in
+        if index > 0 {
+          Text("·").font(.system(size: 12, weight: .bold)).foregroundStyle(WebColor.textMuted.color)
+            .padding(.horizontal, 2)
+        }
+        let lead = item.lead(now: now)
+        let face = JobPresentation.status(lead, now: now)
+        HStack(spacing: 5) {
+          Image(systemName: face.symbol)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(JobTone(face.tone, state: lead.state).glyph)
+          Text(item.instanceID ?? lead.tool)
+            .webFont(.jobEntry)
+            .fontWeight(item.family != nil ? .bold : .semibold)
+            .foregroundStyle(
+              item.family != nil ? WebColor.delegation.color : WebColor.textSoft.color
+            )
+            .lineLimit(1)
+        }
+      }
+      if current.count > shown {
+        Text("· +\(current.count - shown)").webFont(.jobEntry)
+          .foregroundStyle(WebColor.textMuted.color).fixedSize()
+      }
+    }
+    .fixedSize()
+  }
+}
+
+/// Fixed job status hues (never the console theme): progress yellow, questions amber, success
+/// green, danger red, neutral text.
+struct JobTone {
+  let glyph: Color
+  let text: Color
+  let fill: Color
+  init(_ tone: String, state: String = "") {
+    switch tone {
+    case "warning" where state == "running" || state == "starting":
+      self.init(bucket: .active)
+    case "warning": self.init(bucket: .question)
+    case "danger": self.init(bucket: .issue)
+    case "success": self.init(bucket: .done)
+    default: self.init(bucket: .cancelled)
+    }
+  }
+  init(bucket: JobShelfBucket) {
+    switch bucket {
+    case .question:
+      glyph = WebColor.warning.color
+      text = WebColor.jobWarningText.color
+      fill = WebColor.warning.color.opacity(0.14)
+    case .active:
+      glyph = WebColor.jobProgress.color
+      text = WebColor.jobProgressText.color
+      fill = WebColor.jobProgress.color.opacity(0.14)
+    case .issue:
+      glyph = WebColor.danger.color
+      text = WebColor.danger.color
+      fill = WebColor.danger.color.opacity(0.12)
+    case .done:
+      glyph = WebColor.success.color
+      text = WebColor.jobSuccessText.color
+      fill = WebColor.success.color.opacity(0.12)
+    case .cancelled:
+      glyph = WebColor.textMuted.color
+      text = WebColor.textSoft.color
+      fill = WebColor.text.color.opacity(0.07)
+    }
+  }
+}
+
+/// Web `.process-job-chip`: glyph + number in the bucket's text-safe tone on its tint.
+struct JobCountChip: View {
+  let bucket: JobShelfBucket
+  let count: Int
+  var body: some View {
+    let tone = JobTone(bucket: bucket)
+    let symbol =
+      switch bucket {
+      case .question: "questionmark.circle"
+      case .active: "circle.lefthalf.filled"
+      case .issue: "xmark.circle.fill"
+      case .done: "checkmark.circle.fill"
+      case .cancelled: "stop.circle"
+      }
+    HStack(spacing: 4) {
+      Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
+      Text("\(count)").webFont(.jobEntry)
+    }
+    .foregroundStyle(tone.text)
+    .padding(.leading, 5).padding(.trailing, 7)
+    .frame(minHeight: 22)
+    .background(tone.fill, in: Capsule())
   }
 }
 
