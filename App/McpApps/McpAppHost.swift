@@ -10,7 +10,7 @@ final class McpAppHost: NSObject {
   weak var delegate: (any McpAppEnvelopeDelegate)?
   private(set) var isRetired = false
   private(set) var retirementReason: String?
-  var innerLoaded = false
+  private(set) var innerLoaded = false
   #if DEBUG
     var navigationDecisions: [String] { webView.policy.navigationDecisions }
     var responseDecisions: [String] { webView.policy.responseDecisions }
@@ -84,6 +84,31 @@ final class McpAppHost: NSObject {
     webView.isInspectable = false
     webView.allowsLinkPreview = false
   }
+
+  func didLoadInnerDocument() {
+    guard !isRetired else { return }
+    innerLoaded = true
+  }
+
+  /// Mirrors the web proxy's raw JSON-RPC relay. Session secrets stay in the isolated world.
+  func sendEnvelope(_ envelope: Data) async throws {
+    guard !isRetired, innerLoaded,
+      envelope.count <= McpAppBridgeListener.maximumEnvelopeBytes,
+      let payload = try JSONSerialization.jsonObject(with: envelope) as? [String: Any],
+      payload["jsonrpc"] as? String == "2.0",
+      payload["method"] is String || payload.keys.contains("id")
+    else { throw URLError(.cannotParseResponse) }
+    let delivered = try await webView.callAsyncJavaScript(
+      "return window.mcpRelay(payload)", arguments: ["payload": payload], in: nil,
+      contentWorld: McpAppBridgeListener.world)
+    guard delivered as? Bool == true, !isRetired else { throw URLError(.cancelled) }
+  }
+
+  #if DEBUG
+    var debugTransportIdentity: [String: String] {
+      ["nonce": listener.nonce, "generation": listener.generation]
+    }
+  #endif
 
   func retire(reason: String) {
     guard !isRetired else { return }

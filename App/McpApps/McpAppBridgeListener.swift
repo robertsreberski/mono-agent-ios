@@ -37,7 +37,8 @@ final class McpAppBridgeListener: NSObject, WKScriptMessageHandlerWithReply {
       body["nonce"] as? String == nonce,
       body["generation"] as? String == generation,
       JSONSerialization.isValidJSONObject(body),
-      let encoded = try? JSONSerialization.data(withJSONObject: body, options: [.fragmentsAllowed]),
+      let encoded = try? JSONSerialization.data(
+        withJSONObject: body, options: [.fragmentsAllowed, .withoutEscapingSlashes]),
       encoded.count <= Self.maximumEnvelopeBytes
     else {
       replyHandler(nil, "Rejected MCP envelope")
@@ -45,13 +46,16 @@ final class McpAppBridgeListener: NSObject, WKScriptMessageHandlerWithReply {
     }
     switch body["kind"] as? String {
     case "loaded":
-      host.innerLoaded = true
+      host.didLoadInnerDocument()
     case "retired":
       host.retire(reason: "Inner frame loaded more than once")
     case "envelope":
       guard host.innerLoaded, let payload = body["payload"] as? [String: Any],
+        payload["jsonrpc"] as? String == "2.0",
+        payload["method"] is String || payload.keys.contains("id"),
         JSONSerialization.isValidJSONObject(payload),
-        let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+        let data = try? JSONSerialization.data(
+          withJSONObject: payload, options: [.sortedKeys, .withoutEscapingSlashes]),
         data.count <= Self.maximumEnvelopeBytes
       else {
         replyHandler(nil, "Rejected MCP payload")
@@ -95,14 +99,22 @@ final class McpAppBridgeListener: NSObject, WKScriptMessageHandlerWithReply {
         };
         // Kept in the isolated world only; native retirement also cuts off delivery immediately.
         window.mcpRetire = retire;
+        const isRpc = data => data && typeof data === "object" && !Array.isArray(data)
+          && data.jsonrpc === "2.0" && (typeof data.method === "string" || "id" in data);
+        window.mcpRelay = payload => {
+          if (!frame || loads !== 1 || !isRpc(payload)) return false;
+          try {
+            if (new TextEncoder().encode(JSON.stringify(payload)).byteLength > \(Self.maximumEnvelopeBytes)) return false;
+            frame.contentWindow.postMessage(payload, "*");
+            return true;
+          } catch { return false; }
+        };
         window.addEventListener("message", event => {
           if (!event.isTrusted || !frame || loads !== 1
               || event.source !== frame.contentWindow || event.origin !== "null") return;
           const data = event.data;
-          if (!data || typeof data !== "object" || Array.isArray(data)
-              || data.nonce !== nonce || data.generation !== generation
-              || !data.payload || typeof data.payload !== "object" || Array.isArray(data.payload)) return;
-          send("envelope", data.payload);
+          if (!isRpc(data)) return;
+          send("envelope", data);
         });
         frame.title = "MCP App content";
         frame.setAttribute("sandbox", "allow-scripts");
@@ -113,7 +125,6 @@ final class McpAppBridgeListener: NSObject, WKScriptMessageHandlerWithReply {
           if (!frame) return;
           if (++loads > 1) { retire(); return; }
           send("loaded");
-          frame.contentWindow.postMessage({type: "mono:mcp-session", nonce, generation}, "*");
         });
         root.replaceChildren(frame);
       })();

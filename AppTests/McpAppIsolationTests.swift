@@ -10,9 +10,11 @@ import WebKit
 @MainActor
 private final class McpEnvelopeRecorder: McpAppEnvelopeDelegate {
   var deliveries: [[String: Any]] = []
+  var rawDeliveries: [[String: Any]] = []
   func mcpAppHost(_ host: McpAppHost, didReceiveEnvelope envelope: Data) {
     if let object = try? JSONSerialization.jsonObject(with: envelope) as? [String: Any] {
-      deliveries.append(object)
+      rawDeliveries.append(object)
+      deliveries.append(object["params"] as? [String: Any] ?? object)
     }
   }
 }
@@ -33,13 +35,11 @@ private final class McpRtcTimingObserver: NSObject, WKScriptMessageHandler {
 @MainActor
 struct McpAppIsolationTests {
   private static let sessionScript = """
-    let session;
     const documentMarker = Math.random().toString(36) + Math.random().toString(36);
-    const deliver = payload => parent.postMessage({...session, payload}, "*");
+    const deliver = params => parent.postMessage({jsonrpc:"2.0",method:"test/probe",params}, "*");
     addEventListener("message", event => {
-      if (event.source !== parent || event.data?.type !== "mono:mcp-session") return;
-      session = event.data;
-      deliver({marker: "ready", documentMarker, sessionNonce: session.nonce, sessionGeneration: session.generation});
+      if (event.source !== parent || event.data?.method !== "test/bootstrap") return;
+      deliver({marker:"ready",documentMarker});
     });
     """
 
@@ -51,17 +51,19 @@ struct McpAppIsolationTests {
     #expect(condition())
   }
 
-  private func attach(_ host: McpAppHost) {
+  private func attach(_ host: McpAppHost) async throws {
     host.webView.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
     let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     scene?.windows.first?.addSubview(host.webView)
+    try await waitUntil { host.innerLoaded || host.isRetired }
+    try await host.sendEnvelope(Data(#"{"jsonrpc":"2.0","method":"test/bootstrap"}"#.utf8))
   }
 
   @Test func customSchemeHeaderCspIsEnforced() async throws {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
       html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { !recorder.deliveries.isEmpty || host.isRetired }
     let observed = try await host.webView.callAsyncJavaScript(
@@ -84,7 +86,7 @@ struct McpAppIsolationTests {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
       html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { !recorder.deliveries.isEmpty || host.isRetired }
     print(
@@ -163,7 +165,7 @@ struct McpAppIsolationTests {
           }
           deliver({marker:'attempted-network'});
           """), delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     try await probe(host)
@@ -212,7 +214,7 @@ struct McpAppIsolationTests {
           deliver({marker:'navigation-attempted'});
           setTimeout(() => { \(command); }, 50);
           """), delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     try await probe(host)
@@ -236,7 +238,7 @@ struct McpAppIsolationTests {
           try { window.open('\(sink.origin)/window'); } catch {}
           deliver({marker:'top-attempted'});
           """), delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     try await probe(host)
@@ -258,7 +260,7 @@ struct McpAppIsolationTests {
           const object = document.createElement('object'); object.data='data:text/html,inheritance-probe';
           document.body.append(object);
           """), delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     try await probe(host)
@@ -290,10 +292,9 @@ struct McpAppIsolationTests {
         probe: """
           const file='file:///mcp-fictional-unreadable.html';
           \(command)
-          setTimeout(() => deliver({marker:'same-document', documentMarker,
-            sessionNonce:session.nonce, sessionGeneration:session.generation}), 300);
+          setTimeout(() => deliver({marker:'same-document', documentMarker}), 300);
           """), delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     let original = try #require(recorder.deliveries.first)
@@ -309,12 +310,12 @@ struct McpAppIsolationTests {
       #expect(host.responseDecisions == ["main:mono-mcp-host://shell/"])
       let echo = try #require(recorder.deliveries.last)
       #expect(echo["marker"] as? String == "same-document")
-      for key in ["documentMarker", "sessionNonce", "sessionGeneration"] {
+      for key in ["documentMarker"] {
         #expect(echo[key] as? String == original[key] as? String)
         #expect((echo[key] as? String)?.isEmpty == false)
       }
       #expect(
-        Set(echo.keys) == Set(["marker", "documentMarker", "sessionNonce", "sessionGeneration"]))
+        Set(echo.keys) == Set(["marker", "documentMarker"]))
       #expect(recorder.deliveries.count == 2)
     }
     #expect(sink.inboundConnections == 0)
@@ -326,7 +327,7 @@ struct McpAppIsolationTests {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
       html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     host.webView.load(URLRequest(url: URL(fileURLWithPath: "/mcp-fictional-unreadable.html")))
@@ -410,7 +411,7 @@ struct McpAppIsolationTests {
       """
     let host = try await McpAppHost.make(html: "<script>\(script)</script>", delegate: recorder)
     host.webView.configuration.userContentController.add(timing, name: "rtcProbe")
-    attach(host)
+    try await attach(host)
     defer {
       host.webView.configuration.userContentController.removeScriptMessageHandler(
         forName: "rtcProbe")
@@ -460,47 +461,36 @@ struct McpAppIsolationTests {
   }
 
   @Test func forgedEventsAndStaleSessionsNeverDeliver() async throws {
-    let previousRecorder = McpEnvelopeRecorder()
-    let previous = try await McpAppHost.make(
-      html: "<script>\(Self.sessionScript)</script>", delegate: previousRecorder)
-    attach(previous)
-    try await waitUntil { previousRecorder.deliveries.count == 1 }
-    let stale = try #require(previousRecorder.deliveries.first)
-    let oldNonce = try #require(stale["sessionNonce"] as? String)
-    let oldGeneration = try #require(stale["sessionGeneration"] as? String)
-    previous.close()
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
-      html: appHtml(
-        probe: """
-          parent.postMessage({...session,nonce:'wrong-nonce',payload:{marker:'bad-nonce'}},'*');
-          parent.postMessage({...session,generation:'wrong-generation',payload:{marker:'bad-generation'}},'*');
-          parent.postMessage({...session,nonce:'\(oldNonce)',generation:'\(oldGeneration)',payload:{marker:'stale-session'}},'*');
-          deliver({marker:'valid-after-forgeries'});
-          """), delegate: recorder)
-    attach(host)
+      html: appHtml(probe: "deliver({marker:'valid-after-forgeries'});"), delegate: recorder)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
-    let ready = try #require(recorder.deliveries.first)
-    let nonce = try #require(ready["sessionNonce"] as? String)
-    let generation = try #require(ready["sessionGeneration"] as? String)
     _ = try await host.webView.callAsyncJavaScript(
       """
       const frame=document.querySelector('iframe');
-      const data={nonce,generation,payload:{marker:'forged-main-world'}};
-      // Exact source/origin/session forgery across content worlds must fail isTrusted.
+      const data={jsonrpc:'2.0',method:'test/probe',params:{marker:'forged-main-world'}};
       window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,origin:'null',data}));
       window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,origin:'https://wrong.example',data}));
-      // A browser-authenticated event from the shell is the wrong frame and non-null origin.
       window.postMessage(data,'*');
-      // The named native handler must not exist in the page world.
-      return typeof window.webkit?.messageHandlers?.mcpEnvelope;
-      """, arguments: ["nonce": nonce, "generation": generation], in: nil, contentWorld: .page)
+      """, arguments: [:], in: nil, contentWorld: .page)
     try await probe(host)
     try await waitUntil { recorder.deliveries.count >= 2 }
     try await Task.sleep(for: .milliseconds(200))
     #expect(recorder.deliveries.count == 2)
     #expect(recorder.deliveries.last?["marker"] as? String == "valid-after-forgeries")
+    let identity = host.debugTransportIdentity
+    let base: [String: Any] = [
+      "nonce": identity["nonce"]!, "generation": identity["generation"]!, "kind": "envelope",
+      "payload": ["jsonrpc": "2.0", "method": "test/probe", "params": ["marker": "stale"]],
+    ]
+    for key in ["nonce", "generation"] {
+      var stale = base
+      stale[key] = "previous-session"
+      #expect(try await postNativeTransport(host, body: stale) == "rejected")
+    }
+    #expect(recorder.deliveries.count == 2)
     #expect(!host.isRetired)
     let handler = try await host.webView.evaluateJavaScript(
       "typeof window.webkit?.messageHandlers?.mcpEnvelope")
@@ -511,17 +501,15 @@ struct McpAppIsolationTests {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
       html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
-    let ready = try #require(recorder.deliveries.first)
     _ = try await host.webView.callAsyncJavaScript(
       """
       const other=document.createElement('iframe');other.sandbox='allow-scripts';
-      other.srcdoc=`<script>parent.postMessage({nonce:'${nonce}',generation:'${generation}',payload:{marker:'wrong-frame'}},'*')</script>`;
+      other.srcdoc=`<script>parent.postMessage({jsonrpc:'2.0',method:'test/probe',params:{marker:'wrong-frame'}},'*')</script>`;
       document.body.append(other);
-      """, arguments: ["nonce": ready["sessionNonce"]!, "generation": ready["sessionGeneration"]!],
-      in: nil, contentWorld: .page)
+      """, arguments: [:], in: nil, contentWorld: .page)
     try await waitUntil { host.isRetired }
     #expect(recorder.deliveries.count == 1)
     #expect(host.retirementReason == "Navigation rejected")
@@ -531,7 +519,7 @@ struct McpAppIsolationTests {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
       html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     // Synthetic DOM load explicitly exercises the counter independently of navigation policy.
@@ -542,48 +530,57 @@ struct McpAppIsolationTests {
     #expect(recorder.deliveries.count == 1)
   }
 
-  @Test func oversizedMessagesRejectedInJavascriptAndNatively() async throws {
+  @Test(arguments: ["x", "/"])
+  func oversizedMessagesRejectedInJavascriptAndNatively(_ character: String) async throws {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
       html: appHtml(
         probe: """
-          deliver({marker:'oversized',text:'x'.repeat(\(McpAppBridgeListener.maximumEnvelopeBytes))});
+          deliver({marker:'oversized',text:'\(character)'.repeat(\(McpAppBridgeListener.maximumEnvelopeBytes))});
           deliver({marker:'after-oversized'});
+          deliver({marker:'large-valid',text:'\(character)'.repeat(\(McpAppBridgeListener.maximumEnvelopeBytes)-512)});
           """), delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     try await probe(host)
-    try await waitUntil { recorder.deliveries.count >= 2 }
-    #expect(recorder.deliveries.count == 2)
-    #expect(recorder.deliveries.last?["marker"] as? String == "after-oversized")
-    let ready = try #require(recorder.deliveries.first)
+    try await waitUntil { recorder.deliveries.count >= 3 }
+    #expect(recorder.deliveries.count == 3)
+    #expect(recorder.deliveries[1]["marker"] as? String == "after-oversized")
+    #expect(recorder.deliveries[2]["marker"] as? String == "large-valid")
+    let identity = host.debugTransportIdentity
     let base: [String: Any] = [
-      "nonce": ready["sessionNonce"]!, "generation": ready["sessionGeneration"]!,
-      "kind": "envelope", "payload": ["text": ""],
+      "nonce": identity["nonce"]!, "generation": identity["generation"]!, "kind": "envelope",
+      "payload": ["jsonrpc": "2.0", "method": "test/probe", "params": ["text": ""]],
     ]
-    let overhead = try JSONSerialization.data(withJSONObject: base).count
+    let options: JSONSerialization.WritingOptions = [.withoutEscapingSlashes]
+    let overhead = try JSONSerialization.data(withJSONObject: base, options: options).count
     var exact = base
     exact["payload"] = [
-      "text": String(repeating: "x", count: McpAppBridgeListener.maximumEnvelopeBytes - overhead)
+      "jsonrpc": "2.0", "method": "test/probe",
+      "params": [
+        "text": String(
+          repeating: character, count: McpAppBridgeListener.maximumEnvelopeBytes - overhead)
+      ],
     ]
     #expect(
-      try JSONSerialization.data(withJSONObject: exact).count
+      try JSONSerialization.data(withJSONObject: exact, options: options).count
         == McpAppBridgeListener.maximumEnvelopeBytes)
-    let accepted = try await postNativeTransport(host, body: exact)
-    #expect(accepted == "accepted")
-    #expect(recorder.deliveries.count == 3)
+    #expect(try await postNativeTransport(host, body: exact) == "accepted")
+    #expect(recorder.deliveries.count == 4)
     exact["payload"] = [
-      "text": String(
-        repeating: "x", count: McpAppBridgeListener.maximumEnvelopeBytes - overhead + 1)
+      "jsonrpc": "2.0", "method": "test/probe",
+      "params": [
+        "text": String(
+          repeating: character, count: McpAppBridgeListener.maximumEnvelopeBytes - overhead + 1)
+      ],
     ]
-    let rejected = try await postNativeTransport(host, body: exact)
-    #expect(rejected == "rejected")
-    #expect(recorder.deliveries.count == 3)
+    #expect(try await postNativeTransport(host, body: exact) == "rejected")
+    #expect(recorder.deliveries.count == 4)
     var stale = base
-    stale["generation"] = "retired-generation"
+    stale["generation"] = "previous-generation"
     #expect(try await postNativeTransport(host, body: stale) == "rejected")
-    #expect(recorder.deliveries.count == 3)
+    #expect(recorder.deliveries.count == 4)
   }
 
   private func postNativeTransport(_ host: McpAppHost, body: [String: Any]) async throws -> String?
@@ -600,7 +597,7 @@ struct McpAppIsolationTests {
     let firstRecorder = McpEnvelopeRecorder()
     let first = try await McpAppHost.make(
       html: "<script>\(Self.sessionScript)</script>", delegate: firstRecorder)
-    attach(first)
+    try await attach(first)
     defer { first.close() }
     try await waitUntil { firstRecorder.deliveries.count == 1 }
     let cookie = try #require(
@@ -642,7 +639,7 @@ struct McpAppIsolationTests {
           } catch {}
           setTimeout(()=>deliver({marker:'storage-probed'}),300);
           """), delegate: recorder)
-    attach(second)
+    try await attach(second)
     defer { second.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     #expect(
@@ -694,7 +691,7 @@ struct McpAppIsolationTests {
           """), delegate: recorder)
     weak let weakHost = host
     let retained = try #require(host?.webView)
-    attach(try #require(host))
+    try await attach(try #require(host))
     try await waitUntil { recorder.deliveries.count == 1 }
     try await probe(try #require(host))
     try await waitUntil { recorder.deliveries.count == 2 }
@@ -721,7 +718,7 @@ struct McpAppIsolationTests {
       html:
         "<a href='https://fixture.example/link'><img src='data:image/svg+xml,%3Csvg/%3E'>link</a><script>\(Self.sessionScript)</script>",
       delegate: recorder)
-    attach(host)
+    try await attach(host)
     defer { host.close() }
     try await waitUntil { recorder.deliveries.count == 1 }
     #expect(!host.webView.allowsLinkPreview)
@@ -737,6 +734,37 @@ struct McpAppIsolationTests {
         + view.subviews.reduce(0) { $0 + dragCount($1) }
     }
     #expect(dragCount(host.webView) == 0)
+  }
+  @Test func rawJsonRpcRoundTripKeepsSessionPrivate() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: """
+        <script>
+        \(Self.sessionScript)
+        let received=[];
+        addEventListener('message',event=>{
+          if(event.source!==parent)return;
+          received.push(event.data);
+          if(event.data?.id===7)parent.postMessage({jsonrpc:'2.0',id:7,result:{reply:event.data,received}},'*');
+        });
+        </script>
+        """, delegate: recorder)
+    try await attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    #expect(recorder.rawDeliveries.first?["jsonrpc"] as? String == "2.0")
+    #expect(recorder.rawDeliveries.first?["method"] as? String == "test/probe")
+    try await host.sendEnvelope(
+      Data(#"{"jsonrpc":"2.0","id":7,"result":{"value":"fictional-reply"}}"#.utf8))
+    try await waitUntil { recorder.rawDeliveries.count == 2 }
+    let result = try #require(recorder.rawDeliveries.last?["result"] as? [String: Any])
+    let received = try #require(result["received"] as? [[String: Any]])
+    #expect(received.count == 2)
+    #expect(
+      received.allSatisfy {
+        $0["jsonrpc"] as? String == "2.0" && $0["nonce"] == nil && $0["generation"] == nil
+      })
+    #expect(result["reply"] as? [String: Any] != nil)
   }
 
 }
