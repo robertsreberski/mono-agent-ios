@@ -56,9 +56,11 @@ extension ConsoleStore {
   /// Explicit user action only. A prepared reference is durable before POST begins.
   public func submit(
     sourceID: String, threadID: String, input: ApiStartSubmission,
-    draftContext: DraftKey? = nil, draftBinding: SubmissionDraftBinding = .current
+    draftContext: DraftKey? = nil, draftBinding: SubmissionDraftBinding = .current,
+    attemptID: String? = nil
   ) async throws -> WebSubmissionReceipt {
-    if let known = knownSubmissionReceipts[input.submissionId], known.threadId == threadID {
+    let identity = attemptID ?? ""
+    if let known = knownSubmissionReceipts[identity], known.threadId == threadID {
       if known.outcome == "rejected" { throw SubmissionError.rejected(known.reason ?? "rejected") }
       return known
     }
@@ -89,17 +91,17 @@ extension ConsoleStore {
     let pending =
       journal.pending.last {
         $0.threadID == threadID && $0.payloadDigest == digest
-          && (input.submissionId.isEmpty || $0.submissionID == input.submissionId)
+          && (identity.isEmpty || $0.submissionID == identity)
           && !completedSubmissions.contains($0.submissionID)
       }
       ?? retryIdentities[threadID].flatMap {
         $0.payloadDigest == digest
-          && (input.submissionId.isEmpty || $0.submissionID == input.submissionId)
+          && (identity.isEmpty || $0.submissionID == identity)
           ? $0 : nil
       }
     payload.submissionId =
-      input.submissionId.isEmpty
-      ? pending?.submissionID ?? UUID().uuidString.lowercased() : input.submissionId
+      identity.isEmpty
+      ? pending?.submissionID ?? UUID().uuidString.lowercased() : identity
     let now = await clock.wallNow()
     guard epoch == generation, !backgrounded else { throw CancellationError() }
     let isLocalPreparation =

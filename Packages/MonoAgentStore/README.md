@@ -36,7 +36,9 @@ Screens must not instantiate API clients or submit directly.
   `stagedAttachments`, `uploadProgress`, `discardStagedUpload(_:)`, `discardStagedUploads`,
   `createConversation(_:retainingAttachments:)`, and `submit`.
   `prepareSubmission` allocates a frozen attempt identity (or reuses matching pending recovery).
-  Keep that input through explicit retries, even after receipt recovery retires the journal.
+  Keep that input through explicit retries and pass its ID as `submit(attemptID:)`, even after
+  receipt recovery retires the journal. Legacy callers omit attemptID and retain digest-based
+  Store allocation (their wire input ID is intentionally ignored).
   `submit(draftBinding:)` accepts an exact authored key/version or `.none` for quick replies;
   retries never rebind a pending identity to a newer draft. Known receipts are held in a bounded
   memory cache, so retry after recovery resolves without another POST; the frozen UUID still

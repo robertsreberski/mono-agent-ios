@@ -13,7 +13,8 @@ import Testing
     await h.transport.set(submissionPath, [.failure])
     do {
       _ = try await h.store.submit(
-        sourceID: "agent-example", threadID: "thread-example", input: input)
+        sourceID: "agent-example", threadID: "thread-example", input: input,
+        attemptID: input.submissionId)
       Issue.record("Lost response must be uncertain")
     } catch {}
     let reference = try #require(h.store.pendingSubmissions.first)
@@ -23,7 +24,8 @@ import Testing
     await h.store.recoverSubmissions()
     #expect(h.store.pendingSubmissions.isEmpty)
     let receipt = try await h.store.submit(
-      sourceID: "agent-example", threadID: "thread-example", input: input)
+      sourceID: "agent-example", threadID: "thread-example", input: input,
+      attemptID: input.submissionId)
     #expect(receipt.submissionId == input.submissionId)
     #expect(await h.transport.count(submissionPath, method: "POST") == 1)
     await h.store.stop()
@@ -43,7 +45,8 @@ import Testing
     await h.transport.set(submissionPath, [.failure, .paused])
     do {
       _ = try await h.store.submit(
-        sourceID: "agent-example", threadID: "thread-example", input: input, draftBinding: binding)
+        sourceID: "agent-example", threadID: "thread-example", input: input, draftBinding: binding,
+        attemptID: input.submissionId)
     } catch {}
     let reference = try #require(h.store.pendingSubmissions.first)
     #expect(reference.draftVersion == (quickReply ? nil : version))
@@ -53,7 +56,8 @@ import Testing
     }
     let retry = Task {
       try await h.store.submit(
-        sourceID: "agent-example", threadID: "thread-example", input: input, draftBinding: binding)
+        sourceID: "agent-example", threadID: "thread-example", input: input, draftBinding: binding,
+        attemptID: input.submissionId)
     }
     await eventually { await h.transport.pauseCount() == 1 }
     #expect(h.store.pendingSubmissions.first?.draftVersion == reference.draftVersion)

@@ -195,7 +195,7 @@ final class ComposerController {
       guard let target = attempt.threadID else { return }
       let receipt = try await store.submit(
         sourceID: sourceID, threadID: target, input: attempt.input,
-        draftBinding: attempt.draftBinding ?? .none)
+        draftBinding: attempt.draftBinding ?? .none, attemptID: attempt.input.submissionId)
       phase = ComposerRules.phase(after: receipt)
       admitted(attempt)
     } catch {
