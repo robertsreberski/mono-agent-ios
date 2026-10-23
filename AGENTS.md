@@ -4,6 +4,9 @@
 
 - `App/Composition`: dependency construction and single-scene lifecycle. `App/Connection`:
   saved-console UI. `App/Navigation`: ID-based compact stack / regular split-view routes.
+  `App/Dashboard`: the console dashboard and conversation destination. Views read only from
+  `ConsoleStore` and call its commands; pure decisions live in `DashboardModel`/`DashboardRows`
+  with unit tests. `markVisible` follows `TranscriptVisibility` (on screen, active, selected).
 - `Packages/MonoAgentKit`: complete typed API v1 client, SSE, deltas, uploads and capability
   access. Extend ConsoleAPI/RequestBuilder; do not add a second bootstrap/URL client.
 - `Packages/MonoAgentKit/Sources/MonoAgentTestSupport`: fictional per-instance scripts and

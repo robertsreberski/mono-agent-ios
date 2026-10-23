@@ -41,3 +41,13 @@ import Testing
     #expect(configuration.scenario?.rawValue == "console-online")
   }
 #endif
+
+#if DEBUG
+  @Test(arguments: StoreScenario.allCases)
+  func everyStoreScenarioLaunchesTheConnectedFixture(_ scenario: StoreScenario) throws {
+    let configuration = try LaunchConfiguration(arguments: ["--scenario", scenario.rawValue])
+    #expect(configuration.storeScenario == scenario)
+    #expect(configuration.catalog == nil)
+    #expect(configuration.fixtureTheme == "evergreen")
+  }
+#endif

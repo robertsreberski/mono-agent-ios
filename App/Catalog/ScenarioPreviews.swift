@@ -17,3 +17,15 @@
     ConsoleShell(model: model).task { await model.start() }
   }
 #endif
+
+#if DEBUG
+  #Preview("Synthetic fixture — dashboard") {
+    let model = AppModel(scenario: .consoleOnline, storeScenario: .dashboardPopulated)
+    ConsoleShell(model: model).task { await model.start() }
+  }
+
+  #Preview("Synthetic fixture — offline dashboard, dark") {
+    let model = AppModel(scenario: .consoleOnline, storeScenario: .dashboardOffline)
+    ConsoleShell(model: model).task { await model.start() }.preferredColorScheme(.dark)
+  }
+#endif

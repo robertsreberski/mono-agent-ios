@@ -1,9 +1,9 @@
 # Mono Agent for iPhone and iPad
 
-A native SwiftUI client for the mono-agent web console. This foundation includes saved
-console connections, adaptive navigation an offline-capable observable console store and a Liquid Glass design system
-([MonoAgentDesign](Packages/MonoAgentDesign/README.md)). It does not include agent or
-conversation features yet. The connected console's theme (evergreen, ocean, plum or
+A native SwiftUI client for the mono-agent web console. It includes saved console
+connections, an offline-capable observable console store, a Liquid Glass design system
+([MonoAgentDesign](Packages/MonoAgentDesign/README.md)) and the console dashboard. The
+conversation transcript and composer are placeholders until their features land. The connected console's theme (evergreen, ocean, plum or
 terracotta) styles the app; disconnected or unknown themes use evergreen.
 GPL-3.0-only; see [LICENSE](LICENSE).
 
@@ -60,6 +60,29 @@ does not prove permission denial; check Settings, server reachability and the ad
 HTTP 421 means the hostname may need `MONO_AGENT_WEB_ALLOWED_HOSTS` on the console host;
 using its LAN or Tailscale IP address or Tailscale Serve URL is another option.
 
+## Dashboard
+
+A console with a saved identity opens on its dashboard (offline from the device cache until
+**Connect**/**Retry** or pull to refresh). On iPad and other regular widths it is the sidebar
+of a split view and conversations open in the detail column; on iPhone and compact widths it
+is the root of a stack and conversations are pushed. Selection survives rotation, resizing
+and backgrounding, and is restored per console after the system discards the scene.
+
+- **Agents**: pinned agents first, presence, running (bolt) or unread counts, offline agents
+  folded behind "N offline".
+- **Running**: the fleet grouped by agent (two cards each, then "+N more"); without a fresh
+  live listing the section says *last known* and rows show an unconfirmed marker.
+- **Projects** (collapsible; the project page is a placeholder), **Recent** for the selected
+  agent with unread, running, tags and project chips, and **Load older conversations**.
+- **Search** (two or more characters, debounced) replaces the sections with highlighted hits.
+- **Archived** and the **data mode** (Auto/Lean/Full) are in the bottom toolbar; the
+  **Consoles** button opens saved-console management; **New conversation** opens the
+  composer placeholder. Offline, refresh, storage and insecure-HTTP banners stay visible.
+
+Opening a conversation shows its title, agent and running state with a labelled transcript
+placeholder; it is marked read only while that destination is on screen in an active scene.
+Archive, pin, tag and project edits are not available yet.
+
 ## Saved consoles and local data
 
 Add, select, edit, remove and retry several saved consoles. Profiles are atomic versioned
@@ -96,8 +119,11 @@ script exhaustion fails closed. Launch with `--scenario connection-empty`,
 `design-catalog-reduce-transparency`. It always uses isolated empty fixture storage.
 Unknown scenarios fail explicitly. Reset without a scenario selects
 an isolated empty fixture, never deletes real saved consoles. DEBUG Store preparation
-scenarios are `store-offline`, `store-streaming`, `store-unread`, `store-uncertain`; these
-exercise state behind the existing shell, not new feature UI. Release ignores these flags.
+scenarios are `store-offline`, `store-streaming`, `store-unread`, `store-uncertain`.
+Dashboard scenarios use synthetic agents and conversations at a fixed reference time:
+`dashboard-populated`, `dashboard-empty`, `dashboard-offline`, `dashboard-search` and
+`conversation-placeholder`; `--fixture-theme ocean|plum|terracotta` changes the synthetic
+console theme. Release ignores these flags.
 
 ```sh
 swift test --package-path Packages/MonoAgentKit
@@ -113,14 +139,17 @@ iPad Pro 13-inch (M5); if those names are absent, it logs a fallback to the firs
 available device in that family. CI uses the same selector. Or pass `--iphone "$IPHONE_UDID" --ipad "$IPAD_UDID"`.
 It runs the shared app test plan (app/Design Swift Testing and XCUI scenarios),
 waits for readiness identifiers and a non-blank rendered frame, and exports the labeled
-synthetic PNGs listed in `Tools/screenshot-matrix.json` for each device. That is 19 per
-device (38 in total):
+synthetic PNGs listed in `Tools/screenshot-matrix.json` for each device. That is 31 per
+device (62 in total):
 
-- the 12 connection screens (three states × two appearances × two devices);
+- the 12 connection screens (three states × two appearances × two devices; a connected
+  console now shows its dashboard);
 - the failed connection at Accessibility XL text;
 - the design catalog per theme in light and dark;
 - the catalog at Accessibility XL text;
-- the catalog with the Reduce Transparency fallback.
+- the catalog with the Reduce Transparency fallback;
+- the five dashboard scenarios in light and dark, the populated dashboard in the plum
+  theme (dark) and at Accessibility XL text.
 
 `Artifacts/Screenshots/index.html` and `index.json` name the device, runtime, scenario,
 appearance, theme, text size and transparency. Both image dimensions are ≤ 2000 px.

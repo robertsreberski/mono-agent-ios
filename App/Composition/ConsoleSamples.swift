@@ -10,9 +10,38 @@
     case streaming = "store-streaming"
     case unread = "store-unread"
     case uncertain = "store-uncertain"
+    case dashboardPopulated = "dashboard-populated"
+    case dashboardEmpty = "dashboard-empty"
+    case dashboardOffline = "dashboard-offline"
+    case dashboardSearch = "dashboard-search"
+    case conversationPlaceholder = "conversation-placeholder"
+
+    /// Dashboard scenarios use the richer `DashboardFixture`; store scenarios keep the golden.
+    var isDashboard: Bool {
+      switch self {
+      case .offline, .streaming, .unread, .uncertain: false
+      default: true
+      }
+    }
+
+    /// No console answers: every read fails and the stream never becomes ready.
+    var isOffline: Bool { self == .offline || self == .dashboardOffline }
+
+    /// Fixture launch state the dashboard applies once the Store is ready.
+    var launchQuery: String? { self == .dashboardSearch ? DashboardFixture.searchQuery : nil }
+    var launchThreadID: String? {
+      self == .conversationPlaceholder ? DashboardFixture.openThreadID : nil
+    }
 
     /// Scenario.bootstrap is the fictional composition derived from the pinned C1 golden.
-    @MainActor func prepare(_ store: ConsoleStore, repository: any ConsoleRepository) async throws {
+    @MainActor func prepare(
+      _ store: ConsoleStore, repository: any ConsoleRepository, theme: String = "evergreen"
+    ) async throws {
+      if isDashboard {
+        try await DashboardFixture.prepare(
+          store, repository: repository, empty: self == .dashboardEmpty, theme: theme)
+        return
+      }
       let bootstrap = try JSONDecoder().decode(ApiBootstrap.self, from: Scenario.bootstrap.data)
       var cache = CacheRecord()
       cache.revision = 1
@@ -50,9 +79,23 @@
 
   actor ScenarioConsoleTransport: HTTPTransport {
     let scenario: StoreScenario?
-    init(_ scenario: StoreScenario?) { self.scenario = scenario }
+    let theme: String
+    init(_ scenario: StoreScenario?, theme: String = "evergreen") {
+      self.scenario = scenario
+      self.theme = theme
+    }
     func send(_ request: URLRequest) throws -> HTTPResponse {
-      guard scenario != .offline else { throw URLError(.notConnectedToInternet) }
+      guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
+      if let scenario, scenario.isDashboard {
+        guard
+          let response = try DashboardFixture.response(
+            for: request, empty: scenario == .dashboardEmpty, theme: theme)
+        else { throw URLError(.resourceUnavailable) }
+        return response
+      }
+      if let response = try Self.goldenListing(request, streaming: scenario == .streaming) {
+        return response
+      }
       if request.url?.path == "/api/v1/bootstrap" {
         var value = try JSONDecoder().decode(ApiBootstrap.self, from: Scenario.bootstrap.data)
         if scenario == .streaming { value.threads[0].runState.status = "running" }
@@ -71,6 +114,38 @@
       // Exhaustion never falls through to a live session, including receipt recovery.
       throw URLError(.resourceUnavailable)
     }
+
+    /// The golden's own listings for reconciliation reads, so the connected shell shows no
+    /// spurious refresh failure. Detail and bootstrap keep their scenario-specific answers.
+    private static func goldenListing(_ request: URLRequest, streaming: Bool) throws
+      -> HTTPResponse?
+    {
+      var golden = try JSONDecoder().decode(ApiBootstrap.self, from: Scenario.bootstrap.data)
+      if streaming { golden.threads[0].runState.status = "running" }
+      func encoded(_ value: JSONValue) throws -> HTTPResponse {
+        HTTPResponse(data: try JSONEncoder().encode(value))
+      }
+      func json<T: Encodable>(_ value: T) throws -> JSONValue {
+        try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
+      }
+      switch request.url?.path {
+      case "/api/v1/threads":
+        let archived = request.url?.query?.contains("archived=true") == true
+        return try encoded(
+          .object([
+            "threads": try json(archived ? [] : golden.threads), "nextCursor": .null,
+          ]))
+      case "/api/v1/threads/active":
+        return try encoded(
+          .object([
+            "threads": .array([]), "total": .number(0), "truncated": .bool(false),
+            "runningCounts": .object([:]),
+          ]))
+      case "/api/v1/tags": return try encoded(.object(["tags": try json(golden.tags)]))
+      case "/api/v1/projects": return try encoded(.object(["projects": try json(golden.projects)]))
+      default: return nil
+      }
+    }
   }
   actor ScenarioEventSource: ConsoleEventSource {
     let scenario: StoreScenario?
@@ -80,7 +155,7 @@
       continuation?.finish()
       let pair = AsyncThrowingStream<StreamUpdate, any Error>.makeStream()
       continuation = pair.continuation
-      if scenario != .offline {
+      if scenario?.isOffline != true {
         pair.continuation.yield(.connecting(generation: 1, gap: .initial))
         if let ready = try? JSONDecoder().decode(
           ApiEvent.self,
