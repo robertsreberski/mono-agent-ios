@@ -11,6 +11,7 @@ final class McpAppShellSchemeHandler: NSObject, WKURLSchemeHandler {
   static let contentSecurityPolicy = [
     "script-src 'unsafe-inline'", "form-action 'none'", "object-src 'none'",
     "worker-src 'none'", "manifest-src 'none'", "navigate-to 'none'", "frame-ancestors 'self'",
+    "webrtc 'block'",
   ].joined(separator: "; ")
 
   // Layout and metadata from MCP_APP_PROXY_DOCUMENT. No main-world executable code.

@@ -9,7 +9,7 @@ struct McpSecureDocumentTests {
   // Web mcp-app-document.ts:24–41,50–52; mcp-app-proxy.test.ts:259–282.
   @Test func canonicalNoGrantsGolden() throws {
     let expected =
-      "<!doctype html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; navigate-to 'none'\"><meta name=\"referrer\" content=\"no-referrer\"></head><p>producer contract</p>"
+      "<!doctype html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; navigate-to 'none'; webrtc 'block'\"><meta name=\"referrer\" content=\"no-referrer\"></head><p>producer contract</p>"
     #expect(try McpSecureDocument(html: "<p>producer contract</p>").html == expected)
     #expect(try McpSecureDocument(validatingNoGrants: expected).html == expected)
   }
@@ -22,7 +22,7 @@ struct McpSecureDocumentTests {
       baseUriDomains: [origin])
     #expect(
       McpSecureDocument.contentSecurityPolicy(grants)
-        == "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' http://127.0.0.1:6060; img-src data: blob: http://127.0.0.1:6060; font-src data: http://127.0.0.1:6060; media-src blob: http://127.0.0.1:6060; connect-src http://127.0.0.1:6060; frame-src http://127.0.0.1:6060; base-uri http://127.0.0.1:6060; form-action 'none'; object-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; navigate-to 'none'"
+        == "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' http://127.0.0.1:6060; img-src data: blob: http://127.0.0.1:6060; font-src data: http://127.0.0.1:6060; media-src blob: http://127.0.0.1:6060; connect-src http://127.0.0.1:6060; frame-src http://127.0.0.1:6060; base-uri http://127.0.0.1:6060; form-action 'none'; object-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; navigate-to 'none'; webrtc 'block'"
     )
     let secured = try McpSecureDocument(html: "<p>producer contract</p>", grants: grants)
     #expect(throws: McpSecureDocument.Rejection.self) {

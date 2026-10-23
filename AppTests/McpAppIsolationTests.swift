@@ -338,6 +338,9 @@ struct McpAppIsolationTests {
       html: appHtml(
         probe: """
           window.rtcCanaries=[];
+          document.addEventListener('securitypolicyviolation', event => {
+            if(event.isTrusted) deliver({marker:'rtc-csp',directive:event.effectiveDirective,policy:event.originalPolicy});
+          });
           for (const port of [\(ports)]) {
             const rtc = new RTCPeerConnection({iceServers:[
               {urls:`stun:127.0.0.1:${port}`},
@@ -359,6 +362,9 @@ struct McpAppIsolationTests {
     try await Task.sleep(for: .seconds(4))
     print(
       "MCP WebRTC ESCAPE console=\(console.inboundConnections) connections/\(console.datagrams) datagrams/\(console.nonHttpBytes) nonHTTP bytes; evil=\(evil.inboundConnections)/\(evil.datagrams)/\(evil.nonHttpBytes)"
+    )
+    print(
+      "MCP WebRTC policy events: \(recorder.deliveries.filter { $0["marker"] as? String == "rtc-csp" })"
     )
     // D4 residual risk: the public SDK exposes no WebRTC-disable preference. Keep the unmet
     // zero-network invariant visible as a known issue, NEVER a successful isolation proof.

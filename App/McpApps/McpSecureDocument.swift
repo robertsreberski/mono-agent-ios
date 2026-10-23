@@ -33,7 +33,7 @@ struct McpSecureDocument: Sendable {
       "frame-src " + sources(grants.frameDomains),
       "base-uri " + sources(grants.baseUriDomains),
       "form-action 'none'", "object-src 'none'", "child-src 'none'",
-      "worker-src 'none'", "manifest-src 'none'", "navigate-to 'none'",
+      "worker-src 'none'", "manifest-src 'none'", "navigate-to 'none'", "webrtc 'block'",
     ].joined(separator: "; ")
   }
 
