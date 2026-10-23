@@ -43,6 +43,29 @@ struct McpAppIsolationTests {
     scene?.windows.first?.addSubview(host.webView)
   }
 
+  @Test func customSchemeHeaderCspIsEnforced() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { !recorder.deliveries.isEmpty || host.isRetired }
+    let observed = try await host.webView.callAsyncJavaScript(
+      """
+      return await new Promise(resolve => {
+        document.addEventListener("securitypolicyviolation", event => {
+          if (event.isTrusted && event.effectiveDirective === "object-src") resolve(event.originalPolicy);
+        }, {once: true});
+        const object = document.createElement("object");
+        object.data = "data:text/html,header-probe";
+        document.body.append(object);
+        setTimeout(() => resolve("NO_HEADER_CSP_VIOLATION"), 1000);
+      });
+      """, arguments: [:], in: nil, contentWorld: .page)
+    print("MCP header CSP observation: \(observed ?? "nil")")
+    #expect(observed as? String == McpAppShellSchemeHandler.contentSecurityPolicy)
+  }
+
   @Test func initialSrcdocAndIsolatedBridge() async throws {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(
@@ -58,4 +81,185 @@ struct McpAppIsolationTests {
     #expect(recorder.deliveries.count == 1)
     #expect(recorder.deliveries.first?["marker"] as? String == "ready")
   }
+
+  private func appHtml(probe: String) -> String {
+    """
+    <script>
+    \(Self.sessionScript)
+    addEventListener("message", event => {
+      if (event.source === parent && event.data?.type === "probe") {
+        \(probe)
+      }
+    });
+    </script>
+    """
+  }
+
+  private func probe(_ host: McpAppHost) async throws {
+    _ = try await host.webView.evaluateJavaScript(
+      "document.querySelector('iframe').contentWindow.postMessage({type:'probe'}, '*')")
+  }
+
+  private func sink() async throws -> McpLoopbackSink {
+    let sink = try McpLoopbackSink()
+    try await waitUntil { sink.ready }
+    try sink.startUDP()
+    try await waitUntil { sink.udpReady }
+    return sink
+  }
+
+  @Test func networkCanariesRemainUntouched() async throws {
+    let console = try await sink()
+    let evil = try await sink()
+    defer {
+      console.stop()
+      evil.stop()
+    }
+    let recorder = McpEnvelopeRecorder()
+    let ports = [console.port, evil.port].map(String.init).joined(separator: ",")
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          for (const port of [\(ports)]) {
+            const base = `http://127.0.0.1:${port}`;
+            const attempt = fn => { try { fn(); } catch {} };
+            attempt(() => fetch(base + '/fetch').catch(() => {}));
+            attempt(() => { const x = new XMLHttpRequest(); x.open('GET', base + '/xhr'); x.send(); });
+            attempt(() => new WebSocket(`ws://127.0.0.1:${port}/socket`));
+            attempt(() => navigator.sendBeacon(base + '/beacon', 'canary'));
+            attempt(() => { const img = new Image(); img.src = base + '/img'; document.body.append(img); });
+            attempt(() => {
+              const style = document.createElement('style');
+              style.textContent = `body{background-image:url(${base}/css)}@font-face{font-family:canary;src:url(${base}/font)}p{font-family:canary}`;
+              document.head.append(style); document.body.append(document.createElement('p'));
+            });
+            for (const tag of ['audio','video']) attempt(() => {
+              const media = document.createElement(tag); media.src = base + '/' + tag;
+              media.preload = 'auto'; document.body.append(media); media.load();
+            });
+            attempt(() => {
+              const form = document.createElement('form'); form.action = base + '/form';
+              document.body.append(form); form.submit();
+            });
+            for (const rel of ['prefetch','preconnect','dns-prefetch']) attempt(() => {
+              const link = document.createElement('link'); link.rel = rel;
+              link.href = base + '/' + rel; document.head.append(link);
+            });
+            attempt(() => {
+              const rtc = new RTCPeerConnection({iceServers:[
+                {urls:`stun:127.0.0.1:${port}`},
+                {urls:`turn:127.0.0.1:${port}?transport=tcp`,username:'canary',credential:'fictional'}
+              ]});
+              window.rtcCanaries = [...(window.rtcCanaries || []), rtc];
+              rtc.createDataChannel('canary');
+              rtc.createOffer().then(offer => rtc.setLocalDescription(offer)).catch(() => {});
+            });
+          }
+          deliver({marker:'attempted-network'});
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    try await probe(host)
+    try await waitUntil { recorder.deliveries.count == 2 }
+    // A bounded observation window for asynchronous prefetch and ICE gathering, not a readiness sleep.
+    try await Task.sleep(for: .seconds(4))
+    print(
+      "MCP sink counts console=\(console.inboundConnections)/\(console.requests)/\(console.datagrams) evil=\(evil.inboundConnections)/\(evil.requests)/\(evil.datagrams)"
+    )
+    #expect(console.inboundConnections == 0)
+    #expect(console.requests == 0)
+    #expect(console.datagrams == 0)
+    #expect(evil.inboundConnections == 0)
+    #expect(evil.requests == 0)
+    #expect(evil.datagrams == 0)
+    #expect(recorder.deliveries.last?["marker"] as? String == "attempted-network")
+    // Positive controls prove the sinks were listening, independently of JS-reported failures.
+    for sink in [console, evil] {
+      let (_, response) = try await URLSession.shared.data(
+        from: URL(string: sink.origin + "/control")!)
+      #expect((response as? HTTPURLResponse)?.statusCode == 200)
+      #expect(sink.inboundConnections > 0)
+      #expect(sink.requests > 0)
+    }
+  }
+
+  @Test(arguments: ["about:blank", "about:srcdoc", "data:", "blob:", "file:", "reload", "shell"])
+  func innerNavigationRetires(_ destination: String) async throws {
+    let command: String
+    switch destination {
+    case "data:": command = "location.href='data:text/html,<p>navigated</p>'"
+    case "blob:":
+      command =
+        "location.href=URL.createObjectURL(new Blob(['<p>navigated</p>'],{type:'text/html'}))"
+    case "file:": command = "location.href='file:///mcp-fictional-unreadable.html'"
+    case "reload": command = "location.reload()"
+    case "shell": command = "location.href='mono-mcp-host://shell/'"
+    default: command = "location.href='\(destination)'"
+    }
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          deliver({marker:'navigation-attempted'});
+          setTimeout(() => { \(command); }, 50);
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    try await probe(host)
+    try await waitUntil { host.isRetired }
+    print(
+      "MCP navigation \(destination): actions=\(host.navigationDecisions), responses=\(host.responseDecisions), retired=\(host.retirementReason ?? "none")"
+    )
+    #expect(host.isRetired)
+    #expect(host.webView.url == McpAppShellSchemeHandler.url)
+    #expect(recorder.deliveries.count == 2)
+  }
+
+  @Test func topNavigationAndWindowOpenCannotEscape() async throws {
+    let sink = try await sink()
+    defer { sink.stop() }
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          try { top.location.href='\(sink.origin)/top'; } catch {}
+          try { window.open('\(sink.origin)/window'); } catch {}
+          deliver({marker:'top-attempted'});
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    try await probe(host)
+    try await waitUntil { recorder.deliveries.count == 2 }
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(host.webView.url == McpAppShellSchemeHandler.url)
+    #expect(sink.inboundConnections == 0)
+    #expect(sink.requests == 0)
+  }
+
+  @Test func srcdocInheritsEnvelopeHeaderCsp() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          document.addEventListener('securitypolicyviolation', event => {
+            if (event.isTrusted && event.effectiveDirective === 'object-src') deliver({policy:event.originalPolicy});
+          });
+          const object = document.createElement('object'); object.data='data:text/html,inheritance-probe';
+          document.body.append(object);
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    try await probe(host)
+    try await waitUntil {
+      recorder.deliveries.contains {
+        $0["policy"] as? String == McpAppShellSchemeHandler.contentSecurityPolicy
+      }
+    }
+    #expect(!host.isRetired)
+  }
+
 }
