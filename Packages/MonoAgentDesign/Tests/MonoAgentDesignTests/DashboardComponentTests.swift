@@ -66,3 +66,21 @@ struct DashboardComponentTests {
     #expect(plain.accessibilityLabel == "Hello, now")
   }
 }
+
+@Suite("Composer components")
+struct ComposerComponentTests {
+  @Test func attachmentChipsSpeakTheirStateNotOnlyColour() {
+    #expect(
+      AttachmentChip.accessibilityLabel(name: "notes.txt", detail: "1 KB", phase: .ready)
+        == "notes.txt, 1 KB, attached")
+    #expect(
+      AttachmentChip.accessibilityLabel(name: "photo.png", detail: "", phase: .uploading(0.426))
+        == "photo.png, uploading, 43 percent")
+    #expect(
+      AttachmentChip.accessibilityLabel(name: "photo.png", detail: "", phase: .uploading(7))
+        == "photo.png, uploading, 100 percent")
+    #expect(
+      AttachmentChip.accessibilityLabel(name: "big.pdf", detail: "", phase: .failed)
+        == "big.pdf, upload failed")
+  }
+}
