@@ -172,7 +172,9 @@ public struct WebFlowLayout: Layout {
     let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
     let width = rows.map { $0.width }.max() ?? 0
     let height = rows.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(0, rows.count - 1))
-    return CGSize(width: proposal.width.map { min($0, width) } ?? width, height: height)
+    // Keep the measured wrapping width for placement. Shrinking to the widest row can
+    // introduce another wrap during placeSubviews and draw the next row over its sibling.
+    return CGSize(width: proposal.width ?? width, height: height)
   }
 
   public func placeSubviews(
@@ -322,6 +324,7 @@ public struct JobRowDisclosure<Glyph: View, Title: View, Meta: View, Content: Vi
         .contentShape(shape)
       }
       .buttonStyle(JobRowPressStyle())
+      .fixedSize(horizontal: false, vertical: true)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(accessibilityText)
       .accessibilityAddTraits(.isButton)
@@ -334,6 +337,7 @@ public struct JobRowDisclosure<Glyph: View, Title: View, Meta: View, Content: Vi
           .padding(.leading, compact ? 37 : 40)
           .padding(.trailing, compact ? 8 : 10)
           .padding(.bottom, 12)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
     .background {
