@@ -62,12 +62,12 @@ final class ScenarioTests: XCTestCase {
   func testConversationPlaceholderLight() {
     capture(
       "conversation-placeholder", "light",
-      expect: ["conversation-header", "conversation-run-state", "transcript-placeholder"])
+      expect: ["conversation-header", "conversation-run-state", "conversation-transcript"])
   }
   func testConversationPlaceholderDark() {
     capture(
       "conversation-placeholder", "dark",
-      expect: ["conversation-header", "conversation-run-state", "transcript-placeholder"])
+      expect: ["conversation-header", "conversation-run-state", "conversation-transcript"])
   }
 
   // Dashboard behaviour (no screenshots): sections, navigation, archive, consoles sheet.
@@ -97,7 +97,7 @@ final class ScenarioTests: XCTestCase {
     let app = launch("dashboard-populated")
     XCTAssertTrue(element(app, "running-row-t-atlas-launch").waitForExistence(timeout: 10))
     element(app, "running-row-t-atlas-launch").tap()
-    XCTAssertTrue(element(app, "transcript-placeholder").waitForExistence(timeout: 10))
+    XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
     XCTAssertTrue(element(app, "conversation-run-state").label.contains("Running"))
     returnToDashboard(app)
     element(app, "new-conversation").tap()
@@ -236,7 +236,7 @@ final class ScenarioTests: XCTestCase {
 }
 
 /// A structural guard, not a pixel snapshot: ignore system bars and reject a flat blank frame.
-private func screenshotHasContent(_ screenshot: XCUIScreenshot) -> Bool {
+func screenshotHasContent(_ screenshot: XCUIScreenshot) -> Bool {
   guard let image = screenshot.image.cgImage,
     let content = image.cropping(
       to: CGRect(

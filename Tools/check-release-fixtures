@@ -21,7 +21,8 @@ MARKERS = (b"ScriptedTransport", b"console.example.ts.net", b"DesignCatalog", b"
            b"DesignPreviewMatrix", b"StoreScenario", b"ScenarioConsoleTransport", b"ScenarioEventSource",
            b"store-offline", b"store-streaming", b"store-unread", b"store-uncertain",
            b"DashboardFixture", b"dashboard-populated", b"dashboard-empty", b"dashboard-offline",
-           b"dashboard-search", b"conversation-placeholder", b"fixture-theme")
+           b"dashboard-search", b"conversation-placeholder", b"fixture-theme",
+           b"TranscriptFixture", b"conversation-streaming", b"conversation-tools", b"conversation-long", b"conversation-markdown")
 images = [executable]
 debug_library = args.app / "MonoAgent.debug.dylib"
 if debug_library.is_file():

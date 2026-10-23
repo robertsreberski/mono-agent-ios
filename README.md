@@ -3,7 +3,7 @@
 A native SwiftUI client for the mono-agent web console. It includes saved console
 connections, an offline-capable observable console store, a Liquid Glass design system
 ([MonoAgentDesign](Packages/MonoAgentDesign/README.md)) and the console dashboard. The
-conversation transcript and composer are placeholders until their features land. The connected console's theme (evergreen, ocean, plum or
+conversation transcript includes live Markdown, reasoning and tool activity; the composer is still a placeholder. The connected console's theme (evergreen, ocean, plum or
 terracotta) styles the app; disconnected or unknown themes use evergreen.
 GPL-3.0-only; see [LICENSE](LICENSE).
 
@@ -12,7 +12,7 @@ GPL-3.0-only; see [LICENSE](LICENSE).
 - Xcode 27.1 or newer Xcode 27 with Swift 6.4+, iOS/iPadOS 27 deployment target.
 - Install Xcode first-launch components and an iOS 27+ simulator runtime to run UI tests.
 - Open `MonoAgent.xcodeproj`, choose the shared **MonoAgent** scheme, then an iPhone or iPad.
-  No package downloads or project generator are required.
+  SwiftPM resolves the pinned Markdown parser; no project generator is required.
 
 For a physical device with a free Apple Personal Team:
 
@@ -79,8 +79,13 @@ and backgrounding, and is restored per console after the system discards the sce
   **Consoles** button opens saved-console management; **New conversation** opens the
   composer placeholder. Offline, refresh, storage and insecure-HTTP banners stay visible.
 
-Opening a conversation shows its title, agent and running state with a labelled transcript
-placeholder; it is marked read only while that destination is on screen in an active scene.
+Opening a conversation shows its ordered transcript, current route, reasoning disclosures,
+clustered tool calls and run attribution. Full tool bodies load only on request. Markdown
+supports GFM tables/task lists, selectable code with Copy and external links; HTML is literal
+text. Oversized/complex input shows an explicitly bounded preview. Scrolling follows live
+writes only while already at the bottom; otherwise use **Jump to latest**. Older history loads
+at the top, preserving a message anchor. Cached truncation and stale history are labelled.
+It is marked read only while that destination is on screen in an active scene.
 Archive, pin, tag and project edits are not available yet.
 
 ## Saved consoles and local data
@@ -102,7 +107,7 @@ Remove a console to delete its profile and retained local data. Delete the app t
 submission references. Persistence failures are exposed by the Store, not hidden as success.
 
 Only **one window** is supported. Multiple scenes need a separate selected-thread stream
-and state design. No offline send queue, auth UI, transcript or embedded web content
+and state design. No offline send queue, auth UI or embedded web content
 is implemented in this foundation. Kit supplies typed API/SSE/upload primitives; the
 Store supplies ordered transcript projections, live sync, unread, drafts and GET-only
 submission recovery for later feature screens. Cached running turns require fresh summary
@@ -122,7 +127,9 @@ an isolated empty fixture, never deletes real saved consoles. DEBUG Store prepar
 scenarios are `store-offline`, `store-streaming`, `store-unread`, `store-uncertain`.
 Dashboard scenarios use synthetic agents and conversations at a fixed reference time:
 `dashboard-populated`, `dashboard-empty`, `dashboard-offline`, `dashboard-search` and
-`conversation-placeholder`; `--fixture-theme ocean|plum|terracotta` changes the synthetic
+`conversation-placeholder` (legacy alias for the transcript), `conversation-transcript`,
+`conversation-streaming`, `conversation-tools`, `conversation-long` (500 loaded messages plus
+40 older rows and large collapsed outputs), `conversation-markdown`; `--fixture-theme ocean|plum|terracotta` changes the synthetic
 console theme. Release ignores these flags.
 
 ```sh
@@ -139,8 +146,8 @@ iPad Pro 13-inch (M5); if those names are absent, it logs a fallback to the firs
 available device in that family. CI uses the same selector. Or pass `--iphone "$IPHONE_UDID" --ipad "$IPAD_UDID"`.
 It runs the shared app test plan (app/Design Swift Testing and XCUI scenarios),
 waits for readiness identifiers and a non-blank rendered frame, and exports the labeled
-synthetic PNGs listed in `Tools/screenshot-matrix.json` for each device. That is 31 per
-device (62 in total):
+synthetic PNGs listed in `Tools/screenshot-matrix.json` for each device. That is 43 per
+device (86 in total):
 
 - the 12 connection screens (three states × two appearances × two devices; a connected
   console now shows its dashboard);
@@ -149,7 +156,8 @@ device (62 in total):
 - the catalog at Accessibility XL text;
 - the catalog with the Reduce Transparency fallback;
 - the five dashboard scenarios in light and dark, the populated dashboard in the plum
-  theme (dark) and at Accessibility XL text.
+  theme (dark) and at Accessibility XL text;
+- five transcript scenarios in light/dark, plus Markdown in plum and at Accessibility XL.
 
 `Artifacts/Screenshots/index.html` and `index.json` name the device, runtime, scenario,
 appearance, theme, text size and transparency. Both image dimensions are ≤ 2000 px.
@@ -176,3 +184,23 @@ the later full-feature screenshot checkpoint remains after the composer feature.
 `./Tools/check-contract --locked` verifies the source-pinned API v1 artifacts, route ledger
 and golden coverage. See [Contracts](Contracts/README.md) and the
 [Kit API inventory](Packages/MonoAgentKit/README.md). No npm release is required for this pin.
+
+## Markdown dependency and notices
+
+`RichTextDocumentView` is app-owned SwiftUI rendering over **swift-markdown 0.7.3**
+(`7d9a5ce307528578dfa777d505496bd5f544ad94`, Apache-2.0 with Swift runtime exception).
+The resolved runtime graph contains **swift-cmark 0.9.0**
+(`08ddb528923cc1a6527e02b7a1aee9e516ca749a`, MIT with BSD-derived component notices).
+There are no other resolved packages. Both licenses are GPL-3.0 compatible. Full upstream
+licenses and NOTICE are retained in [ThirdPartyNotices](App/Resources/ThirdPartyNotices.txt),
+also bundled in the app. Package.resolved files lock both package and app graphs.
+
+The parser is off-main; input is capped at 65,536 UTF-8 bytes, long lines and excessive
+nesting/table widths fall back before parsing, and the value tree has node/depth/row limits.
+No HTML, images, embedded scripts or arbitrary URL schemes execute. Code display is limited
+to 16,384 UTF-8 bytes while Copy includes the entire supplied value. Deferred jobs/subagents,
+files/images/MCP/restart and ask/reply controls remain explicitly labelled for later features.
+
+Focused capture: `./Tools/screenshots --transcript-only` runs app/Design unit tests and the
+12 transcript XCUI captures on both device families, without removing existing matrix entries.
+The default screenshot command still captures the complete matrix (43 images per device).

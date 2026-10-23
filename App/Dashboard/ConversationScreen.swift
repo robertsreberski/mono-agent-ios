@@ -4,9 +4,7 @@ import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
 
-/// The conversation destination. The transcript and composer belong to later features; until
-/// then this shows the conversation's header (title, agent, running state) and a clearly
-/// labelled placeholder body. It owns the Store's selection and visible-transcript signal.
+/// Store-only conversation destination. Visibility remains owned by the route lifecycle.
 struct ConversationScreen: View {
   let model: AppModel
   let store: ConsoleStore
@@ -34,19 +32,26 @@ struct ConversationScreen: View {
   }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: DesignSpacing.lg) {
-        header
-        placeholder
+    VStack(spacing: 0) {
+      if let threadID, let state = store.conversations[threadID] {
+        ConversationTranscript(state: state, store: store) { header }
+      } else {
+        ScrollView {
+          VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+            header
+            placeholder
+          }
+          .padding(DesignSpacing.lg)
+          .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
+          .frame(maxWidth: .infinity)
+        }
       }
-      .padding(DesignSpacing.lg)
-      .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
-      .frame(maxWidth: .infinity)
     }
     .background(theme.palette.canvas.color)
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .navigationSubtitle(agent?.label ?? "Agent unavailable")
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier(
       model.isReady && store.hydrated ? "scenario-ready" : "conversation-loading"
     )
@@ -106,6 +111,16 @@ struct ConversationScreen: View {
         HStack(spacing: DesignSpacing.md) { facts }
         VStack(alignment: .leading, spacing: DesignSpacing.sm) { facts }
       }
+      if let thread {
+        let routeModel = thread.runModel ?? agent?.runSettings.effective.model
+        let effort = thread.runEffort ?? agent?.runSettings.effective.effort
+        RouteBadge(
+          model: routeModel ?? "Model not reported", effort: effort ?? "",
+          detail: "Current settings · " + TranscriptPresentation.route(routeModel, effort)
+            + (thread.runModel != nil || thread.runEffort != nil
+              ? " · conversation override" : " · inherited agent defaults")
+            + (agent == nil ? " · agent unavailable" : ""))
+      }
       if let thread, let project = DashboardModel.projectLabel(thread, projects: store.projects) {
         ProjectChip(project.name, color: LabelColor(serverValue: project.color))
       }
@@ -137,13 +152,13 @@ struct ConversationScreen: View {
       .accessibilityIdentifier("composer-placeholder")
     } else {
       EmptyStateView(
-        "Transcript coming soon", systemImage: "text.bubble",
+        "Loading conversation", systemImage: "text.bubble",
         message:
-          "Placeholder: messages, tool activity and replies arrive in a later update."
+          "Waiting for the conversation history. Pull to refresh if it remains unavailable."
       )
       .contentSurface()
       .accessibilityElement(children: .combine)
-      .accessibilityIdentifier("transcript-placeholder")
+      .accessibilityIdentifier("transcript-loading")
     }
   }
 }

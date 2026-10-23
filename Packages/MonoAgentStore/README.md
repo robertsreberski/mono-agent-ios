@@ -13,7 +13,8 @@ Screens must not instantiate API clients or submit directly.
 - Read `agents`, `buckets[BucketKey(sourceID:archived:)]`, `activeFleet`, `tags`, `projects`,
   `selectedBucket`, `selectedThreadID`, `selectedConversation`, and `isUnread(thread)`.
 - Observe the small `ConversationState`: ordered `messages`, grouped `turns`, `thread`,
-  `nextCursor`, `freshness`, `runningConfirmed` and `truncated`. Historical turn groups
+  `nextCursor`, `freshness`, `runningConfirmed` and `truncated`. Stable `orderedMessageIDs` / `messageStates` (`TranscriptMessageState.message` and `turnID`)
+  let lazy rows observe only their message. Historical turn groups
   derive from message IDs; only the current turn has a server run-state projection.
   Never infer confirmed running from a hydrated `runState.status`: use
   `isRunningConfirmed(threadID:)` for fleet/bucket rows and `runningConfirmed` for detail.
@@ -56,7 +57,8 @@ Overflow is a gap, not a request for a second subscription. Message repair is si
 with a trailing obligation. Generation/selection guards and invalidation clocks protect
 reads and 304s; deletion tombstones prevent late resurrection. Server transcript order,
 message sequences and summary revisions are authoritative. Legacy tombstones without a known
-origin are weak barriers and can also be repaired by a fresh authoritative equal-revision row. Full tool repairs survive
+origin are weak barriers and can also be repaired by a fresh authoritative equal-revision row. `repairToolOutput` returns Bool (discardable): true only when a matching held part changed;
+  false for a stale/no-op/failed repair, so a UI cannot claim a successful load. Full tool repairs survive
 preview writes only while server digests match.
 
 ## Persistence and recovery

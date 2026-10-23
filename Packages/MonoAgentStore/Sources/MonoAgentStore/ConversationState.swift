@@ -18,11 +18,20 @@ public final class ConversationState {
   public internal(set) var runningConfirmed = false
   public internal(set) var nextCursor: String?
   public internal(set) var truncated: Bool
+  /// Stable row identity; a token write invalidates only its own observed row.
+  public private(set) var orderedMessageIDs: [String] = []
+  public private(set) var messageStates: [String: TranscriptMessageState] = [:]
   public var turns: [ConversationTurn] {
-    var seen: Set<String> = []
-    return messages.compactMap(\.turnId).filter { seen.insert($0).inserted }.map { id in
+    var order: [String] = []
+    var groups: [String: [String]] = [:]
+    for message in messages {
+      guard let id = message.turnId else { continue }
+      if groups[id] == nil { order.append(id) }
+      groups[id, default: []].append(message.id)
+    }
+    return order.map { id in
       ConversationTurn(
-        id: id, messageIDs: messages.filter { $0.turnId == id }.map(\.id),
+        id: id, messageIDs: groups[id] ?? [],
         runState: thread.runState.id == id ? thread.runState : nil)
     }
   }
@@ -34,12 +43,43 @@ public final class ConversationState {
     messages = record.messages
     nextCursor = record.nextCursor
     truncated = record.truncated
+    publishRows()
+  }
+  private func publishRows() {
+    let ids = record.messages.map(\.id)
+    if orderedMessageIDs != ids {
+      orderedMessageIDs = ids
+      let retained = Set(ids)
+      messageStates = messageStates.filter { retained.contains($0.key) }
+    }
+    for message in record.messages {
+      if let row = messageStates[message.id] {
+        if row.message != message { row.message = message }
+        if row.turnID != message.turnId { row.turnID = message.turnId }
+      } else {
+        messageStates[message.id] = TranscriptMessageState(message)
+      }
+    }
   }
   func publish() {
-    thread = record.thread
+    if thread != record.thread { thread = record.thread }
     messages = record.messages
-    nextCursor = record.nextCursor
-    truncated = record.truncated
+    if nextCursor != record.nextCursor { nextCursor = record.nextCursor }
+    if truncated != record.truncated { truncated = record.truncated }
+    publishRows()
+  }
+}
+
+/// Observed separately from the conversation's ordered identity list.
+@MainActor @Observable
+public final class TranscriptMessageState: Identifiable {
+  public nonisolated let id: String
+  public internal(set) var message: WebMessage
+  public internal(set) var turnID: String?
+  init(_ message: WebMessage) {
+    self.id = message.id
+    self.message = message
+    self.turnID = message.turnId
   }
 }
 

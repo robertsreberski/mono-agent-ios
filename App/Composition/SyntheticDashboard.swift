@@ -299,7 +299,8 @@
     /// A cache snapshot as an earlier session would have left it: every bucket, the fleet and
     /// read markers. The offline scenario shows exactly this; live scenarios refresh over it.
     static func prepare(
-      _ store: ConsoleStore, repository: any ConsoleRepository, empty: Bool, theme: String
+      _ store: ConsoleStore, repository: any ConsoleRepository, empty: Bool, theme: String,
+      transcript: StoreScenario? = nil
     ) async throws {
       let saved = now.addingTimeInterval(-15 * 60)
       var cache = CacheRecord()
@@ -314,6 +315,7 @@
           .init(key: .init(sourceID: quill), threads: try threads(source: quill), savedAt: saved),
         ]
       }
+      if let transcript { cache.conversations = [try TranscriptFixture.cached(transcript)] }
       try await repository.saveCache(cache, namespace: store.namespace)
       var authored = AuthoredRecord()
       authored.revision = 1

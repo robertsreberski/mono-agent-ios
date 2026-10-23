@@ -22,7 +22,9 @@
   Release must not contain catalog code. Do not name DEBUG-only files after the release
   fixture markers, because `nm -a` lists source file names.
 - App → Kit, Store, Design. Store → Kit. Tests/DEBUG composition → TestSupport → Kit.
-  No inverse dependencies, third-party packages or project generators.
+  No inverse dependencies or project generators. The sole approved direct third-party dependency
+  is Design’s exact-pinned swift-markdown renderer (and its locked swift-cmark transitive); see
+  README and bundled ThirdPartyNotices. Do not add other packages.
 - `.xcodeproj` uses synchronized source folders; add sources there without pbxproj edits.
   Keep build policy in xcconfig, signing overrides only in ignored `Config/Local.xcconfig`.
 

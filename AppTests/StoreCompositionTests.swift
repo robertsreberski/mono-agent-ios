@@ -48,7 +48,9 @@ import Testing
         let thread = try #require(store.conversations["thread-example"]?.thread)
         #expect(store.isUnread(thread))
       case .uncertain: #expect(store.pendingSubmissions.count == 1)
-      case .dashboardPopulated, .dashboardSearch, .conversationPlaceholder:
+      case .dashboardPopulated, .dashboardSearch, .conversationPlaceholder,
+        .conversationTranscript, .conversationStreaming, .conversationTools, .conversationLong,
+        .conversationMarkdown:
         #expect(store.agents.count == 4)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.count == 8)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.nextCursor != nil)
