@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
+import Network
 import Testing
 import UIKit
 import WebKit
@@ -21,11 +22,12 @@ private final class McpEnvelopeRecorder: McpAppEnvelopeDelegate {
 struct McpAppIsolationTests {
   private static let sessionScript = """
     let session;
+    const documentMarker = Math.random().toString(36) + Math.random().toString(36);
     const deliver = payload => parent.postMessage({...session, payload}, "*");
     addEventListener("message", event => {
       if (event.source !== parent || event.data?.type !== "mono:mcp-session") return;
       session = event.data;
-      deliver({marker: "ready"});
+      deliver({marker: "ready", documentMarker, sessionNonce: session.nonce, sessionGeneration: session.generation});
     });
     """
 
@@ -131,7 +133,7 @@ struct McpAppIsolationTests {
             attempt(() => {
               const style = document.createElement('style');
               style.textContent = `body{background-image:url(${base}/css)}@font-face{font-family:canary;src:url(${base}/font)}p{font-family:canary}`;
-              document.head.append(style); document.body.append(document.createElement('p'));
+              document.head.append(style); const p=document.createElement('p');p.textContent='font canary';document.body.append(p);
             });
             for (const tag of ['audio','video']) attempt(() => {
               const media = document.createElement(tag); media.src = base + '/' + tag;
@@ -145,15 +147,7 @@ struct McpAppIsolationTests {
               const link = document.createElement('link'); link.rel = rel;
               link.href = base + '/' + rel; document.head.append(link);
             });
-            attempt(() => {
-              const rtc = new RTCPeerConnection({iceServers:[
-                {urls:`stun:127.0.0.1:${port}`},
-                {urls:`turn:127.0.0.1:${port}?transport=tcp`,username:'canary',credential:'fictional'}
-              ]});
-              window.rtcCanaries = [...(window.rtcCanaries || []), rtc];
-              rtc.createDataChannel('canary');
-              rtc.createOffer().then(offer => rtc.setLocalDescription(offer)).catch(() => {});
-            });
+
           }
           deliver({marker:'attempted-network'});
           """), delegate: recorder)
@@ -180,11 +174,14 @@ struct McpAppIsolationTests {
         from: URL(string: sink.origin + "/control")!)
       #expect((response as? HTTPURLResponse)?.statusCode == 200)
       #expect(sink.inboundConnections > 0)
-      #expect(sink.requests > 0)
+      #expect(sink.requests == 1)
+      #expect(sink.requestLines == ["GET /control HTTP/1.1"])
+      try await sink.sendUDPControl()
+      try await waitUntil { sink.datagrams == 1 }
     }
   }
 
-  @Test(arguments: ["about:blank", "about:srcdoc", "data:", "blob:", "file:", "reload", "shell"])
+  @Test(arguments: ["about:blank", "about:srcdoc", "data:", "blob:", "reload", "shell"])
   func innerNavigationRetires(_ destination: String) async throws {
     let command: String
     switch destination {
@@ -192,7 +189,6 @@ struct McpAppIsolationTests {
     case "blob:":
       command =
         "location.href=URL.createObjectURL(new Blob(['<p>navigated</p>'],{type:'text/html'}))"
-    case "file:": command = "location.href='file:///mcp-fictional-unreadable.html'"
     case "reload": command = "location.reload()"
     case "shell": command = "location.href='mono-mcp-host://shell/'"
     default: command = "location.href='\(destination)'"
@@ -260,6 +256,122 @@ struct McpAppIsolationTests {
       }
     }
     #expect(!host.isRetired)
+  }
+
+  @Test(arguments: ["location", "anchor", "meta"])
+  func rejectedFileAttemptKeepsOriginalDocument(_ route: String) async throws {
+    let sink = try await sink()
+    defer { sink.stop() }
+    let recorder = McpEnvelopeRecorder()
+    let command: String
+    switch route {
+    case "anchor":
+      command =
+        "const a=document.createElement('a');a.href=file;a.target='_self';document.body.append(a);a.click();"
+    case "meta":
+      command =
+        "const m=document.createElement('meta');m.httpEquiv='refresh';m.content='0;url='+file;document.head.append(m);"
+    default: command = "location.href=file;"
+    }
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          const file='file:///mcp-fictional-unreadable.html';
+          \(command)
+          setTimeout(() => deliver({marker:'same-document', documentMarker,
+            sessionNonce:session.nonce, sessionGeneration:session.generation}), 300);
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    let original = try #require(recorder.deliveries.first)
+    try await probe(host)
+    try await waitUntil { recorder.deliveries.count == 2 || host.isRetired }
+    print(
+      "MCP file route \(route): actions=\(host.navigationDecisions), responses=\(host.responseDecisions), retired=\(host.retirementReason ?? "none")"
+    )
+    if host.isRetired {
+      #expect(host.navigationDecisions.count > 2)
+    } else {
+      #expect(host.navigationDecisions == ["main:mono-mcp-host://shell/", "sub:about:srcdoc"])
+      #expect(host.responseDecisions == ["main:mono-mcp-host://shell/"])
+      let echo = try #require(recorder.deliveries.last)
+      #expect(echo["marker"] as? String == "same-document")
+      for key in ["documentMarker", "sessionNonce", "sessionGeneration"] {
+        #expect(echo[key] as? String == original[key] as? String)
+        #expect((echo[key] as? String)?.isEmpty == false)
+      }
+      #expect(
+        Set(echo.keys) == Set(["marker", "documentMarker", "sessionNonce", "sessionGeneration"]))
+      #expect(recorder.deliveries.count == 2)
+    }
+    #expect(sink.inboundConnections == 0)
+    #expect(sink.requests == 0)
+    #expect(host.webView.url == McpAppShellSchemeHandler.url)
+  }
+
+  @Test func nativeFileNavigationReachingPolicyIsRejected() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    host.webView.load(URLRequest(url: URL(fileURLWithPath: "/mcp-fictional-unreadable.html")))
+    try await waitUntil { host.isRetired }
+    print("MCP native file route: \(host.navigationDecisions)")
+    #expect(host.navigationDecisions.contains("main:file:///mcp-fictional-unreadable.html"))
+    #expect(host.retirementReason == "Navigation rejected")
+    #expect(recorder.deliveries.count == 1)
+  }
+
+  @Test func webRtcHasDocumentedNetworkEscape() async throws {
+    let console = try await sink()
+    let evil = try await sink()
+    defer {
+      console.stop()
+      evil.stop()
+    }
+    let recorder = McpEnvelopeRecorder()
+    let ports = [console.port, evil.port].map(String.init).joined(separator: ",")
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          window.rtcCanaries=[];
+          for (const port of [\(ports)]) {
+            const rtc = new RTCPeerConnection({iceServers:[
+              {urls:`stun:127.0.0.1:${port}`},
+              {urls:`turn:127.0.0.1:${port}?transport=tcp`,username:'canary',credential:'fictional'}
+            ]});
+            window.rtcCanaries.push(rtc);
+            rtc.createDataChannel('canary');
+            rtc.createOffer().then(offer => rtc.setLocalDescription(offer))
+              .then(() => deliver({marker:'rtc-started',port}));
+          }
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    try await probe(host)
+    try await waitUntil {
+      recorder.deliveries.filter { $0["marker"] as? String == "rtc-started" }.count == 2
+    }
+    try await Task.sleep(for: .seconds(4))
+    print(
+      "MCP WebRTC ESCAPE console=\(console.inboundConnections) connections/\(console.datagrams) datagrams/\(console.nonHttpBytes) nonHTTP bytes; evil=\(evil.inboundConnections)/\(evil.datagrams)/\(evil.nonHttpBytes)"
+    )
+    // D4 residual risk: the public SDK exposes no WebRTC-disable preference. Keep the unmet
+    // zero-network invariant visible as a known issue, NEVER a successful isolation proof.
+    withKnownIssue(
+      "WebRTC STUN/TURN bypasses canonical CSP and WKContentRuleList; no supported disable setting in Xcode 27.1"
+    ) {
+      #expect(console.inboundConnections == 0 && evil.inboundConnections == 0)
+    }
+    #expect(console.datagrams > 0)
+    #expect(evil.datagrams > 0)
+    #expect(console.nonHttpBytes > 0)
+    #expect(evil.nonHttpBytes > 0)
+    #expect(console.requests == 0 && evil.requests == 0)
   }
 
 }
