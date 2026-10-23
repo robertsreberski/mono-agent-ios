@@ -328,7 +328,7 @@ struct DashboardView: View {
       .submitLabel(.search)
       .autocorrectionDisabled()
       .textInputAutocapitalization(.never)
-      .accessibilityIdentifier("dashboard-search")
+      .accessibilityIdentifier("search-field")
       if !query.isEmpty {
         Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
           .labelStyle(.iconOnly)
