@@ -5,12 +5,11 @@ import Observation
 import SwiftUI
 import UIKit
 
-/// One frozen submission attempt. Retry resends exactly this payload so the Store's digest,
-/// and therefore the submission UUID, is unchanged.
+/// One frozen submission attempt: identity and authored binding survive receipt retirement.
 struct ComposerAttempt: Equatable {
   var input: ApiStartSubmission
   var threadID: String?
-  var draftContext: DraftKey?
+  var draftBinding: SubmissionDraftBinding?
   var liveInput: Bool
   /// The composer text this attempt was made from; `nil` for quick replies.
   var sourceText: String?
@@ -134,7 +133,7 @@ final class ComposerController {
       model: runModel.isEmpty ? nil : runModel, effort: runEffort.isEmpty ? nil : runEffort)
     await submit(
       ComposerAttempt(
-        input: input, threadID: threadID, draftContext: nil, liveInput: running, sourceText: text))
+        input: input, threadID: threadID, draftBinding: nil, liveInput: running, sourceText: text))
   }
 
   /// A suggested reply sends its label as a plain user message (web `ReplyOptionsPart`).
@@ -146,12 +145,12 @@ final class ComposerController {
       effort: runEffort.isEmpty ? nil : runEffort)
     await submit(
       ComposerAttempt(
-        input: input, threadID: threadID, draftContext: nil, liveInput: running, sourceText: nil))
+        input: input, threadID: threadID, draftBinding: nil, liveInput: running, sourceText: nil))
     if case .confirmed = phase { return true }
     return false
   }
 
-  /// Explicit retry of the frozen attempt: identical payload, so the same submission UUID.
+  /// Explicit retry keeps the Store-assigned UUID even if recovery retired its reference.
   func retry() async {
     guard var attempt = lastAttempt, phase.allowsRetry else { return }
     attempt.liveInput = running
@@ -164,11 +163,24 @@ final class ComposerController {
     confirmationReset?.cancel()
     lastAttempt = attempt
     do {
+      if attempt.input.submissionId.isEmpty {
+        if attempt.sourceText != nil {
+          await flushDraft()
+          let key = DraftKey(profileID: store.profile.id, sourceID: sourceID, threadID: threadID)
+          attempt.draftBinding = .version(
+            key,
+            store.draft(sourceID: sourceID, threadID: threadID).flatMap {
+              $0.text == attempt.sourceText ? $0.version : nil
+            })
+        } else {
+          attempt.draftBinding = SubmissionDraftBinding.none
+        }
+        attempt.input = store.prepareSubmission(attempt.input, threadID: attempt.threadID)
+        lastAttempt = attempt
+      }
       if attempt.threadID == nil {
         // A new conversation is created before submission recovery; its draft context is the
         // source's new-conversation key, which admission then clears.
-        await flushDraft()
-        let context = DraftKey(profileID: store.profile.id, sourceID: sourceID, threadID: nil)
         let created = try await store.createConversation(
           ApiCreateThread(
             sourceId: sourceID,
@@ -176,17 +188,14 @@ final class ComposerController {
             effort: newConversationEffort.isEmpty ? .omitted : .value(newConversationEffort)),
           retainingAttachments: attempt.input.attachmentIds ?? [])
         attempt.threadID = created
-        attempt.draftContext = context
         lastAttempt = attempt
         threadID = created
         onCreate(created)
-      } else {
-        await flushDraft()
       }
       guard let target = attempt.threadID else { return }
       let receipt = try await store.submit(
         sourceID: sourceID, threadID: target, input: attempt.input,
-        draftContext: attempt.draftContext)
+        draftBinding: attempt.draftBinding ?? .none)
       phase = ComposerRules.phase(after: receipt)
       admitted(attempt)
     } catch {
@@ -201,11 +210,7 @@ final class ComposerController {
       {
         store.clearErrorMessage()
       }
-      if attempt.draftContext != nil, let created = attempt.threadID, attempt.sourceText != nil {
-        // The conversation exists now; keep the unsent text with it (web transferComposerDraft).
-        await store.setDraft(sourceID: sourceID, threadID: created, text: text)
-        await store.setDraft(sourceID: sourceID, threadID: nil, text: "")
-      }
+
     }
   }
 
@@ -217,7 +222,7 @@ final class ComposerController {
       text = ""
       restoring = false
       selection = TextSelection(insertionPoint: text.endIndex)
-      if attempt.draftContext == nil { scheduleDraft() }
+
       quote = nil
     }
     if attempt.sourceText != nil, quote == attempt.input.quote { quote = nil }

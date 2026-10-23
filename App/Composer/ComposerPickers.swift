@@ -29,7 +29,8 @@ struct ModelSelectorMenu: View {
         Image(systemName: "chevron.up.chevron.down").imageScale(.small)
       }
       .designFont(.supporting)
-      .frame(minHeight: 32)
+      .frame(minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget)
+      .contentShape(Rectangle())
     }
     .buttonStyle(.borderless)
     .disabled(agent == nil || agent?.status == "offline")

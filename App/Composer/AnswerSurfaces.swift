@@ -11,11 +11,12 @@ struct AskUserCard: View {
   let message: WebMessage
   let store: ConsoleStore
   @Environment(\.scenePhase) private var scenePhase
-  @State private var snapshot: ChannelAskSnapshot?
+  @State private var interaction = AskInteractionState()
+  private var snapshot: ChannelAskSnapshot? { interaction.snapshot }
+  private var submitting: Bool { interaction.submitting }
   @State private var assignedID: String?
   @State private var unavailable = false
   @State private var draft = AskFormDraft()
-  @State private var submitting = false
   @State private var error: String?
 
   private var expectedID: String? {
@@ -37,8 +38,7 @@ struct AskUserCard: View {
     return nil
   }
   private var terminal: String? {
-    if let status = snapshot?.status { return status == "pending" ? nil : status }
-    return persisted
+    AskInteractionState.terminal(snapshot: snapshot, persisted: persisted)
   }
 
   var body: some View {
@@ -123,7 +123,8 @@ struct AskUserCard: View {
   private var pollKey: String {
     [
       message.threadId, call.toolCallId, call.status, expectedID ?? "",
-      String(describing: scenePhase), store.connection == .live ? "live" : "not-live",
+      persisted ?? "", String(describing: scenePhase),
+      store.connection == .live ? "live" : "not-live",
     ].joined(separator: "|")
   }
 
@@ -137,7 +138,7 @@ struct AskUserCard: View {
     var delay = lean ? 0.5 : 0.25
     let maximum = lean ? 4.0 : 2.0
     while !Task.isCancelled {
-      if snapshot.map({ $0.status != "pending" }) == true { return }
+      if terminal != nil { return }
       // Not live: conclude nothing yet; the poll restarts when the connection does.
       guard store.connection == .live else { return }
       let id = expectedID ?? assignedID
@@ -145,9 +146,12 @@ struct AskUserCard: View {
         unavailable = true
         return
       }
+      let revision = interaction.revision
       do {
         if let value = try await store.askSnapshot(threadID: message.threadId, interactionID: id) {
-          snapshot = AskForm.normalized(value, now: Date())
+          let now = await store.serverNow()
+          guard !Task.isCancelled, scenePhase == .active, terminal == nil else { return }
+          interaction.applyPoll(AskForm.normalized(value, now: now), revision: revision)
           assignedID = value.interactionId
           unavailable = false
         } else if id != nil {
@@ -158,27 +162,27 @@ struct AskUserCard: View {
       } catch {
         unavailable = true
       }
-      if snapshot.map({ $0.status != "pending" }) == true { return }
+      if terminal != nil { return }
       do { try await Task.sleep(for: .seconds(delay)) } catch { return }
       delay = min(maximum, delay * 2)
     }
   }
 
   private func submit(_ snapshot: ChannelAskSnapshot) async {
-    guard AskForm.isComplete(snapshot, draft) else { return }
-    submitting = true
+    guard terminal == nil, AskForm.isComplete(snapshot, draft), interaction.beginSubmission()
+    else { return }
     error = nil
     do {
       let next = try await store.answerAsk(
         threadID: message.threadId, interactionID: snapshot.interactionId,
         answers: AskForm.answers(snapshot, draft))
       if let next {
-        self.snapshot = next
+        interaction.finishSubmission(next)
       } else {
         var answered = snapshot
         answered.status = "answered"
         answered.answers = AskForm.answers(snapshot, draft)
-        self.snapshot = answered
+        interaction.finishSubmission(answered)
       }
     } catch AskAnswerError.incomplete {
       error = "Please complete every question."
@@ -187,7 +191,7 @@ struct AskUserCard: View {
     } catch {
       self.error = "Could not submit the answer."
     }
-    submitting = false
+    interaction.finishSubmission(nil)
   }
 }
 

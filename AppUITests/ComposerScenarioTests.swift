@@ -69,6 +69,22 @@ import XCTest
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Plan the sample launch”"))
     XCTAssertTrue(element(app, "conversation-transcript").exists, "The created thread is shown")
     XCTAssertEqual(fieldText(app), "", "Admission clears the sent draft")
+    // Re-enter the same agent's new-conversation route after the first creation.
+    field.tap()
+    field.typeText("/new")
+    let newCommand = element(app, "command-suggestion-new")
+    XCTAssertTrue(newCommand.waitForExistence(timeout: 5))
+    newCommand.tap()
+    XCTAssertTrue(element(app, "composer-placeholder").waitForExistence(timeout: 10))
+    XCTAssertFalse(element(app, "message-sample-assistant").exists)
+    let nextField = composerField(app)
+    nextField.tap()
+    nextField.typeText("Plan a second sample")
+    element(app, "composer-send").tap()
+    XCTAssertTrue(waitForText(app, "Synthetic reply: received “Plan a second sample”"))
+    XCTAssertFalse(
+      waitForText(app, "Synthetic reply: received “Plan the sample launch”", timeout: 1),
+      "The second send belongs to a new transcript")
   }
 
   private func draftAttachments(_ app: XCUIApplication, capture: () -> Void) {
@@ -181,7 +197,7 @@ import XCTest
   private func quote(_ app: XCUIApplication, capture: () -> Void) {
     let message = element(app, "message-sample-assistant")
     XCTAssertTrue(message.waitForExistence(timeout: 10))
-    message.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.12)).press(forDuration: 1.2)
+    message.press(forDuration: 1.2)
     let quote = app.buttons["Quote"].firstMatch
     XCTAssertTrue(quote.waitForExistence(timeout: 5))
     quote.tap()

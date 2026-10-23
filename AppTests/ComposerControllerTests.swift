@@ -25,7 +25,7 @@ import Testing
     }
 
     private func until(_ condition: () -> Bool) async throws {
-      for _ in 0..<400 where !condition() { try await Task.sleep(for: .milliseconds(10)) }
+      for _ in 0..<600 where !condition() { try await Task.sleep(for: .milliseconds(10)) }
       #expect(condition())
     }
 
@@ -41,6 +41,8 @@ import Testing
       #expect(composer.phase == .confirmed(liveInput: false))
       #expect(composer.text.isEmpty && composer.quote == nil)
       #expect(store.draft(sourceID: atlas, threadID: open) == nil)
+      try await until { composer.phase == .idle }
+      #expect(composer.phase == .idle)
       await store.stop()
     }
 
@@ -60,6 +62,53 @@ import Testing
       #expect(composer.phase == .confirmed(liveInput: false))
       let ids = try #require(await model.composerScript?.submissionIDs)
       #expect(ids.count == 2 && ids[0] == ids[1])
+      await store.stop()
+    }
+
+    @Test func uncertainRetryDoesNotClearANewerDraft() async throws {
+      let (_, store) = try await store(.composerSendFailed, select: open)
+      let composer = ComposerController(store: store, sourceID: atlas, threadID: open)
+      composer.text = "Sample A"
+      await composer.send()
+      #expect(composer.phase.allowsRetry)
+      let identity = composer.lastAttempt?.input.submissionId
+      composer.text = "Sample B"
+      await composer.flushDraft()
+      await composer.retry()
+      #expect(composer.phase == .confirmed(liveInput: false))
+      #expect(composer.text == "Sample B")
+      #expect(store.draft(sourceID: atlas, threadID: open)?.text == "Sample B")
+      #expect(identity?.isEmpty == false)
+      await store.stop()
+    }
+
+    @Test func quickReplyDoesNotBindOrClearTheComposerDraft() async throws {
+      let (_, store) = try await store(.conversationQuickReplies, select: open)
+      let composer = ComposerController(store: store, sourceID: atlas, threadID: open)
+      composer.text = "Unsent sample draft"
+      await composer.flushDraft()
+      let version = store.draft(sourceID: atlas, threadID: open)?.version
+      #expect(await composer.sendReply("Ship it"))
+      #expect(composer.text == "Unsent sample draft")
+      #expect(store.draft(sourceID: atlas, threadID: open)?.version == version)
+      await store.stop()
+    }
+
+    @Test func freshNewConversationRequestsCreateDistinctThreads() async throws {
+      let (_, store) = try await store(.composerEmpty, select: nil)
+      let firstRoute = AppRoute.newConversation(profile: store.profile.id, sourceID: atlas)
+      let first = ComposerController(store: store, sourceID: atlas, threadID: firstRoute.threadID)
+      first.text = "First sample"
+      await first.send()
+      let firstID = try #require(first.threadID)
+      let nextRoute = AppRoute.newConversation(profile: store.profile.id, sourceID: atlas)
+      #expect(firstRoute != nextRoute)
+      await store.select(sourceID: atlas)
+      let second = ComposerController(store: store, sourceID: atlas, threadID: nextRoute.threadID)
+      second.text = "Second sample"
+      await second.send()
+      #expect(second.phase == .confirmed(liveInput: false))
+      #expect(second.threadID != firstID)
       await store.stop()
     }
 

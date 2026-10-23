@@ -204,12 +204,18 @@ struct ComposerBar: View {
       if context, let state = conversation {
         ComposerContextControl(state: state, store: store)
       }
-      Button("Browse Skills", systemImage: "book.closed") { openSkills() }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .frame(minWidth: DesignMetrics.minimumHitTarget, minHeight: 32)
-        .accessibilityLabel("Browse skills")
-        .accessibilityIdentifier("composer-skills")
+      Button {
+        openSkills()
+      } label: {
+        Image(systemName: "book.closed")
+          .frame(
+            minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget
+          )
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.borderless)
+      .accessibilityLabel("Browse skills")
+      .accessibilityIdentifier("composer-skills")
       Spacer(minLength: 0)
       if hint {
         Text("⌘↩ to send · / commands · $ skills")

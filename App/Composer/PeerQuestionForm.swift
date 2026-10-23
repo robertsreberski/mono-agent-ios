@@ -49,7 +49,7 @@ enum PeerQuestionForm {
         switch value {
         case .string(let text): text
         case .number(let number):
-          number.rounded() == number ? String(Int(number)) : String(number)
+          Int(exactly: number).map(String.init) ?? String(number)
         case .bool(let flag): String(flag)
         default: nil
         }

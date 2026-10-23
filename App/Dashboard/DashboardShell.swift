@@ -81,7 +81,7 @@ struct DashboardShell: View {
   private func detail(_ route: AppRoute?) -> some View {
     switch route {
     case .conversation, .newConversation:
-      if let route { ConversationScreen(model: model, store: store, route: route) }
+      if let route { ConversationScreen(model: model, store: store, route: route).id(route) }
     case .project(_, let source, let id):
       ProjectPlaceholder(store: store, sourceID: source, projectID: id)
     case .console, nil:
