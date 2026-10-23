@@ -232,9 +232,19 @@ import XCTest
   }
 
   private func peerQuestion(_ app: XCUIApplication, capture: () -> Void) {
-    let open = element(app, "peer-question-open")
-    XCTAssertTrue(scrollTo(app, open))
-    open.tap()
+    // The peer job rides in the composer dock's job shelf (web ProcessJobStack placement).
+    let shelf = element(app, "job-stack")
+    XCTAssertTrue(shelf.waitForExistence(timeout: 10))
+    shelf.tap()
+    let dock = app.scrollViews.matching(identifier: "composer-dock-scroll").firstMatch
+    let group = dock.descendants(matching: .any)["job-group-peer:seed-bank"].firstMatch
+    if group.waitForExistence(timeout: 3) { dockReveal(app, group).tap() }
+    let card = dock.descendants(matching: .any)["job-card-job-peer-sample"].firstMatch
+    if card.waitForExistence(timeout: 3) { dockReveal(app, card).tap() }
+    let answer = dockReveal(
+      app, dock.descendants(matching: .any)["peer-question-answer"].firstMatch)
+    XCTAssertTrue(answer.isEnabled)
+    answer.tap()
     XCTAssertTrue(element(app, "peer-sheet").waitForExistence(timeout: 10))
     XCTAssertFalse(element(app, "peer-submit").isEnabled, "The required field is unanswered")
     element(app, "peer-option-question_1-Reserve now").tap()
@@ -248,6 +258,16 @@ import XCTest
       waitFor(app, "composer-field", containing: "Answer for the seed-bank peer question"))
     element(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Answer for the seed-bank peer"))
+  }
+
+  private func dockReveal(_ app: XCUIApplication, _ target: XCUIElement) -> XCUIElement {
+    let dock = app.scrollViews.matching(identifier: "composer-dock-scroll").firstMatch
+    for _ in 0..<10 {
+      if target.exists && target.isHittable { return target }
+      guard dock.exists else { break }
+      dragDock(dock, down: target.exists && target.frame.midY < dock.frame.minY)
+    }
+    return target
   }
 
   // MARK: Helpers
@@ -329,4 +349,12 @@ import XCTest
     attachment.lifetime = .keepAlways
     add(attachment)
   }
+
+  /// A short, slow drag inside the dock's bounded scroll view (flicks overshoot it).
+  private func dragDock(_ dock: XCUIElement, down: Bool) {
+    let from = dock.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.3 : 0.7))
+    let to = dock.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.7 : 0.3))
+    from.press(forDuration: 0.05, thenDragTo: to)
+  }
+
 }

@@ -22,14 +22,21 @@ struct ComposerBar: View {
   @State private var showSettings = false
   @State private var photoItems: [PhotosPickerItem] = []
   @State private var browseRange: (start: Int, end: Int)?
+  @State private var peerQuestion: PeerQuestionPresentation?
 
   private var store: ConsoleStore { controller.store }
+  private var conversation: ConversationState? {
+    controller.threadID.flatMap { store.conversations[$0] }
+  }
   private var affordances: ComposerAffordances { controller.affordances }
   private var limits: UploadLimits? { store.bootstrap?.limits }
   private var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
 
   var body: some View {
     VStack(spacing: DesignSpacing.xs) {
+      if let state = conversation {
+        ComposerJobDock(state: state, store: store) { peerQuestion = .init(question: $0) }
+      }
       ComposerOverlay(
         controller: controller, onCommand: perform,
         onSkill: { controller.insertSkill($0) })
@@ -74,6 +81,12 @@ struct ComposerBar: View {
     }
     .sheet(isPresented: $showSettings) {
       RunSettingsSheet(controller: controller)
+    }
+    .sheet(item: $peerQuestion) { presentation in
+      // No console route answers a peer: the reply is drafted for the operator to send.
+      PeerQuestionAnswerSheet(question: presentation.question) { reply in
+        controller.insertBlock(reply)
+      }
     }
     .onChange(of: controller.focusRequest) { focused = true }
     .task(id: SkillLoadKey(source: controller.sourceID, live: store.connection == .live)) {
@@ -168,14 +181,29 @@ struct ComposerBar: View {
       ViewThatFits(in: .horizontal) {
         toolRow(compactModel: false, hint: sizeClass == .regular)
         toolRow(compactModel: false, hint: false)
+        // Phones: keep the model name readable and give context its own line.
+        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+          toolRow(compactModel: false, hint: false, context: false)
+          if let state = conversation { ComposerContextControl(state: state, store: store) }
+        }
         toolRow(compactModel: true, hint: false)
+        // Accessibility sizes: context moves to its own line and may wrap.
+        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+          toolRow(compactModel: true, hint: false, context: false)
+          if let state = conversation {
+            ComposerContextControl(state: state, store: store, fixed: false)
+          }
+        }
       }
     }
   }
 
-  private func toolRow(compactModel: Bool, hint: Bool) -> some View {
+  private func toolRow(compactModel: Bool, hint: Bool, context: Bool = true) -> some View {
     HStack(spacing: DesignSpacing.sm) {
       ModelSelectorMenu(controller: controller, compact: compactModel)
+      if context, let state = conversation {
+        ComposerContextControl(state: state, store: store)
+      }
       Button("Browse Skills", systemImage: "book.closed") { openSkills() }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)

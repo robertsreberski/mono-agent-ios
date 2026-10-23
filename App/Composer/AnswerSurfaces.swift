@@ -290,38 +290,6 @@ struct QuickRepliesView: View {
   }
 }
 
-/// Entry point from a process-job row with a peer question. The C7b job card will own this
-/// placement; until then the transcript's job placeholder presents it.
-struct PeerQuestionEntry: View {
-  let question: PeerProcessJobQuestion
-  @Environment(\.composerActions) private var actions
-  @State private var presented = false
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-      Label(
-        "Peer question · " + PeerQuestionForm.stateLabel(question.state),
-        systemImage: "person.2.wave.2"
-      )
-      .designFont(.supporting)
-      Text(question.message).designFont(.caption).foregroundStyle(.secondary).lineLimit(2)
-      Button(question.state == "awaiting_answer" ? "Review and draft a reply" : "Review question") {
-        presented = true
-      }
-      .designButtonStyle(.secondary)
-      .accessibilityIdentifier("peer-question-open")
-    }
-    .sheet(isPresented: $presented) {
-      PeerQuestionAnswerSheet(question: question) { reply in
-        guard let insert = actions.insert else { throw PeerReplyError.composerUnavailable }
-        insert(reply)
-      }
-    }
-  }
-}
-
-enum PeerReplyError: Error { case composerUnavailable }
-
 /// The peer-answer form, driven by the question model and a submit seam. The console has no
 /// peer answer route and the web shows peer text as untrusted reference: the default seam
 /// drafts a reply into the composer for the operator to send to their own agent explicitly.
