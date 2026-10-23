@@ -77,7 +77,7 @@ public struct ConnectionBanner: View {
         }
         if let actionTitle, let action {
           Button(actionTitle, action: action)
-            .buttonStyle(WebQuietPillStyle())
+            .buttonStyle(WebReplyButtonStyle())
             .controlSize(.small)
             .padding(.top, DesignSpacing.xs)
         }

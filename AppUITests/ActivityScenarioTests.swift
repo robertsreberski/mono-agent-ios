@@ -132,6 +132,12 @@ import XCTest
       XCTAssertTrue(cost.waitForExistence(timeout: 10), "Unknown totals must preserve known spend")
       // The figure now mirrors the web: a large numerator and a smaller capacity label.
       XCTAssertTrue(app.staticTexts["84k"].firstMatch.exists)
+      if variant == "ax3" {
+        XCTAssertGreaterThanOrEqual(
+          app.staticTexts["42%"].firstMatch.frame.minY,
+          app.staticTexts["84k"].firstMatch.frame.maxY,
+          "The percentage must have its own reading line at AX3")
+      }
       XCTAssertTrue(app.staticTexts["/ 200k tokens"].firstMatch.exists)
       XCTAssertTrue(app.staticTexts["42%"].firstMatch.exists)
     } else {

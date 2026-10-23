@@ -77,16 +77,23 @@ public struct ContextDisplay: View {
       VStack(alignment: .leading, spacing: 8) {
         Text("Context window").webFont(.contextEyebrow).foregroundStyle(WebColor.textMuted.color)
         let figure = content.figure.components(separatedBy: " / ")
-        WebFlowLayout(spacing: 4, lineSpacing: 4) {
-          Text(figure.first ?? content.figure)
-            .webFont(sizeClass == .regular ? .contextFigureRegular : .contextFigure)
-            .foregroundStyle(WebColor.text.color)
-          if figure.count == 2 {
-            Text("/ " + figure[1]).webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+        let figureLayout =
+          typeSize.isAccessibilitySize
+          ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+          : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+        figureLayout {
+          WebFlowLayout(spacing: typeSize.isAccessibilitySize ? 8 : 4, lineSpacing: 4) {
+            Text(figure.first ?? content.figure)
+              .webFont(sizeClass == .regular ? .contextFigureRegular : .contextFigure)
+              .foregroundStyle(WebColor.text.color)
+            if figure.count == 2 {
+              Text("/ " + figure[1]).webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+            }
           }
+          .frame(maxWidth: .infinity, alignment: .leading)
           if content.percent != nil {
             Text(content.badge).webFont(.optionID).fontWeight(.bold)
-              .foregroundStyle(theme.palette.accent.color)
+              .foregroundStyle(theme.palette.accent.color).fixedSize()
           }
         }.textSelection(.enabled)
         Text(content.status).webFont(.contextTrigger).foregroundStyle(WebColor.textMuted.color)
