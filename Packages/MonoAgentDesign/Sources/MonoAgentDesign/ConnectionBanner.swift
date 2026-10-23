@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import SwiftUI
 
-/// A full-width notice inside content: insecure HTTP, offline, storage or trust guidance.
+/// A full-width notice inside content: insecure HTTP, offline, storage, a refresh problem or
+/// trust guidance.
 /// Opaque by design; banners carry reading text, so they are never glass.
 public struct ConnectionBanner: View {
   public enum Kind: CaseIterable, Sendable {
     case insecureHTTP
     case offline
     case storage
+    /// A read or refresh failed; the content shown may be out of date.
+    case problem
     case notice
 
     public var tone: StatusTone {
       switch self {
-      case .insecureHTTP, .storage: .warning
+      case .insecureHTTP, .storage, .problem: .warning
       case .offline: .neutral
       case .notice: .accent
       }
@@ -23,6 +26,7 @@ public struct ConnectionBanner: View {
       case .insecureHTTP: StatusKind.insecure.systemImage
       case .offline: StatusKind.offline.systemImage
       case .storage: "externaldrive.badge.exclamationmark"
+      case .problem: "exclamationmark.arrow.circlepath"
       case .notice: "lock.shield"
       }
     }
@@ -107,6 +111,9 @@ public struct ConnectionBanner: View {
     DesignPreviewMatrix {
       ConnectionBanner(.storage, title: "Storage warning", message: "Changes are in memory only.")
       ConnectionBanner(.notice, title: "Trusted networks only")
+      ConnectionBanner(
+        .problem, title: "Conversation list could not be refreshed.", actionTitle: "Retry",
+        action: {})
     }
     .preferredColorScheme(.dark)
     .dynamicTypeSize(.accessibility2)
