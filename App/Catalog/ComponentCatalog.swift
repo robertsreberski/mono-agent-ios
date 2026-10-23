@@ -120,6 +120,14 @@
               model: "sample:large", effort: "high",
               detail: "Current settings · inherited agent defaults")
           }
+          catalogSection("Sheet parts") {
+            VStack(spacing: 0) {
+              WebSheetHeader("Run settings", subtitle: "Choose the next turn's route") {}
+              WebSearchField("Search models", text: .constant(""))
+              WebModelRow("Sample Large", detail: "sample:large", selected: true)
+              Button("High") {}.buttonStyle(WebEffortButtonStyle(selected: true))
+            }.background(WebColor.surfaceRaised.color)
+          }
           catalogSection("Job rows and outcomes") { JobSpecimens() }
           catalogSection("Activity disclosure") {
             ActivityDisclosure(

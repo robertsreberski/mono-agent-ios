@@ -117,6 +117,7 @@ import XCTest
     XCTAssertTrue(element(app, "skill-browse-weekly-digest").waitForExistence(timeout: 10))
     XCTAssertFalse(
       element(app, "skill-browse-legacy-export").isEnabled, "Unavailable skills are explained")
+    self.capture(app, "skill-browser", "light", variant: nil)
     element(app, "skill-browse-weekly-digest").tap()
     XCTAssertTrue(fieldText(app).contains("$weekly-digest"))
     field.typeText("for this week")

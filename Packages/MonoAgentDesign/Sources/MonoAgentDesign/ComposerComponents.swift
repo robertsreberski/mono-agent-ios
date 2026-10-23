@@ -125,11 +125,14 @@ public struct SuggestionRow: View {
   private let systemImage: String
   private let highlighted: Bool
   private let enabled: Bool
+  private let browsing: Bool
+  @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.consoleTheme) private var theme
 
   public init(
     _ title: String, subtitle: String? = nil, badge: String? = nil,
-    systemImage: String = "book.closed", highlighted: Bool = false, enabled: Bool = true
+    systemImage: String = "book.closed", highlighted: Bool = false, enabled: Bool = true,
+    browsing: Bool = false
   ) {
     self.title = title
     self.subtitle = subtitle
@@ -137,6 +140,7 @@ public struct SuggestionRow: View {
     self.systemImage = systemImage
     self.highlighted = highlighted
     self.enabled = enabled
+    self.browsing = browsing
   }
 
   /// Web `.composer-trigger-item`: 49 pt, radius 9, a 30 pt accent-soft icon tile, the name
@@ -152,10 +156,10 @@ public struct SuggestionRow: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(title).webFont(.triggerTitle)
           .foregroundStyle(highlighted ? WebColor.text.color : WebColor.textSoft.color)
-          .lineLimit(1)
+          .lineLimit(typeSize.isAccessibilitySize ? nil : (browsing ? 2 : 1))
         if let subtitle {
           Text(subtitle).webFont(.triggerDetail).foregroundStyle(WebColor.textMuted.color)
-            .lineLimit(1)
+            .lineLimit(typeSize.isAccessibilitySize ? nil : (browsing ? 2 : 1))
         }
       }
       Spacer(minLength: 8)
@@ -171,7 +175,7 @@ public struct SuggestionRow: View {
     .opacity(enabled ? 1 : 0.58)
     .padding(.vertical, 6)
     .padding(.horizontal, 8)
-    .frame(maxWidth: .infinity, minHeight: 49, alignment: .leading)
+    .frame(maxWidth: .infinity, minHeight: browsing ? 56 : 49, alignment: .leading)
     .background(
       highlighted ? WebColor.surfaceSubtle.color : .clear,
       in: RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)

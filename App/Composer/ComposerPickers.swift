@@ -10,14 +10,15 @@ struct ModelSelectorMenu: View {
   let controller: ComposerController
   /// Icon only; the summary stays in the accessibility value.
   var compact = false
+  @State private var open = false
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.consoleTheme) private var theme
   var body: some View {
     let agent = controller.agent
     let summary = ModelOptions.summary(
       agent, model: controller.runModel, effort: controller.runEffort)
-    Menu {
-      if let agent { ModelMenuContent(controller: controller, agent: agent) }
+    Button {
+      open = true
     } label: {
       // Web `.model-selector__trigger` in the composer: model name 12/650, the effort as an
       // uppercase accent badge, and a trailing chevron; transparent, 32 pt high.
@@ -54,7 +55,6 @@ struct ModelSelectorMenu: View {
       .frame(minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget)
       .contentShape(Rectangle())
     }
-    .menuStyle(.button)
     .buttonStyle(.plain)
     .disabled(agent == nil || agent?.status == "offline")
     .accessibilityLabel("Model and reasoning effort")
@@ -62,64 +62,9 @@ struct ModelSelectorMenu: View {
       summary + (controller.hasRunOverride ? ", custom for this conversation" : "")
     )
     .accessibilityIdentifier("composer-model")
-  }
-}
-
-private struct ModelMenuContent: View {
-  let controller: ComposerController
-  let agent: WebAgentSummary
-  var body: some View {
-    let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
-    let selected = rows.first { $0.id == controller.runModel } ?? rows.first
-    Section("Model") {
-      ForEach(rows) { row in
-        Button {
-          controller.setModel(row.id)
-        } label: {
-          if row.id == controller.runModel {
-            Label(row.name, systemImage: "checkmark")
-          } else {
-            Text(row.name)
-          }
-          Text(subtitle(row))
-        }
-        .disabled(!row.selectable)
-        .accessibilityIdentifier("model-option-" + (row.id.isEmpty ? "default" : row.id))
-      }
+    .sheet(isPresented: $open) {
+      RunSettingsSheet(controller: controller, dismissOnSelection: true)
     }
-    if let efforts = selected?.efforts, !efforts.isEmpty {
-      Section("Thinking") {
-        ForEach(efforts) { effort in
-          Button {
-            controller.setEffort(effort.id)
-          } label: {
-            if effort.id == controller.runEffort {
-              Label(effort.name, systemImage: "checkmark")
-            } else {
-              Text(effort.name)
-            }
-          }
-          .accessibilityIdentifier("effort-option-" + (effort.id.isEmpty ? "default" : effort.id))
-        }
-      }
-    } else {
-      Section("Thinking") { Text("This model has no reasoning effort setting") }
-    }
-    if controller.hasRunOverride {
-      Button("Reset to Agent Default", systemImage: "arrow.uturn.backward") {
-        controller.resetRunSettings()
-      }
-      .accessibilityIdentifier("model-reset")
-    }
-    if controller.threadID != nil {
-      Section {
-        Text("Changing the model rebuilds context on the next reply. Effort changes don't.")
-      }
-    }
-  }
-  private func subtitle(_ row: ModelOption) -> String {
-    [row.isAgentDefault ? "agent default" : nil, row.note ?? row.detail].compactMap { $0 }
-      .joined(separator: " · ")
   }
 }
 
@@ -127,50 +72,77 @@ private struct ModelMenuContent: View {
 /// programmatically).
 struct RunSettingsSheet: View {
   let controller: ComposerController
+  var dismissOnSelection = false
   @Environment(\.dismiss) private var dismiss
+  @State private var query = ""
   var body: some View {
-    NavigationStack {
-      List {
+    VStack(spacing: 0) {
+      WebSheetHeader("Run settings", closeLabel: "Done") { dismiss() }
+      WebSearchField("Search models", text: $query)
+      ScrollView {
         if let agent = controller.agent {
           let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
-          Section("Model") {
-            ForEach(rows) { row in
+          VStack(alignment: .leading, spacing: 2) {
+            ForEach(
+              rows.filter {
+                query.isEmpty || ($0.name + " " + $0.detail).localizedCaseInsensitiveContains(query)
+              }
+            ) { row in
               Button {
                 controller.setModel(row.id)
+                if dismissOnSelection { dismiss() }
               } label: {
-                ChoiceRow(
-                  row.name, detail: row.note ?? row.detail,
-                  selected: row.id == controller.runModel, multiple: false)
+                WebModelRow(
+                  row.name, detail: row.note ?? row.detail, selected: row.id == controller.runModel)
               }
               .buttonStyle(.plain)
               .disabled(!row.selectable)
+              .opacity(row.selectable ? 1 : 0.58)
+              .accessibilityLabel(row.name + (", " + (row.note ?? row.detail)))
+              .accessibilityIdentifier("model-option-" + (row.id.isEmpty ? "default" : row.id))
             }
+            if controller.threadID != nil {
+              Text("Changing the model rebuilds context on the next reply. Effort changes don't.")
+                .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+                .padding(.vertical, 12).padding(.horizontal, 10)
+            }
+          }.padding(.vertical, 6).padding(.horizontal, 8)
+        }
+      }
+      .scrollBounceBehavior(.basedOnSize)
+      .background(WebColor.surfaceRaised.color)
+      if let agent = controller.agent {
+        let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
+        let efforts = (rows.first { $0.id == controller.runModel } ?? rows.first)?.efforts ?? []
+        VStack(alignment: .leading, spacing: 6) {
+          Text("Thinking").webFont(.effortOption).foregroundStyle(WebColor.textMuted.color)
+          if efforts.isEmpty {
+            Text("This model has no reasoning effort setting").webFont(.contextNote)
           }
-          let efforts =
-            (rows.first { $0.id == controller.runModel } ?? rows.first)?.efforts ?? []
-          Section("Thinking") {
-            if efforts.isEmpty { Text("This model has no reasoning effort setting") }
+          WebFlowLayout(spacing: 4, lineSpacing: 4) {
             ForEach(efforts) { effort in
-              Button {
+              Button(effort.name) {
                 controller.setEffort(effort.id)
-              } label: {
-                ChoiceRow(effort.name, selected: effort.id == controller.runEffort, multiple: false)
+                if dismissOnSelection { dismiss() }
               }
-              .buttonStyle(.plain)
+              .buttonStyle(WebEffortButtonStyle(selected: effort.id == controller.runEffort))
+              .accessibilityIdentifier(
+                "effort-option-" + (effort.id.isEmpty ? "default" : effort.id))
             }
           }
           if controller.hasRunOverride {
             Button("Reset to Agent Default") { controller.resetRunSettings() }
+              .buttonStyle(WebSmallButtonStyle()).accessibilityIdentifier("model-reset")
           }
         }
-      }
-      .navigationTitle("Run settings")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10).padding(.horizontal, 12)
+        .background(WebColor.surfaceSubtle.color)
+        .overlay(alignment: .top) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
       }
     }
     .presentationDetents([.medium, .large])
+    .presentationCornerRadius(20)
   }
 }
 
@@ -185,47 +157,50 @@ struct SkillBrowserSheet: View {
   @State private var query = ""
 
   var body: some View {
-    NavigationStack {
-      List {
-        Section {
-          Text(
-            "Browse skills for \(agentLabel ?? "the active agent"). Selecting one only inserts its reference."
-          )
-          .designFont(.supporting).foregroundStyle(.secondary)
-          if let notice { StatusIndicator(.stale, label: notice) }
-        }
+    VStack(spacing: 0) {
+      WebSheetHeader(
+        "Skills",
+        subtitle:
+          "Browse skills for \(agentLabel ?? "the active agent"). Selecting one only inserts its reference.",
+        closeIdentifier: "skills-close"
+      ) { dismiss() }
+      .accessibilityIdentifier("skills-header")
+      WebSearchField("Search names and descriptions", text: $query)
+      if let notice {
+        Text(notice).webFont(.sheetSubtitle).foregroundStyle(WebColor.textMuted.color)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.vertical, 9).padding(.horizontal, 15)
+          .background(WebColor.surfaceSubtle.color)
+      }
+      ScrollView {
         let visible = SkillDiscovery.rank(
           registry?.items ?? [], query: query, includeUnavailable: true, limit: 256)
-        ForEach(visible, id: \.name) { skill in
-          let selectable = registry?.canInsert == true && SkillDiscovery.isUsable(skill)
-          Button {
-            guard selectable else { return }
-            dismiss()
-            onSelect(skill.name)
-          } label: {
-            SuggestionRow(
-              skill.reference ?? skill.name, subtitle: skill.description,
-              badge: SkillDiscovery.statusLabel(skill), enabled: selectable)
+        VStack(spacing: 0) {
+          ForEach(visible, id: \.name) { skill in
+            let selectable = registry?.canInsert == true && SkillDiscovery.isUsable(skill)
+            Button {
+              guard selectable else { return }
+              dismiss()
+              onSelect(skill.name)
+            } label: {
+              SuggestionRow(
+                skill.reference ?? skill.name, subtitle: skill.description,
+                badge: SkillDiscovery.statusLabel(skill), enabled: selectable, browsing: true)
+            }
+            .buttonStyle(.plain).disabled(!selectable)
+            .accessibilityIdentifier("skill-browse-" + skill.name)
           }
-          .buttonStyle(.plain)
-          .disabled(!selectable)
-          .accessibilityIdentifier("skill-browse-" + skill.name)
-        }
-        if case .ready(let items, _, _, _)? = registry, visible.isEmpty {
-          Text(items.isEmpty ? "No skills are installed for this agent." : "No matching skills.")
-            .foregroundStyle(.secondary)
-        }
+          if case .ready(let items, _, _, _)? = registry, visible.isEmpty {
+            Text(items.isEmpty ? "No skills are installed for this agent." : "No matching skills.")
+              .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color).padding(16)
+          }
+        }.padding(7)
       }
-      .searchable(text: $query, prompt: "Search names and descriptions")
       .refreshable { await onRefresh() }
-      .navigationTitle("Skills")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Close") { dismiss() }.accessibilityIdentifier("skills-close")
-        }
-      }
+      .background(WebColor.surfaceRaised.color)
     }
+    .presentationDetents([.medium, .large])
+    .presentationCornerRadius(16)
     .accessibilityIdentifier("skill-browser")
   }
 

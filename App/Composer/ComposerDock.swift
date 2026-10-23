@@ -57,6 +57,7 @@ struct ComposerContextControl: View {
   /// Single-line beside the selector; may wrap when it has its own line.
   var fixed = true
   @State private var open = false
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
   var body: some View {
     let content = ConversationContextView.content(state)
@@ -82,14 +83,26 @@ struct ComposerContextControl: View {
     .accessibilityLabel("Context usage: " + content.figure + ". " + content.status)
     .accessibilityHint("Shows context and cost details")
     .accessibilityIdentifier("context-display")
-    .popover(isPresented: $open) {
+    .popover(isPresented: Binding(get: { open && sizeClass == .regular }, set: { open = $0 })) {
+      contextDetail.frame(width: 320)
+        .presentationCompactAdaptation(.popover)
+    }
+    .sheet(isPresented: Binding(get: { open && sizeClass != .regular }, set: { open = $0 })) {
+      contextDetail
+        .presentationDetents([.medium, .large])
+        .presentationCornerRadius(20)
+    }
+  }
+  private var contextDetail: some View {
+    VStack(spacing: 0) {
+      WebSheetHeader("Context and cost") { open = false }
       ScrollView {
         ConversationContextView(state: state, store: store, expanded: true)
-          .padding(DesignSpacing.lg)
       }
-      .frame(minWidth: 300, idealWidth: 360, minHeight: 200, idealHeight: 360)
-      .presentationCompactAdaptation(.popover)
+      .scrollBounceBehavior(.basedOnSize)
+      .background(WebColor.surfaceRaised.color)
     }
+
   }
 }
 

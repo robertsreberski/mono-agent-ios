@@ -184,6 +184,8 @@ public enum WebType: CaseIterable, Sendable {
   case attachment
   /// `.connection-banner` (phone): 10.
   case banner
+  case sheetTitle, sheetSubtitle, optionName, optionID, effortOption
+  case contextFigure, contextFigureRegular, contextNote, contextEyebrow
 
   public struct Spec: Sendable, Equatable {
     public var size: CGFloat
@@ -252,6 +254,16 @@ public enum WebType: CaseIterable, Sendable {
     case .stepTime: Spec(size: 9, weight: .regular, mono: true, tabular: true, textStyle: .caption2)
     case .attachment: Spec(size: 11, weight: .regular, textStyle: .caption)
     case .banner: Spec(size: 10, weight: .regular, textStyle: .caption2)
+    case .sheetTitle: Spec(size: 14, weight: .semibold, textStyle: .headline)
+    case .sheetSubtitle: Spec(size: 10.5, weight: .regular, lineHeight: 1.45, textStyle: .caption2)
+    case .optionName: Spec(size: 14, weight: .semibold, textStyle: .subheadline)
+    case .optionID: Spec(size: 11, weight: .regular, mono: true, textStyle: .caption)
+    case .effortOption: Spec(size: 12, weight: .semibold, textStyle: .footnote)
+    case .contextFigure: Spec(size: 21, weight: .bold, tabular: true, textStyle: .title3)
+    case .contextFigureRegular: Spec(size: 18, weight: .bold, tabular: true, textStyle: .title3)
+    case .contextNote: Spec(size: 12, weight: .regular, lineHeight: 1.45, textStyle: .footnote)
+    case .contextEyebrow:
+      Spec(size: 10, weight: .heavy, tracking: 0.08, uppercase: true, textStyle: .caption2)
     }
   }
 

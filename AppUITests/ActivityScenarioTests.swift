@@ -125,9 +125,10 @@ import XCTest
         NSPredicate(format: "label CONTAINS %@", "Known cost $0.42")
       ).firstMatch
       XCTAssertTrue(cost.waitForExistence(timeout: 10), "Unknown totals must preserve known spend")
-      XCTAssertTrue(
-        app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "84k / 200k tokens"))
-          .firstMatch.exists)
+      // The figure now mirrors the web: a large numerator and a smaller capacity label.
+      XCTAssertTrue(app.staticTexts["84k"].firstMatch.exists)
+      XCTAssertTrue(app.staticTexts["/ 200k tokens"].firstMatch.exists)
+      XCTAssertTrue(app.staticTexts["42%"].firstMatch.exists)
     } else {
       if scenario == "conversation-job-stack" && variant == nil {
         // The closed shelf (current jobs inline, count chips) before it opens.
