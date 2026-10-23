@@ -304,8 +304,8 @@ struct ComposerBar: View {
         Button {
           Task { await controller.stop() }
         } label: {
-          Image(systemName: "stop.fill")
-            .font(.system(size: 12, weight: .semibold))
+          Image(systemName: "stop")
+            .font(.system(size: 13, weight: .regular))
             .foregroundStyle(WebColor.text.color)
             .frame(width: WebMetrics.send, height: WebMetrics.send)
             .background(WebColor.surfaceHover.color, in: tile)

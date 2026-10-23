@@ -383,11 +383,18 @@ struct WebShadowModifier: ViewModifier {
 /// content, so it is Liquid Glass tinted with the web fill (opaque under Reduce Transparency).
 public struct WebTileButtonStyle: ButtonStyle {
   public enum Tone: Sendable { case standard, accent }
+  /// `.glass` floats the tile on Liquid Glass tinted with its fill; `.flat` is the web's plain
+  /// fill (used where glass would read heavier than the web header, e.g. the phone chat bar).
+  public enum Material: Sendable { case glass, flat }
   private let tone: Tone
+  private let material: Material
   @Environment(\.consoleTheme) private var theme
   @Environment(\.isEnabled) private var enabled
 
-  public init(_ tone: Tone = .standard) { self.tone = tone }
+  public init(_ tone: Tone = .standard, material: Material = .glass) {
+    self.tone = tone
+    self.material = material
+  }
 
   public func makeBody(configuration: Configuration) -> some View {
     let palette = theme.palette
@@ -398,12 +405,32 @@ public struct WebTileButtonStyle: ButtonStyle {
       .font(.system(size: 15, weight: .medium))
       .foregroundStyle(tone == .accent ? palette.accent.color : WebColor.textSoft.color)
       .frame(width: WebMetrics.tile, height: WebMetrics.tile)
-      .floatingGlass(in: shape, tint: fill.color, opaqueFill: fill.color)
+      .background {
+        if material == .flat {
+          shape.fill(
+            configuration.isPressed && tone == .standard
+              ? WebColor.surfaceHover.color : fill.color)
+        }
+      }
+      .modifier(TileGlass(enabled: material == .glass, shape: shape, fill: fill.color))
       .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
       .frame(
         minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget
       )
       .contentShape(Rectangle())
+  }
+}
+
+struct TileGlass<S: Shape>: ViewModifier {
+  let enabled: Bool
+  let shape: S
+  let fill: Color
+  func body(content: Content) -> some View {
+    if enabled {
+      content.floatingGlass(in: shape, tint: fill, opaqueFill: fill)
+    } else {
+      content
+    }
   }
 }
 

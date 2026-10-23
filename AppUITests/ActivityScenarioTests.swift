@@ -31,7 +31,9 @@ import XCTest
   {
     let target = element(app, id)
     for _ in 0..<24 {
-      let top = app.navigationBars.firstMatch.frame.maxY + 8
+      // Phones: the web chat header replaces the system bar; iPad keeps the system bar.
+      let bar = element(app, "conversation-top-bar")
+      let top = (bar.exists ? bar.frame.maxY : app.navigationBars.firstMatch.frame.maxY) + 8
       let jump = element(app, "jump-to-latest")
       let bottom = jump.exists ? jump.frame.minY - 8 : scroll(app).frame.maxY - 34
       if target.exists {

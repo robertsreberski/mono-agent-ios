@@ -3,6 +3,7 @@ import MonoAgentDesign
 import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
+import UIKit
 
 /// Store-only conversation destination. Visibility remains owned by the route lifecycle.
 struct ConversationScreen: View {
@@ -12,6 +13,7 @@ struct ConversationScreen: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.consoleTheme) private var theme
   @Environment(\.horizontalSizeClass) private var sizeClass
+  @Environment(\.dismiss) private var dismiss
   @State private var onScreen = false
   /// A new conversation created by this screen's composer (C8); the route stays unchanged.
   @State private var createdThreadID: String?
@@ -62,8 +64,13 @@ struct ConversationScreen: View {
     }
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
+    .modifier(
+      ConversationTopBar(compact: sizeClass != .regular, panel: theme.palette.panel) {
+        compactHeader
+      }
+    )
     .toolbar { headerToolbar }
-    // Web chat header: panel at 94% over the transcript; the system bar keeps its glass back.
+    // iPad: the web chat header in the system bar (panel at 94%), no back button there.
     .toolbarBackground(theme.palette.panel.color.opacity(0.94), for: .navigationBar)
     .toolbarBackgroundVisibility(.visible, for: .navigationBar)
     .accessibilityElement(children: .contain)
@@ -121,18 +128,45 @@ struct ConversationScreen: View {
 
   // MARK: Header (web `.chat-header`)
 
+  /// iPad (regular width): the header lives in the system bar, leading, beside the trailing
+  /// tile. Phones draw `compactHeader` instead and hide the bar.
   @ToolbarContentBuilder private var headerToolbar: some ToolbarContent {
-    // iPad (no back button): leading. Phones: the principal slot between the 44 pt back button
-    // and the trailing tile, given all of that room so the title block stays leading-aligned.
-    ToolbarItem(placement: sizeClass == .regular ? .topBarLeading : .principal) {
-      header.frame(
-        width: max(
-          120, sizeClass == .regular ? screenWidth - (16 + 60) : screenWidth - 2 * (16 + 44 + 6)),
-        alignment: .leading)
-    }
-    .sharedBackgroundVisibility(.hidden)
-    ToolbarItem(placement: .topBarTrailing) { detailsMenu }
+    if sizeClass == .regular {
+      ToolbarItem(placement: .topBarLeading) {
+        header.frame(width: max(120, screenWidth - (16 + 60)), alignment: .leading)
+      }
       .sharedBackgroundVisibility(.hidden)
+      ToolbarItem(placement: .topBarTrailing) { detailsMenu(glass: true) }
+        .sharedBackgroundVisibility(.hidden)
+    }
+  }
+
+  /// Web mobile `.chat-header` (styles.css 649, 1822–1866): 9 pt gutters, a bare 44 pt back
+  /// chevron pulled 6 pt into the gutter, the title block, and the flat 36 pt "…" tile.
+  private var compactHeader: some View {
+    HStack(spacing: 8) {
+      Button {
+        dismiss()
+      } label: {
+        Image(systemName: "chevron.left")
+          .font(.system(size: 17, weight: .regular))
+          .foregroundStyle(WebColor.textSoft.color)
+          .frame(width: DesignMetrics.minimumHitTarget, height: DesignMetrics.minimumHitTarget)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .padding(.leading, -6)
+      .accessibilityLabel("Back")
+      .accessibilityIdentifier("conversation-back")
+      header.frame(maxWidth: .infinity, alignment: .leading)
+      detailsMenu(glass: false)
+        .padding(.trailing, -4)
+    }
+    .padding(.horizontal, WebSpace.headerGutter)
+    .padding(.vertical, 7)
+    .frame(minHeight: WebMetrics.headerHeight)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("conversation-top-bar")
   }
 
   /// Breadcrumb (project · tags) above the 13 pt title and its run state, left-aligned beside
@@ -214,7 +248,7 @@ struct ConversationScreen: View {
 
   /// The web header's trailing "…" tile. iOS has no conversation actions yet, so it shows the
   /// facts the old in-transcript header carried: agent, state and the route's provenance.
-  private var detailsMenu: some View {
+  private func detailsMenu(glass: Bool) -> some View {
     Menu {
       Section(agent?.label ?? "Agent unavailable") {
         if let runStatus { Text(runStatus.label) }
@@ -224,10 +258,15 @@ struct ConversationScreen: View {
         }
       }
     } label: {
-      Label("Conversation details", systemImage: "ellipsis")
+      // The web's quiet three-dot glyph: small and regular weight inside the 36 pt tile.
+      Label {
+        Text("Conversation details")
+      } icon: {
+        Image(systemName: "ellipsis").font(.system(size: 13, weight: .regular))
+      }
     }
     .menuStyle(.button)
-    .buttonStyle(WebTileButtonStyle())
+    .buttonStyle(WebTileButtonStyle(material: glass ? .glass : .flat))
     .accessibilityIdentifier("conversation-details")
   }
 
@@ -255,6 +294,54 @@ struct ConversationScreen: View {
       .padding(.top, 48)
       .accessibilityElement(children: .combine)
       .accessibilityIdentifier("transcript-loading")
+    }
+  }
+}
+
+/// Phones: hides the system bar (and its glass back button) and pins the web mobile chat header
+/// above the content: the chat panel flowing up through the status-bar band, with a 1 px
+/// bottom line and no blur or glass. Swipe-back stays available through `InteractivePopRestorer`.
+private struct ConversationTopBar<Bar: View>: ViewModifier {
+  let compact: Bool
+  let panel: AdaptiveColor
+  @ViewBuilder let bar: () -> Bar
+
+  func body(content: Content) -> some View {
+    if compact {
+      content
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+          bar()
+            // The status-bar band is opaque panel, as the web's fixed band; the header is the
+            // panel too (the web's 94% mix reads as opaque, and any show-through ghosts text).
+            .background { panel.color.ignoresSafeArea(edges: .top) }
+            .overlay(alignment: .bottom) {
+              Rectangle().fill(WebColor.line.color).frame(height: 1)
+                .accessibilityHidden(true)
+            }
+        }
+        .background { InteractivePopRestorer().frame(width: 0, height: 0) }
+    } else {
+      content
+    }
+  }
+}
+
+/// UIKit disables the edge swipe-back when the navigation bar is hidden. This re-enables the
+/// stack's own interactive pop gesture whenever there is a screen to return to.
+private struct InteractivePopRestorer: UIViewControllerRepresentable {
+  func makeUIViewController(context: Context) -> Controller { Controller() }
+  func updateUIViewController(_ controller: Controller, context: Context) {}
+
+  final class Controller: UIViewController, UIGestureRecognizerDelegate {
+    override func viewDidAppear(_ animated: Bool) {
+      super.viewDidAppear(animated)
+      guard let gesture = navigationController?.interactivePopGestureRecognizer else { return }
+      gesture.isEnabled = true
+      gesture.delegate = self
+    }
+    func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+      (navigationController?.viewControllers.count ?? 0) > 1
     }
   }
 }
