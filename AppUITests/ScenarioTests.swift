@@ -154,7 +154,7 @@ final class ScenarioTests: XCTestCase {
     for _ in 0..<8 {
       if element(app, id).waitForExistence(timeout: 1) { return true }
       // The dashboard list (the iPad sidebar, not the detail column under the screen centre).
-      let list = app.collectionViews.firstMatch
+      let list = app.scrollViews.matching(identifier: "dashboard-list").firstMatch
       if list.exists { list.swipeUp() } else { app.swipeUp() }
     }
     return element(app, id).exists

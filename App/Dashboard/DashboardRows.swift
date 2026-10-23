@@ -32,6 +32,17 @@ enum DashboardRows {
     }
   }
 
+  /// The web route badge (`model · effort`): the conversation override, else the last
+  /// reported thread route. Nothing is drawn when the console reported neither.
+  static func routeBadge(_ thread: WebThread) -> String? {
+    func nonempty(_ value: String?) -> String? { value.flatMap { $0.isEmpty ? nil : $0 } }
+    guard let model = nonempty(thread.runModel) ?? nonempty(thread.runState.model) else {
+      return nil
+    }
+    let effort = nonempty(thread.runEffort) ?? nonempty(thread.runState.effort)
+    return model + " · " + (effort.map { $0 == "none" ? "off" : $0 } ?? "—")
+  }
+
   private static func activity(_ active: Bool, confirmed: Bool) -> ActivityState? {
     active ? (confirmed ? .running : .lastKnown) : nil
   }
@@ -57,7 +68,8 @@ enum DashboardRows {
       activity: activity(presentation.active, confirmed: confirmed),
       preview: preview.map(AttributedString.init), previewPending: presentation.active,
       project: project(thread, projects),
-      tags: rowTags.map { .init($0.name, color: LabelColor(serverValue: $0.color)) })
+      tags: rowTags.map { .init($0.name, color: LabelColor(serverValue: $0.color)) },
+      route: routeBadge(thread))
   }
 
   /// A Running card: the card's own agent, never the selected one.
@@ -73,7 +85,7 @@ enum DashboardRows {
       activity: confirmed ? .running : .lastKnown,
       preview: AttributedString(DashboardModel.runningStatus(thread)),
       previewPending: DashboardModel.runningPending(thread), project: project(thread, projects),
-      accessibilityContext: "on \(agent.label)")
+      accessibilityContext: "on \(agent.label)", route: routeBadge(thread))
   }
 
   /// A search hit. The fresher held summary wins when this device has one.
@@ -121,6 +133,6 @@ enum DashboardRows {
       preview: AttributedString(
         "\(channel)\(chats) chat\(chats == 1 ? "" : "s") · updated "
           + DashboardModel.relativeTime(project.updatedAt, now: now)),
-      detail: detail, accessibilityContext: "project")
+      detail: detail, accessibilityContext: "project", chevron: true)
   }
 }
