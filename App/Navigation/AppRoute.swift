@@ -10,14 +10,14 @@ enum AppRoute: Hashable, Codable {
   /// One conversation. `archived` selects the bucket the conversation is listed in.
   case conversation(profile: UUID, sourceID: String, threadID: String, archived: Bool)
   /// A new conversation for one agent: no thread exists until the composer sends (C8).
-  case newConversation(profile: UUID, sourceID: String)
+  case newConversation(profile: UUID, sourceID: String, requestID: UUID = UUID())
   /// A project page placeholder (the page itself belongs to the organize feature).
   case project(profile: UUID, sourceID: String, projectID: String)
 
   var profile: UUID {
     switch self {
     case .console(let id): id
-    case .conversation(let profile, _, _, _), .newConversation(let profile, _),
+    case .conversation(let profile, _, _, _), .newConversation(let profile, _, _),
       .project(let profile, _, _):
       profile
     }
@@ -27,7 +27,7 @@ enum AppRoute: Hashable, Codable {
   var sourceID: String? {
     switch self {
     case .console: nil
-    case .conversation(_, let source, _, _), .newConversation(_, let source),
+    case .conversation(_, let source, _, _), .newConversation(_, let source, _),
       .project(_, let source, _):
       source
     }

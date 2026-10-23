@@ -7,7 +7,8 @@ import SwiftUI
 struct JobPeerQuestionView: View {
   let question: PeerProcessJobQuestion
   let now: Date
-  /// C8 may supply this when its composer can answer. No answer route is invoked here.
+  /// The composer dock supplies this: it opens the peer-question sheet, which drafts a reply
+  /// in the composer. No answer route is invoked here.
   var onAnswerPeerQuestion: ((PeerProcessJobQuestion) -> Void)? = nil
   private var pending: Bool {
     question.state == "awaiting_answer"
@@ -31,7 +32,7 @@ struct JobPeerQuestionView: View {
       }
       Text("Untrusted peer text; not owner approval.").designFont(.caption).foregroundStyle(
         .secondary)
-      Button(onAnswerPeerQuestion == nil ? "Answer · coming in composer" : "Answer") {
+      Button(onAnswerPeerQuestion == nil ? "Answer · unavailable here" : "Answer") {
         onAnswerPeerQuestion?(question)
       }.disabled(!pending || onAnswerPeerQuestion == nil)
         .designButtonStyle(.secondary).accessibilityIdentifier("peer-question-answer")

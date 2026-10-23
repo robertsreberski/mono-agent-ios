@@ -12,8 +12,10 @@ struct ConversationScreen: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.consoleTheme) private var theme
   @State private var onScreen = false
+  /// A new conversation created by this screen's composer (C8); the route stays unchanged.
+  @State private var createdThreadID: String?
 
-  private var threadID: String? { route.threadID }
+  private var threadID: String? { route.threadID ?? createdThreadID }
   private var sourceID: String { route.sourceID ?? "" }
 
   private var thread: WebThread? {
@@ -47,6 +49,10 @@ struct ConversationScreen: View {
         }
       }
     }
+    .conversationComposer(
+      store: store, route: route, createdThreadID: $createdThreadID,
+      sampleAttachments: model.offersSampleAttachments
+    )
     .background(theme.palette.canvas.color)
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
@@ -117,9 +123,6 @@ struct ConversationScreen: View {
       if let route = knownRoute {
         RouteBadge(model: route.label, effort: route.effort ?? "", detail: route.detail)
       }
-      if let threadID, let state = store.conversations[threadID] {
-        ConversationActivityHeader(state: state, store: store)
-      }
       if let thread, let project = DashboardModel.projectLabel(thread, projects: store.projects) {
         ProjectChip(project.name, color: LabelColor(serverValue: project.color))
       }
@@ -142,9 +145,9 @@ struct ConversationScreen: View {
   @ViewBuilder private var placeholder: some View {
     if threadID == nil {
       EmptyStateView(
-        "Composer coming soon", systemImage: "square.and.pencil",
+        "New conversation", systemImage: "square.and.pencil",
         message:
-          "Placeholder: writing and sending the first message arrives in a later update. No conversation has been created."
+          "Write the first message below. The conversation is created when you send it."
       )
       .contentSurface()
       .accessibilityElement(children: .combine)

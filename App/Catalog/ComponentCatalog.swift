@@ -126,6 +126,28 @@
               CodeDocumentView(source: "Synthetic output", language: "Output")
             }
           }
+          catalogSection("Composer parts") {
+            VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+              QuotePreview(
+                "The sample is ready. Two checks passed; one fictional file needs attention."
+              ) {}
+              HStack {
+                AttachmentChip(name: "field-notes.txt", detail: "1 KB", isImage: false) {}
+                AttachmentChip(
+                  name: "sample-photo.png", detail: "", isImage: true, phase: .uploading(0.6))
+              }
+              AttachmentChip(name: "too-large.pdf", detail: "", isImage: false, phase: .failed) {}
+              SuggestionRow(
+                "$release-notes", subtitle: "Draft release notes from the sample changelog",
+                badge: "On demand", highlighted: true)
+              SuggestionRow(
+                "Run settings", subtitle: "Choose the model and reasoning effort",
+                systemImage: "slider.horizontal.3")
+              ChoiceRow("Today", detail: "Publish this afternoon", selected: true, multiple: false)
+              ChoiceRow("Images", detail: "Check image sizes", selected: false, multiple: true)
+            }
+            .contentSurface()
+          }
           catalogSection("Composer bar shell") {
             Text("Pinned below: layout-only glass shell. Content scrolls beneath it.")
               .designFont(.supporting).foregroundStyle(.secondary)

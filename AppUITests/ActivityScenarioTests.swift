@@ -47,6 +47,22 @@ import XCTest
     XCTAssertTrue(target.exists && target.isHittable, "Missing visible control: " + id)
     return target
   }
+  /// Activity now lives in the composer dock (web layout): reveal cards inside the dock's own
+  /// bounded scroll view, not the transcript.
+  private func dockReveal(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+    let dock = app.scrollViews.matching(identifier: "composer-dock-scroll").firstMatch
+    let target = dock.descendants(matching: .any)[id].firstMatch
+    for _ in 0..<12 {
+      if target.exists && target.isHittable { return target }
+      guard dock.exists else { break }
+      dragDock(dock, down: target.exists && target.frame.midY < dock.frame.minY)
+    }
+    XCTAssertTrue(
+      target.exists && target.isHittable,
+      "Missing dock control: \(id) dock=\(dock.exists ? dock.frame.debugDescription : "absent") target=\(target.exists ? target.frame.debugDescription : "absent")"
+    )
+    return target
+  }
   private func capture(_ scenario: String, _ appearance: String, variant: String? = nil) {
     let app = XCUIApplication()
     app.launchArguments = [
@@ -62,12 +78,20 @@ import XCTest
     app.launch()
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
     XCTAssertTrue(scroll(app).waitForExistence(timeout: 10))
-    _ = reveal(app, "context-display", towardHeader: true)
+    // Context sits beside the model selector and the job shelf above the input, as on the web.
+    XCTAssertTrue(element(app, "context-display").waitForExistence(timeout: 10))
+    XCTAssertTrue(element(app, "composer").exists)
+    XCTAssertFalse(
+      element(app, "conversation-header").descendants(matching: .any)["context-display"].exists,
+      "Activity is no longer in the conversation header")
     XCTAssertTrue(element(app, "conversation-header").exists)
     XCTAssertTrue(app.staticTexts["Native transcript sample"].firstMatch.exists)
-    if scenario != "conversation-context" { XCTAssertTrue(element(app, "job-stack").exists) }
+    if scenario != "conversation-context" {
+      XCTAssertTrue(element(app, "composer-dock-scroll").exists)
+      XCTAssertTrue(element(app, "job-stack").exists)
+    }
     if scenario == "conversation-context" {
-      reveal(app, "context-display", towardHeader: true).tap()
+      element(app, "context-display").tap()
       let cost = app.staticTexts.containing(
         NSPredicate(format: "label CONTAINS %@", "Known cost $0.42")
       ).firstMatch
@@ -76,31 +100,35 @@ import XCTest
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "84k / 200k tokens"))
           .firstMatch.exists)
     } else {
-      reveal(app, "job-stack", towardHeader: true).tap()
+      element(app, "job-stack").tap()
       if scenario == "conversation-jobs" {
-        reveal(app, "job-card-running").tap()
-        reveal(app, "job-output-running").tap()
+        dockReveal(app, "job-card-running").tap()
+        dockReveal(app, "job-output-running").tap()
         XCTAssertTrue(
           app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS %@", "Ready for the next stage")
           ).firstMatch.exists)
         XCTAssertTrue(element(app, "job-refresh-running").exists)
       } else if scenario == "conversation-job-stack" {
-        reveal(app, "job-group-agent:garden-helper").tap()
-        let current = reveal(app, "job-card-turn-5")
+        dockReveal(app, "job-group-agent:garden-helper").tap()
+        let current = dockReveal(app, "job-card-turn-5")
         XCTAssertTrue(current.label.contains("Current job"))
         XCTAssertTrue(
           app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "earlier turns"))
             .firstMatch.exists)
       } else {
-        reveal(app, "job-group-peer:seed-bank").tap()
-        reveal(app, "job-card-peer-pending").tap()
-        let answer = reveal(app, "peer-question-answer")
-        XCTAssertFalse(answer.isEnabled)
-        XCTAssertTrue(answer.label.contains("coming in composer"))
+        dockReveal(app, "job-group-peer:seed-bank").tap()
+        dockReveal(app, "job-card-peer-pending").tap()
+        let answer = dockReveal(app, "peer-question-answer")
+        XCTAssertTrue(answer.isEnabled, "C8 wires Answer to the peer-question sheet")
+        XCTAssertEqual(answer.label, "Answer")
         XCTAssertTrue(element(app, "subagent-progress").exists)
         XCTAssertTrue(element(app, "peer-question").exists)
-        if variant != "ax3" { _ = reveal(app, "subagent-progress", towardHeader: true) }
+        answer.tap()
+        XCTAssertTrue(element(app, "peer-sheet").waitForExistence(timeout: 10))
+        app.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(element(app, "composer").waitForExistence(timeout: 10))
+        if variant != "ax3" { _ = dockReveal(app, "subagent-progress") }
       }
     }
     let rendered = XCTNSPredicateExpectation(
@@ -117,4 +145,12 @@ import XCTest
     add(attachment)
     app.terminate()
   }
+
+  /// A short, slow drag inside the dock's bounded scroll view (flicks overshoot it).
+  private func dragDock(_ dock: XCUIElement, down: Bool) {
+    let from = dock.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.3 : 0.7))
+    let to = dock.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.7 : 0.3))
+    from.press(forDuration: 0.05, thenDragTo: to)
+  }
+
 }

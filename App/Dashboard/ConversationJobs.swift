@@ -351,7 +351,7 @@ struct ProcessJobLifecycleView: View {
       systemImage: JobPresentation.command(job) ? "terminal" : "person.crop.circle"
     )
     .designFont(.supporting)
-    .accessibilityHint("Details in Background jobs in the conversation header")
+    .accessibilityHint("Details in Background jobs above the message field")
   }
 }
 struct ProcessJobWakeView: View {

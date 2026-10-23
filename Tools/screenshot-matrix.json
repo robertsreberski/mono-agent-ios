@@ -428,6 +428,170 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "ax3"
+    },
+    {
+      "scenario": "composer-empty",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-empty",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-draft-attachments",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-draft-attachments",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-skill-picker",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-skill-picker",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-running",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-running",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-send-failed",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-send-failed",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-quote",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-quote",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-ask-form",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-ask-form",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-quick-replies",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-quick-replies",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "peer-question-sheet",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "peer-question-sheet",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-empty",
+      "appearance": "light",
+      "variant": "keyboard",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-draft-attachments",
+      "appearance": "dark",
+      "variant": "plum",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum"
+    },
+    {
+      "scenario": "composer-running",
+      "appearance": "light",
+      "variant": "ax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

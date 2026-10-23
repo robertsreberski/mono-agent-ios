@@ -63,6 +63,9 @@ public final class ConsoleStore {
   public internal(set) var hydrated = false
   public internal(set) var draftClearStorage: [String: PersistenceState] = [:]
   public internal(set) var stagedAttachments: [WebAttachment] = []
+  public internal(set) var uploadProgress: [UploadProgressItem] = []
+  /// Per-agent skill registries for the composer; memory only, refreshed on demand.
+  public internal(set) var skillRegistries: [String: SkillRegistryState] = [:]
   @ObservationIgnored var uploadTasks: [UUID: Task<[WebAttachment], any Error>] = [:]
 
   @ObservationIgnored let api: any ConsoleAPI
@@ -119,7 +122,10 @@ public final class ConsoleStore {
       uniquingKeysWith: { first, _ in first })
   }
   @ObservationIgnored var preparedHere: Set<String> = []
+  @ObservationIgnored var runOverrides: [String: RunOverrideState] = [:]
   @ObservationIgnored var retryIdentities: [String: SubmissionReference] = [:]
+  @ObservationIgnored var knownSubmissionReceipts: [String: WebSubmissionReceipt] = [:]
+  @ObservationIgnored var receiptOrder: [String] = []
   @ObservationIgnored var completedSubmissions: Set<String> = []
   @ObservationIgnored var retirementOrder: [String] = []
   @ObservationIgnored var draftClearOrder: [String] = []

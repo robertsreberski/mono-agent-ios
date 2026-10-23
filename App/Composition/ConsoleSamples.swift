@@ -24,8 +24,30 @@
     case conversationJobStack = "conversation-job-stack"
     case conversationSubagents = "conversation-subagents"
     case conversationContext = "conversation-context"
+    // Composer (C8): scripted send/upload/ask round trips through the synthetic Store.
+    case composerEmpty = "composer-empty"
+    case composerDraftAttachments = "composer-draft-attachments"
+    case composerSkillPicker = "composer-skill-picker"
+    case composerModelSelector = "composer-model-selector"
+    case composerRunning = "composer-running"
+    case composerSendFailed = "composer-send-failed"
+    case composerQuote = "composer-quote"
+    case conversationAskForm = "conversation-ask-form"
+    case conversationQuickReplies = "conversation-quick-replies"
+    case peerQuestionSheet = "peer-question-sheet"
 
     var isTranscript: Bool { rawValue.hasPrefix("conversation-") }
+
+    /// Composer scenarios are served by a stateful per-instance `ComposerScript`.
+    var isComposer: Bool {
+      switch self {
+      case .composerEmpty, .composerDraftAttachments, .composerSkillPicker,
+        .composerModelSelector, .composerRunning, .composerSendFailed, .composerQuote,
+        .conversationAskForm, .conversationQuickReplies, .peerQuestionSheet:
+        true
+      default: false
+      }
+    }
 
     /// Dashboard scenarios use the richer `DashboardFixture`; store scenarios keep the golden.
     var isDashboard: Bool {
@@ -41,13 +63,17 @@
     /// Fixture launch state the dashboard applies once the Store is ready.
     var launchQuery: String? { self == .dashboardSearch ? DashboardFixture.searchQuery : nil }
     var launchThreadID: String? {
-      isTranscript ? DashboardFixture.openThreadID : nil
+      isTranscript || (isComposer && self != .composerEmpty) ? DashboardFixture.openThreadID : nil
     }
 
     /// Scenario.bootstrap is the fictional composition derived from the pinned C1 golden.
     @MainActor func prepare(
       _ store: ConsoleStore, repository: any ConsoleRepository, theme: String = "evergreen"
     ) async throws {
+      if isComposer {
+        try await ComposerFixture.prepare(self, store: store, repository: repository, theme: theme)
+        return
+      }
       if isDashboard {
         try await DashboardFixture.prepare(
           store, repository: repository, empty: self == .dashboardEmpty, theme: theme,
@@ -89,15 +115,24 @@
     }
   }
 
-  actor ScenarioConsoleTransport: HTTPTransport {
+  actor ScenarioConsoleTransport: FileUploadTransport {
     let scenario: StoreScenario?
     let theme: String
-    init(_ scenario: StoreScenario?, theme: String = "evergreen") {
+    let script: ComposerScript?
+    init(_ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil) {
       self.scenario = scenario
       self.theme = theme
+      self.script = script
     }
-    func send(_ request: URLRequest) throws -> HTTPResponse {
+    func upload(
+      _ request: URLRequest, file: URL, progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> HTTPResponse {
+      guard let script else { throw URLError(.resourceUnavailable) }
+      return try await script.upload(request, file: file, progress: progress)
+    }
+    func send(_ request: URLRequest) async throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
+      if let script { return try await script.response(request, theme: theme) }
       if let scenario, scenario.isTranscript,
         let response = try TranscriptFixture.response(request, scenario: scenario, theme: theme)
       {
@@ -166,9 +201,13 @@
   }
   actor ScenarioEventSource: ConsoleEventSource {
     let scenario: StoreScenario?
+    let composer: ComposerScript?
     var continuation: AsyncThrowingStream<StreamUpdate, any Error>.Continuation?
     var script: Task<Void, Never>?
-    init(_ scenario: StoreScenario?) { self.scenario = scenario }
+    init(_ scenario: StoreScenario?, script composer: ComposerScript? = nil) {
+      self.scenario = scenario
+      self.composer = composer
+    }
     func subscribe(thread: String?, capacity: Int) -> AsyncThrowingStream<StreamUpdate, any Error> {
       script?.cancel()
       continuation?.finish()
@@ -184,6 +223,10 @@
         {
           pair.continuation.yield(.event(generation: 1, gap: .initial, ready))
         }
+      }
+      if let composer {
+        let continuation = pair.continuation
+        Task { await composer.attach(continuation) }
       }
       if scenario == .conversationStreaming, thread == DashboardFixture.openThreadID {
         script = Task {

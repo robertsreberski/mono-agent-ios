@@ -78,6 +78,7 @@ colour is never the only cue.
 | States | `EmptyStateView`, `ErrorStateView`, `LoadingStateView` | Optional single action |
 | Section header | `SectionHeader(_:detail:accessory:)` | Header trait; optional trailing accessory |
 | Composer shell | `ComposerBarShell(leading:field:trailing:)` | Layout only: one `GlassEffectContainer`, readable width. No drafts or sending |
+| Composer parts | `AttachmentChip(name:detail:isImage:thumbnail:phase:onRemove:)`, `SuggestionRow`, `QuotePreview(_:onDismiss:)`, `ChoiceRow(_:detail:selected:multiple:)` | Opaque content pieces used inside or above the composer and in question forms. Chips speak upload progress/failure; choices use symbols + the selected trait, never colour alone |
 | Rich documents | `RichTextDocumentView(source:)`, `RichDocument.parse(_:)` | Bounded off-main GFM parsing, native selectable inline text; HTML stays literal. Exact swift-markdown 0.7.3 / swift-cmark 0.9.0; see root README and bundled ThirdPartyNotices |
 | Code | `CodeDocumentView(source:language:)` | Horizontal scroller, accessible selectable monospaced text, copy; bounded display with explicit notice |
 | Activity | `ActivityDisclosure(_:summary:status:detail:identifier:expanded:content:)` | Value-driven expansion, lazy payload construction, non-colour status and VoiceOver expansion state |

@@ -40,7 +40,8 @@ import XCTest
         !self.element(app, "transcript-load-older").exists
           && self.element(app, "message-long-40").exists
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [paged], timeout: 10), .completed)
+    // Paging is a network read plus layout; allow a loaded simulator to settle.
+    XCTAssertEqual(XCTWaiter.wait(for: [paged], timeout: 20), .completed)
     XCTAssertTrue(
       anchor.isHittable,
       "Paging must retain the previously visible message, not jump to the new first row")

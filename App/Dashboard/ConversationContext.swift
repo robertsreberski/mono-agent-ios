@@ -4,36 +4,32 @@ import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
 
-struct ConversationActivityHeader: View {
+/// Context/cost for a conversation. The composer dock mounts it beside the model selector
+/// (web "Next turn settings" row): a compact trigger there, the full disclosure in a popover.
+struct ConversationContextView: View {
   let state: ConversationState
   let store: ConsoleStore
-  var onAnswerPeerQuestion: ((PeerProcessJobQuestion) -> Void)? = nil
-  var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.md) {
-      ConversationContextView(state: state, store: store)
-      ConversationJobStack(state: state, store: store, onAnswerPeerQuestion: onAnswerPeerQuestion)
-    }
+  @State private var expanded: Bool
+  init(state: ConversationState, store: ConsoleStore, expanded: Bool = false) {
+    self.state = state
+    self.store = store
+    _expanded = State(initialValue: expanded)
   }
-}
-
-private struct ConversationContextView: View {
-  let state: ConversationState
-  let store: ConsoleStore
-  @State private var expanded = false
-  @State private var loading = false
-  @State private var failed = false
-  var body: some View {
+  static func content(_ state: ConversationState) -> ContextDisplayContent {
     let projection = UsagePresentation.context(messages: state.messages, thread: state.thread)
     let rows = UsagePresentation.rows(state.usage).map {
       ContextDisplayContent.Row($0.label, $0.value)
     }
+    return .init(
+      badge: projection.badge, figure: projection.figure,
+      status: projection.status + (projection.model.map { " · " + $0 } ?? ""),
+      percent: projection.percent, note: projection.note, rows: rows)
+  }
+  @State private var loading = false
+  @State private var failed = false
+  var body: some View {
     VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-      ContextDisplay(
-        .init(
-          badge: projection.badge, figure: projection.figure,
-          status: projection.status + (projection.model.map { " · " + $0 } ?? ""),
-          percent: projection.percent,
-          note: projection.note, rows: rows), expanded: $expanded)
+      ContextDisplay(Self.content(state), expanded: $expanded)
       if expanded {
         if state.usageRevision != nil && state.usageRevision != state.thread.revision {
           Text("Last reported totals; conversation has changed.").designFont(.caption)

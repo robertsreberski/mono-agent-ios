@@ -40,7 +40,7 @@ struct ConversationHeaderTests {
     #expect(!DashboardModel.presentation(thread).active)
     #expect(ConversationHeaderModel.status(thread, confirmed: true).label == "Idle")
   }
-  @Test(arguments: StoreScenario.allCases.filter(\.isTranscript))
+  @Test(arguments: StoreScenario.allCases.filter { $0.isTranscript && !$0.isComposer })
   func syntheticCacheBootstrapAndFleetAgree(_ scenario: StoreScenario) throws {
     let cache = try TranscriptFixture.cached(scenario)
     let bootstrap = try TranscriptFixture.bootstrap(scenario, theme: "evergreen")

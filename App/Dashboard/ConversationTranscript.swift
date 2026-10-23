@@ -70,6 +70,9 @@ struct ConversationTranscript<Header: View>: View {
     }
     .scrollPosition($scrollPosition)
     .defaultScrollAnchor(.bottom, for: .initialOffset)
+    // Short transcripts sit at the top; bottom alignment left a gap that revealed the refresh
+    // control above the first row once the composer dock enlarged the bottom inset.
+    .defaultScrollAnchor(.top, for: .alignment)
     .onScrollPhaseChange { _, next in phase = next }
     .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { visibleIDs = $0 }
     .onScrollGeometryChange(for: TranscriptScrollMetrics.self) { geometry in
@@ -82,7 +85,15 @@ struct ConversationTranscript<Header: View>: View {
       if old.contentHeight != next.contentHeight && policy.shouldScrollAfterWrite(next)
         && phase == .idle
       {
-        scrollPosition.scrollTo(edge: .bottom)
+        if next.contentHeight > next.viewportHeight {
+          // Anchor to the realized bottom row, not the lazily estimated content edge: with a
+          // short viewport (keyboard up) edge scrolling re-estimated rows and never settled.
+          scrollPosition.scrollTo(id: "transcript-bottom", anchor: .bottom)
+        } else {
+          // Content shorter than the viewport: the clamped edge scroll never over-pulls into
+          // the refresh control.
+          scrollPosition.scrollTo(edge: .bottom)
+        }
       }
     }
     .accessibilityIdentifier("conversation-transcript")
