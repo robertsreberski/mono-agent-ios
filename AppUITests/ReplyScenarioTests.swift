@@ -17,7 +17,12 @@ import XCTest
     let app = launch("conversation-attachments", appearance)
     let image = app.buttons["View uploaded-landscape.png"]
     XCTAssertTrue(image.waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["Download sample-notes.txt"].exists)
+    let file = app.buttons["Download sample-notes.txt"]
+    XCTAssertTrue(file.exists)
+    let text = app.staticTexts["Sample image and notes."].firstMatch
+    XCTAssertTrue(text.waitForExistence(timeout: 5))
+    XCTAssertLessThan(image.frame.maxY, text.frame.minY, "Sent images precede user text")
+    XCTAssertLessThan(file.frame.maxY, text.frame.minY, "Sent files precede user text")
     capture(app, "conversation-attachments", appearance)
     image.tap()
     XCTAssertTrue(element(app, "reply-lightbox").waitForExistence(timeout: 5))
