@@ -44,6 +44,7 @@ public struct ReplyFileCard: View {
       }
       if let status, !status.isEmpty {
         Text(status).webFont(.replyMeta)
+          .fontWeight(phase == .unavailable ? .semibold : .regular)
           .foregroundStyle(
             phase == .unavailable || phase == .tooLarge
               ? WebColor.danger.color : WebColor.textMuted.color

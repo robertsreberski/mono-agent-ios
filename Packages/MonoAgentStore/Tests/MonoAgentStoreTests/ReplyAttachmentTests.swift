@@ -15,7 +15,8 @@ struct ReplyFileCacheTests {
     let now = Date()
     let one = try await cache.insert(
       Data("abc".utf8), key: "fictional-token", name: "../../sample.txt", now: now)
-    #expect(one.url.deletingLastPathComponent().path == directory.resolvingSymlinksInPath().path)
+    #expect(one.url.path.hasPrefix(directory.path + "/"))
+    #expect(one.url.lastPathComponent == "_.._sample.txt")
     #expect(!one.url.lastPathComponent.contains("fictional-token"))
     let two = try await cache.insert(Data("def".utf8), key: "two", name: "two.txt", now: now)
     await #expect(throws: ReplyFileCacheError.self) {
@@ -90,6 +91,7 @@ struct ReplyFileCacheTests {
     await h.transport.set(base + "/content", [.response(bytes)])
     let lease = try await download(h)
     #expect(lease.url.isFileURL)
+    #expect(lease.url.lastPathComponent == "sample.txt")
     #expect(try Data(contentsOf: lease.url) == Data("abc".utf8))
     await h.store.releaseReplyFile(lease)
     let again = try await download(h)

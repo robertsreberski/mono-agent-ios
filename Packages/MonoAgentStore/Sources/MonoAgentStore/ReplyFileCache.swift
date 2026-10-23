@@ -39,7 +39,9 @@ public actor ReplyFileCache {
     let safe = String(name.prefix(120)).map {
       $0.isASCII && ($0.isLetter || $0.isNumber || " .-_".contains($0)) ? $0 : "_"
     }
-    return directory.appendingPathComponent(Self.digest(key) + "-" + String(safe))
+    let basename = String(safe).trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+    return directory.appendingPathComponent(Self.digest(key), isDirectory: true)
+      .appendingPathComponent(basename.isEmpty ? "Attachment" : basename)
   }
   public func cached(key: String, name: String, now: Date = .now) throws -> ReplyFileLease? {
     try prune(now: now)
@@ -63,6 +65,8 @@ public actor ReplyFileCache {
     let url = location(key: key, name: name)
     if let hit = try cached(key: key, name: name, now: now) { return hit }
     try prune(now: now, reservingBytes: data.count, reservingCount: 1)
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try data.write(to: url, options: .atomic)
     #if os(iOS)
       try FileManager.default.setAttributes(
@@ -86,7 +90,7 @@ public actor ReplyFileCache {
     where !leases.values.contains(where: {
       $0.resolvingSymlinksInPath().path == entry.url.resolvingSymlinksInPath().path
     }) {
-      try FileManager.default.removeItem(at: entry.url)
+      try remove(entry.url)
     }
   }
   private struct Entry {
@@ -96,17 +100,35 @@ public actor ReplyFileCache {
   }
   private func entries() throws -> [Entry] {
     guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
-    return try FileManager.default.contentsOfDirectory(
-      at: directory,
-      includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
-    ).compactMap { url in
-      let values = try url.resourceValues(forKeys: [
-        .fileSizeKey, .contentModificationDateKey, .isRegularFileKey,
-      ])
+    let keys: Set<URLResourceKey> = [
+      .fileSizeKey, .contentModificationDateKey, .isRegularFileKey, .isDirectoryKey,
+    ]
+    var urls: [URL] = []
+    for url in try FileManager.default.contentsOfDirectory(
+      at: directory, includingPropertiesForKeys: Array(keys))
+    {
+      if try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+        urls += try FileManager.default.contentsOfDirectory(
+          at: url, includingPropertiesForKeys: Array(keys))
+      } else {
+        urls.append(url)
+      }
+    }
+    return try urls.compactMap { url in
+      let values = try url.resourceValues(forKeys: keys)
       guard values.isRegularFile == true else { return nil }
       return Entry(
         url: url, bytes: values.fileSize ?? 0, date: values.contentModificationDate ?? .distantPast)
     }.sorted { $0.date < $1.date }
+  }
+  private func remove(_ url: URL) throws {
+    try FileManager.default.removeItem(at: url)
+    let parent = url.deletingLastPathComponent()
+    if parent.resolvingSymlinksInPath().path != directory.resolvingSymlinksInPath().path,
+      try FileManager.default.contentsOfDirectory(atPath: parent.path).isEmpty
+    {
+      try FileManager.default.removeItem(at: parent)
+    }
   }
   private func prune(now: Date, reservingBytes: Int = 0, reservingCount: Int = 0) throws {
     let files = try entries()
@@ -119,7 +141,7 @@ public actor ReplyFileCache {
       if count > maximumCount || bytes > maximumBytes
         || now.timeIntervalSince(entry.date) >= retention
       {
-        try FileManager.default.removeItem(at: entry.url)
+        try remove(entry.url)
         count -= 1
         bytes -= entry.bytes
       }

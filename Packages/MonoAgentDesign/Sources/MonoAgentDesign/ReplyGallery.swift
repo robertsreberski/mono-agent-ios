@@ -57,7 +57,7 @@ public struct ReplyGalleryImage: Identifiable {
   }
 }
 
-/// Value-driven lightbox. Paging, a native zoom scroll view and native ShareLink use local bytes only.
+/// Value-driven lightbox. Swipe paging, bounded native magnification and ShareLink use local bytes only.
 public struct ReplyLightbox: View {
   let images: [ReplyGalleryImage]
   @Binding var selected: String
