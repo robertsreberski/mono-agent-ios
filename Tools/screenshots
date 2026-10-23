@@ -18,6 +18,11 @@ def key(entry):
     return (entry["scenario"], entry["appearance"], entry.get("variant"))
 
 
+def is_composer(scenario):
+    return scenario.startswith("composer-") or scenario in {
+        "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+
+
 EXPECTED = {key(entry): entry for entry in MATRIX}
 if len(EXPECTED) != len(MATRIX):
     sys.exit("Duplicate entries in Tools/screenshot-matrix.json")
@@ -31,10 +36,15 @@ parser.add_argument("--iphone")
 parser.add_argument("--ipad")
 parser.add_argument("--family", choices=["iPhone", "iPad"], help="Run one CI matrix leg; default runs both")
 parser.add_argument("--transcript-only", action="store_true", help="Focused transcript XCUI captures; preserves the full default matrix")
+parser.add_argument("--composer-only", action="store_true", help="Focused composer XCUI captures; preserves the full default matrix")
 args = parser.parse_args()
+if args.transcript_only and args.composer_only:
+    parser.error("Choose at most one focused capture")
 if args.transcript_only:
     EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in {
         "conversation-transcript", "conversation-streaming", "conversation-tools", "conversation-long", "conversation-markdown"}}
+if args.composer_only:
+    EXPECTED = {key(entry): entry for entry in MATRIX if is_composer(entry["scenario"])}
 if bool(args.iphone) != bool(args.ipad):
     parser.error("Supply both --iphone and --ipad, or neither for dynamic selection")
 if args.iphone:
@@ -72,7 +82,7 @@ def surface(scenario):
         return "design catalog"
     if scenario.startswith("dashboard-") or scenario == "console-online":
         return "dashboard"
-    if scenario.startswith("conversation-"):
+    if scenario.startswith("conversation-") or is_composer(scenario):
         return "conversation"
     return "connection"
 
@@ -95,7 +105,8 @@ def capture(family, device):
             "-derivedDataPath", ".build/Xcode", "-resultBundlePath", str(result),
             "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never",
             "CODE_SIGNING_ALLOWED=NO", "test",
-            *(["-only-testing:MonoAgentUITests/TranscriptScenarioTests", "-only-testing:MonoAgentTests"] if args.transcript_only else []))
+            *(["-only-testing:MonoAgentUITests/TranscriptScenarioTests", "-only-testing:MonoAgentTests"] if args.transcript_only else []),
+            *(["-only-testing:MonoAgentUITests/ComposerScenarioTests"] if args.composer_only else []))
     except subprocess.CalledProcessError as error:
         test_failure = error
     finally:

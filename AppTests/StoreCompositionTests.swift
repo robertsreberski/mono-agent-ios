@@ -74,6 +74,22 @@ import Testing
             sourceID: DashboardFixture.atlas, query: DashboardFixture.searchQuery)
           #expect(result.hits.count == 3)
         }
+      case .composerEmpty, .composerDraftAttachments, .composerSkillPicker,
+        .composerModelSelector, .composerRunning, .composerSendFailed, .composerQuote,
+        .conversationAskForm, .conversationQuickReplies, .peerQuestionSheet:
+        #expect(model.composerScript != nil)
+        #expect(model.offersSampleAttachments)
+        #expect(store.agents.first { $0.sourceId == DashboardFixture.atlas }?.models?.count == 3)
+        #expect(store.conversations[DashboardFixture.openThreadID] != nil)
+        #expect(model.launchThreadID == scenario.launchThreadID)
+        #expect(
+          (scenario.launchThreadID == nil) == (scenario == .composerEmpty),
+          "every composer scenario but the new conversation opens the sample thread")
+        if scenario == .composerDraftAttachments {
+          #expect(
+            store.draft(sourceID: DashboardFixture.atlas, threadID: DashboardFixture.openThreadID)?
+              .text == ComposerFixture.draftText)
+        }
       case .dashboardEmpty:
         #expect(store.agents.count == 1)
         #expect(store.buckets.values.allSatisfy { $0.threads.isEmpty })

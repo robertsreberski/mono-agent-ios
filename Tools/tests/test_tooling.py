@@ -152,7 +152,8 @@ class ToolingTests(unittest.TestCase):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
         connection = {(s, a) for s, a, v in keys
-                      if not s.startswith(("design-catalog", "dashboard-", "conversation-")) and v is None}
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question-"))
+                      and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
             for appearance in ("light", "dark"):
@@ -169,6 +170,19 @@ class ToolingTests(unittest.TestCase):
         dashboard = [entry for entry in MATRIX if entry["scenario"].startswith("dashboard-")]
         self.assertTrue(any(entry["theme"] != "evergreen" for entry in dashboard))
         self.assertTrue(any(entry["textSize"] != "standard" for entry in dashboard))
+
+    def test_matrix_covers_composer_scenarios_keyboard_theme_and_accessibility(self):
+        keys = {(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX}
+        for scenario in ("composer-empty", "composer-draft-attachments", "composer-skill-picker",
+                         "composer-model-selector", "composer-running", "composer-send-failed",
+                         "composer-quote", "conversation-ask-form", "conversation-quick-replies",
+                         "peer-question-sheet"):
+            for appearance in ("light", "dark"):
+                self.assertIn((scenario, appearance, None), keys)
+        self.assertIn(("composer-empty", "light", "keyboard"), keys)
+        composer = [entry for entry in MATRIX if entry["scenario"].startswith("composer-")]
+        self.assertTrue(any(entry["theme"] != "evergreen" for entry in composer))
+        self.assertTrue(any(entry["textSize"] != "standard" for entry in composer))
 
     def test_ci_family_leg_runs_only_one_device_and_uses_collision_free_index(self):
         for family in ("iPhone", "iPad"):

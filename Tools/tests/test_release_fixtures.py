@@ -56,6 +56,13 @@ class ReleaseFixtureTests(unittest.TestCase):
             with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
                 self.check(tool, leak)
 
+    def test_composer_fixture_and_scenarios_are_rejected(self):
+        for tool, leak in (("nm", b"$s9MonoAgent15ComposerFixtureO"), ("nm", b"ComposerScript"),
+                           ("strings", b"composer-send-failed"), ("strings", b"conversation-ask-form"),
+                           ("strings", b"peer-question-sheet"), ("strings", b"Sample files (synthetic)")):
+            with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
+                self.check(tool, leak)
+
     def test_dashboard_fixture_and_scenarios_are_rejected(self):
         for tool, leak in (("nm", b"$s9MonoAgent16DashboardFixtureO"), ("strings", b"dashboard-populated"),
                            ("strings", b"dashboard-empty"), ("strings", b"dashboard-offline"),
