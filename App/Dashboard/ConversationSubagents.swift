@@ -4,49 +4,145 @@ import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
 
+/// Web `.peer-question`: untrusted peer prose on a surface card (P10/12, R10, 1 px line, 12.5/1.5),
+/// a state line (amber while answerable), reference-only fields and the raw form.
 struct JobPeerQuestionView: View {
   let question: PeerProcessJobQuestion
   let now: Date
   /// The composer dock supplies this: it opens the peer-question sheet, which drafts a reply
   /// in the composer. No answer route is invoked here.
   var onAnswerPeerQuestion: ((PeerProcessJobQuestion) -> Void)? = nil
+  @State private var schemaOpen = false
   private var pending: Bool {
     question.state == "awaiting_answer"
       && (JobPresentation.date(question.expiresAt).map { $0 > now } ?? false)
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-      Label(
-        pending
-          ? "Question pending"
-          : question.state == "awaiting_answer"
-            ? "Past expiry; awaiting host confirmation"
-            : question.state.replacingOccurrences(of: "_", with: " ").capitalized,
-        systemImage: "questionmark.bubble"
-      )
-      .designFont(.headline).accessibilityIdentifier("peer-question")
-      Text(question.peer + " / " + question.thread).designFont(.caption).foregroundStyle(.secondary)
-      Text(JobPresentation.preview(question.message, limit: 16_384).text).textSelection(.enabled)
-      if let date = JobPresentation.date(question.expiresAt), question.state == "awaiting_answer" {
-        Text("Expires " + date.formatted()).designFont(.caption)
+    let state =
+      pending
+      ? "Waiting for the agent\u{2019}s answer"
+      : question.state == "awaiting_answer"
+        ? "Past expiry; awaiting host confirmation"
+        : question.state.replacingOccurrences(of: "_", with: " ").capitalized
+    let fields = PeerQuestionForm.describe(question.requestedSchema)
+    VStack(alignment: .leading, spacing: 7) {
+      WebFlowLayout(spacing: 10, lineSpacing: 2) {
+        Text(state).fontWeight(.semibold)
+          .foregroundStyle(pending ? WebJobTone.question.text : WebColor.textSoft.color)
+        Text(question.peer + " / " + question.thread)
+        if let date = JobPresentation.date(question.expiresAt), question.state == "awaiting_answer"
+        {
+          Text(pending ? "expires " + date.formatted(.relative(presentation: .named)) : "expired")
+        }
       }
-      Text("Untrusted peer text; not owner approval.").designFont(.caption).foregroundStyle(
-        .secondary)
+      .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("peer-question")
+      Text(JobPresentation.preview(question.message, limit: 16_384).text)
+        .foregroundStyle(WebColor.text.color)
+        .textSelection(.enabled)
+      ForEach(fields, id: \.key) { field in
+        VStack(alignment: .leading, spacing: 2) {
+          let label = Text(field.label).fontWeight(.semibold)
+            .foregroundStyle(WebColor.textSoft.color)
+          let required = Text(field.required ? " · required" : "")
+            .foregroundStyle(WebColor.textMuted.color)
+          Text("\(label)\(required)")
+          if let detail = field.description {
+            Text(detail).font(.system(size: 12)).foregroundStyle(WebColor.textMuted.color)
+          }
+          if field.options.isEmpty {
+            Text(field.freeText ? "free text" : "value").foregroundStyle(WebColor.textMuted.color)
+          } else {
+            ReferenceOptions(options: field.options)
+          }
+        }
+      }
+      Text("Untrusted peer text; not owner approval. The agent answers through PeerAgent.")
+        .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
       Button(onAnswerPeerQuestion == nil ? "Answer · unavailable here" : "Answer") {
         onAnswerPeerQuestion?(question)
-      }.disabled(!pending || onAnswerPeerQuestion == nil)
-        .designButtonStyle(.secondary).accessibilityIdentifier("peer-question-answer")
-      DisclosureGroup("Requested form (reference only)") {
-        CodeDocumentView(
-          source: TranscriptPresentation.json(.object(question.requestedSchema)), language: "JSON")
-      }.designFont(.caption)
+      }
+      .disabled(!pending || onAnswerPeerQuestion == nil)
+      .buttonStyle(WebSmallButtonStyle(.accent))
+      .accessibilityIdentifier("peer-question-answer")
+      Button {
+        schemaOpen.toggle()
+      } label: {
+        HStack(spacing: 5) {
+          Image(systemName: "arrowtriangle.right.fill").font(.system(size: 7))
+            .rotationEffect(.degrees(schemaOpen ? 90 : 0))
+          Text("Raw form")
+        }
+        .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+        .frame(minHeight: 28).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityValue(schemaOpen ? "Expanded" : "Collapsed")
+      if schemaOpen {
+        Text("questionId " + question.questionId).webFont(.jobMono)
+          .foregroundStyle(WebColor.textMuted.color)
+        JobOutputBox(TranscriptPresentation.json(.object(question.requestedSchema)), maxHeight: 140)
+      }
     }
+    .webFont(.jobDetail)
+    .padding(.vertical, 10).padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      WebColor.surface.color, in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+        .strokeBorder(WebColor.line.color, lineWidth: 1))
   }
 }
 
+/// "Options, for reference: a · b": muted label, soft choices, never pressable.
+private struct ReferenceOptions: View {
+  let options: [String]
+  var body: some View {
+    let label = Text("Options, for reference: ").foregroundStyle(WebColor.textMuted.color)
+    let values = Text(options.joined(separator: "  ·  ")).foregroundStyle(WebColor.textSoft.color)
+    Text("\(label)\(values)").font(.system(size: 12))
+  }
+}
+
+/// `ProcessJobSubagentQuestion`: the question a detached child ended its turn with, a past fact.
+struct JobSubagentQuestionView: View {
+  let question: ProcessJobProjection.Question
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      WebFlowLayout(spacing: 10) {
+        Text("Asked the parent agent").fontWeight(.semibold).foregroundStyle(
+          WebColor.textSoft.color)
+        Text("when it finished")
+      }
+      .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+      Text(question.question).foregroundStyle(WebColor.text.color).textSelection(.enabled)
+      if let options = question.options, !options.isEmpty {
+        ReferenceOptions(options: options)
+      }
+      Text("Untrusted child text; the parent agent answers it.")
+        .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+    }
+    .webFont(.jobDetail)
+    .padding(.vertical, 10).padding(.horizontal, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      WebColor.surface.color, in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+        .strokeBorder(WebColor.line.color, lineWidth: 1))
+  }
+}
+
+/// `ProcessJobSubagentProgress`: the child's recent calls as dense activity steps (mono tool
+/// column ≥ 68, muted summary, a FAILED pill, mono time), then its report as prose.
 struct JobSubagentProgressView: View {
   let progress: ProcessJobSubagentProgress
-  @State private var reportExpanded = false
+  @State private var open: Set<Int> = []
+  @State private var reportExpanded = true
   private var groups: [[ProcessJobSubagentProgress.Recent]] {
     progress.recent.reduce(into: []) { groups, call in
       if groups.last?.first?.toolName == call.toolName, call.toolName != "AskUser" {
@@ -57,76 +153,119 @@ struct JobSubagentProgressView: View {
     }
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-      Text(progress.profile + (progress.label.map { " · " + $0 } ?? "")).designFont(.headline)
-        .accessibilityIdentifier("subagent-progress")
-      if let route = progress.route {
-        let executed = route.executed
-        RouteBadge(
-          model: executed?.model ?? route.requested.model ?? "Unknown model",
-          effort: executed?.effectiveEffort ?? executed?.effort ?? route.requested.effort ?? "",
-          detail: (executed == nil ? "Requested only · not confirmed execution" : "Executed")
-            + " · " + (route.disposition ?? "unknown"))
+    VStack(alignment: .leading, spacing: 0) {
+      if progress.recent.isEmpty {
+        Text("No tool calls yet.").webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+          .frame(minHeight: 28)
       }
-      Text("\(progress.toolCalls) tool calls · \(progress.failedCalls) failed").designFont(.caption)
-      Text(
-        TranscriptPresentation.cost(
-          .init(
-            amount: progress.costUsd, unknown: progress.costUnknown,
-            knownSpend: progress.knownCostUsd))
-      )
-      .designFont(.caption).foregroundStyle(.secondary)
       if progress.toolCalls > progress.recent.count {
-        Text("Showing latest \(progress.recent.count) of \(progress.toolCalls) calls").designFont(
-          .caption)
+        Text("Showing the latest \(progress.recent.count) of \(progress.toolCalls) calls.")
+          .font(.system(size: 11)).foregroundStyle(WebColor.textMuted.color)
+          .padding(.top, 2).padding(.bottom, 4)
       }
-      if progress.recent.isEmpty { Text("No tool calls yet.").designFont(.supporting) }
-      ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-        if let first = group.first {
-          DisclosureGroup {
-            ForEach(group, id: \.id) { call in
-              VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-                Label(
-                  call.status,
-                  systemImage: call.status == "failed"
-                    ? "xmark.circle"
-                    : call.status == "running" ? "circle.lefthalf.filled" : "checkmark.circle")
-                if let args = call.argsSummary {
-                  Text(JobPresentation.preview(args, limit: 2048).text).textSelection(.enabled)
-                }
-                if let workdir = call.workdir {
-                  Text("Directory: " + workdir).textSelection(.enabled)
-                }
-                if let duration = call.executionMs { Text(JobPresentation.duration(duration)) }
-              }.designFont(.caption)
-            }
-          } label: {
-            let current = group.last(where: { $0.status == "running" }) ?? group[group.count - 1]
-            VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-              Text(
-                first.toolName + (group.count > 1 ? " ×\(group.count)" : "") + " · "
-                  + current.status)
-              if let args = current.argsSummary {
-                Text(JobPresentation.preview(args, limit: 72).text).designFont(.code).lineLimit(2)
-              }
-            }
-          }.designFont(.supporting)
-        }
+      ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+        step(index, group)
       }
       if let answer = progress.answerHead {
-        Text(JobPresentation.preview(answer, limit: 200).text).designFont(.supporting).lineLimit(3)
-        DisclosureGroup(
-          "Latest answer" + (progress.answerTruncated == true ? " · server-truncated" : ""),
-          isExpanded: $reportExpanded
-        ) {
-          Text(JobPresentation.preview(answer, limit: 16_384).text).designFont(.body).textSelection(
-            .enabled)
+        Button {
+          reportExpanded.toggle()
+        } label: {
+          stepHead(
+            tool: "Report" + (progress.answerTruncated == true ? " (truncated)" : ""),
+            summary: "", failed: 0, time: nil, running: false, expanded: reportExpanded)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(reportExpanded ? "Expanded" : "Collapsed")
+        .accessibilityIdentifier("subagent-latest-answer")
+        if reportExpanded {
+          JobOutputBox(JobPresentation.preview(answer, limit: 16_384).text, prose: true)
+            .padding(.bottom, 8)
           if progress.answerTruncated == true {
-            Text("Only the answer head is available through this API.").designFont(.caption)
+            Text("Only the answer head is available through this API.")
+              .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
           }
-        }.accessibilityIdentifier("subagent-latest-answer")
+        }
       }
     }
+  }
+  @ViewBuilder private func step(_ index: Int, _ group: [ProcessJobSubagentProgress.Recent])
+    -> some View
+  {
+    let first = group[0]
+    let current = group.last(where: { $0.status == "running" }) ?? group[group.count - 1]
+    let failed = group.filter { $0.status == "failed" }.count
+    let running = current.status == "running"
+    let total = group.compactMap(\.executionMs).reduce(0, +)
+    Button {
+      if open.contains(index) { open.remove(index) } else { open.insert(index) }
+    } label: {
+      stepHead(
+        tool: first.toolName + (group.count > 1 ? " ×\(group.count)" : ""),
+        summary: current.argsSummary.map { JobPresentation.preview($0, limit: 72).text } ?? "",
+        failed: failed,
+        time: running ? "running" : total > 0 ? JobPresentation.duration(total) : nil,
+        running: running, expanded: open.contains(index))
+    }
+    .buttonStyle(.plain)
+    .accessibilityElement(children: .combine)
+    .accessibilityValue(open.contains(index) ? "Expanded" : "Collapsed")
+    if open.contains(index) {
+      VStack(alignment: .leading, spacing: 3) {
+        ForEach(group, id: \.id) { call in
+          HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+              Text(
+                call.argsSummary.map { JobPresentation.preview($0, limit: 2048).text }
+                  ?? call.toolName)
+              if let workdir = call.workdir { Text("Directory: " + workdir).opacity(0.78) }
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+            Text(
+              call.status
+                + (call.executionMs.map { " · " + JobPresentation.duration($0) } ?? "")
+            )
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundStyle(
+              call.status == "failed"
+                ? WebColor.danger.color
+                : call.status == "running"
+                  ? WebColor.jobProgressText.color : WebColor.textMuted.color)
+          }
+          .foregroundStyle(WebColor.textMuted.color)
+        }
+      }
+      .padding(.leading, 8).padding(.trailing, 8).padding(.bottom, 8)
+    }
+  }
+  private func stepHead(
+    tool: String, summary: String, failed: Int, time: String?, running: Bool, expanded: Bool
+  ) -> some View {
+    HStack(alignment: .center, spacing: 8) {
+      Text(tool).webFont(.stepTool)
+        .foregroundStyle(running ? WebColor.text.color : WebColor.textSoft.color)
+        .lineLimit(1)
+        .frame(minWidth: 68, alignment: .leading)
+      Text(summary).webFont(.stepSummary)
+        .foregroundStyle(running ? WebColor.text.color : WebColor.textMuted.color)
+        .lineLimit(1).truncationMode(.middle)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      if failed > 0 {
+        Text("\(failed) failed").font(.system(size: 9, weight: .bold)).textCase(.uppercase)
+          .tracking(0.6)
+          .foregroundStyle(WebColor.danger.color)
+          .padding(.horizontal, 6).padding(.vertical, 2)
+          .background(WebColor.danger.color.opacity(0.12), in: Capsule())
+      }
+      if let time {
+        Text(time).webFont(.stepTime)
+          .foregroundStyle(running ? WebColor.jobProgressText.color : WebColor.textMuted.color)
+      }
+    }
+    .frame(minHeight: 28)
+    .contentShape(Rectangle())
   }
 }
 
@@ -149,9 +288,9 @@ struct SubagentPartView: View {
         TranscriptPresentation.cost(
           .init(amount: call.costUsd, unknown: call.costUnknown, knownSpend: call.knownCostUsd)),
       ].joined(separator: " · "),
-      identifier: "subagent-" + call.toolCallId, expanded: $expanded
+      glyph: .agent, identifier: "subagent-" + call.toolCallId, expanded: $expanded
     ) {
-      VStack(alignment: .leading, spacing: DesignSpacing.md) {
+      VStack(alignment: .leading, spacing: 7) {
         if let route = call.attribution {
           let executed = route.executed
           RouteBadge(
@@ -168,7 +307,7 @@ struct SubagentPartView: View {
           ).textSelection(.enabled)
         }
         let calls = call.calls ?? []
-        if calls.isEmpty { Text("No tool calls recorded.").designFont(.supporting) }
+        if calls.isEmpty { Text("No tool calls recorded.").webFont(.jobDetail) }
         ForEach(TranscriptPresentation.clusters(calls.map(WebMessagePart.toolCall))) { cluster in
           if cluster.parts.count > 1 {
             ToolClusterView(
@@ -182,13 +321,13 @@ struct SubagentPartView: View {
         }
         if call.result != nil {
           Text(JobPresentation.preview(TranscriptPresentation.json(call.result), limit: 200).text)
-            .designFont(.supporting).lineLimit(3)
+            .webFont(.jobDetail).lineLimit(3)
           DisclosureGroup("Latest answer") {
             CodeDocumentView(source: TranscriptPresentation.json(call.result), language: "Report")
           }
         }
         if call.argsTruncated == true || call.resultTruncated == true {
-          Text("Preview only").designFont(.caption)
+          Text("Preview only").webFont(.activityMeta)
           Button(loading ? "Loading…" : "Load full delegation") {
             loading = true
             Task {
@@ -200,10 +339,10 @@ struct SubagentPartView: View {
           }.disabled(loading)
         }
         if repairFailed {
-          Text("Could not load full delegation. Retry or refresh.").designFont(.caption)
+          Text("Could not load full delegation. Retry or refresh.").webFont(.activityMeta)
         }
         if call.history?.persistence == "failed" {
-          Text("Tool history was not saved.").designFont(.caption)
+          Text("Tool history was not saved.").webFont(.activityMeta)
         }
       }
     }

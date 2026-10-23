@@ -166,6 +166,20 @@ public enum WebType: CaseIterable, Sendable {
   case jobTitle
   /// `.process-job-meta`: 11.5.
   case jobMeta
+  /// `.process-job-time`, `.process-job-detail`: mono 11, tabular.
+  case jobMono
+  /// `.process-job-output`: mono 11 / 1.55.
+  case jobOutput
+  /// `.process-job-output-head`, `.process-job-call-tool`: 11.5 / 650.
+  case jobOutputHead
+  /// `.process-job-error`, `.peer-question`, call bodies: 12.5 / 1.5.
+  case jobDetail
+  /// `.activity-step-tool`: mono 10.5 / 600.
+  case stepTool
+  /// `.activity-step-summary`: 10.
+  case stepSummary
+  /// `.activity-step-time`, `.activity-row-time`: mono 9.
+  case stepTime
   /// `.attachment-chip`: 11.
   case attachment
   /// `.connection-banner` (phone): 10.
@@ -228,6 +242,14 @@ public enum WebType: CaseIterable, Sendable {
     case .jobEntry: Spec(size: 12, weight: .semibold, tabular: true, textStyle: .footnote)
     case .jobTitle: Spec(size: 13, weight: .semibold, textStyle: .subheadline)
     case .jobMeta: Spec(size: 11.5, weight: .regular, textStyle: .caption)
+    case .jobMono: Spec(size: 11, weight: .regular, mono: true, tabular: true, textStyle: .caption)
+    case .jobOutput:
+      Spec(size: 11, weight: .regular, lineHeight: 1.55, mono: true, textStyle: .caption)
+    case .jobOutputHead: Spec(size: 11.5, weight: .semibold, textStyle: .caption)
+    case .jobDetail: Spec(size: 12.5, weight: .regular, lineHeight: 1.5, textStyle: .footnote)
+    case .stepTool: Spec(size: 10.5, weight: .semibold, mono: true, textStyle: .caption2)
+    case .stepSummary: Spec(size: 10, weight: .regular, textStyle: .caption2)
+    case .stepTime: Spec(size: 9, weight: .regular, mono: true, tabular: true, textStyle: .caption2)
     case .attachment: Spec(size: 11, weight: .regular, textStyle: .caption)
     case .banner: Spec(size: 10, weight: .regular, textStyle: .caption2)
     }

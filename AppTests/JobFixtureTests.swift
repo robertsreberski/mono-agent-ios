@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
+import MonoAgentDesign
 import MonoAgentKit
 import MonoAgentStore
 import Testing
@@ -17,6 +18,27 @@ import Testing
       #expect(!state.contains("thread-b:card:sample"))
       state.binding("thread-a:card:sample").wrappedValue = false
       #expect(state.contains("thread-a:output:sample"))
+    }
+    @Test func jobFacesUseFixedStatusVocabulary() throws {
+      let expected: [String: (WebJobTone, JobGlyphMark)] = [
+        "queued": (.waiting, .empty), "starting": (.running, .half), "running": (.running, .half),
+        "succeeded": (.success, .check), "failed": (.danger, .cross),
+        "spawn_failed": (.danger, .cross), "interrupted": (.danger, .cross),
+        "timed_out": (.danger, .clock), "queue_expired": (.danger, .clock),
+        "cancelled": (.neutral, .stopped),
+      ]
+      var job = try #require(try JobFixture.jobs(.conversationJobs).first)
+      job.cancelRequested = false
+      for (state, face) in expected {
+        job.state = state
+        #expect(JobFace(job, now: DashboardFixture.now).tone == face.0)
+        #expect(JobFace(job, now: DashboardFixture.now).mark == face.1)
+      }
+      job.state = "running"
+      job.cancelRequested = true
+      #expect(JobFace(job, now: DashboardFixture.now).mark == .stop)
+      #expect(JobFace(job, now: DashboardFixture.now).tone == .stopping)
+      #expect(JobFace.bucket(.question).mark == .question)
     }
     @Test func allJobStatesAndDelegationStatesDecodeWithoutFallbacks() throws {
       let jobs = try JobFixture.jobs(.conversationJobs)

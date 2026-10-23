@@ -20,6 +20,33 @@ import XCTest
   func testContextPlum() { capture("conversation-context", "dark", variant: "plum") }
   func testContextAccessibility() { capture("conversation-context", "light", variant: "ax3") }
 
+  func testFailedJobCard() {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-jobs", "--appearance", "light", "--reset-test-data",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    element(app, "job-stack").tap()
+    let history = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", "History,"))
+      .firstMatch
+    let dock = app.scrollViews.matching(identifier: "composer-dock-scroll").firstMatch
+    for _ in 0..<12 {
+      if history.isHittable { break }
+      dragDock(dock, down: false)
+    }
+    XCTAssertTrue(history.isHittable)
+    history.tap()
+    dockReveal(app, "job-card-failed").tap()
+    let refresh = dockReveal(app, "job-refresh-failed")
+    XCTAssertTrue(refresh.isEnabled)
+    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    attachment.name = "synthetic-fixture__conversation-jobs__light__failed"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    app.terminate()
+  }
+
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
     app.descendants(matching: .any)[id].firstMatch
   }
@@ -133,6 +160,11 @@ import XCTest
         XCTAssertEqual(answer.label, "Answer")
         XCTAssertTrue(element(app, "subagent-progress").exists)
         XCTAssertTrue(element(app, "peer-question").exists)
+        let peerShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        peerShot.name =
+          "synthetic-fixture__peer-question__" + appearance + (variant.map { "__" + $0 } ?? "")
+        peerShot.lifetime = .keepAlways
+        add(peerShot)
         answer.tap()
         XCTAssertTrue(element(app, "peer-sheet").waitForExistence(timeout: 10))
         app.buttons["Cancel"].firstMatch.tap()
