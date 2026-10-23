@@ -8,8 +8,9 @@ final class ScenarioTests: XCTestCase {
   func testConnectionEmptyDark() { capture("connection-empty", "dark") }
   func testConnectionFailedLight() { capture("connection-failed", "light") }
   func testConnectionFailedDark() { capture("connection-failed", "dark") }
-  func testConsoleOnlineLight() { capture("console-online", "light") }
-  func testConsoleOnlineDark() { capture("console-online", "dark") }
+  // A connected console now opens on its dashboard (the golden fixture's single agent).
+  func testConsoleOnlineLight() { capture("console-online", "light", expect: ["agent-strip"]) }
+  func testConsoleOnlineDark() { capture("console-online", "dark", expect: ["agent-strip"]) }
   func testStoreScenariosLoad() {
     for scenario in ["store-offline", "store-streaming", "store-unread", "store-uncertain"] {
       let app = XCUIApplication()
@@ -22,6 +23,149 @@ final class ScenarioTests: XCTestCase {
   }
   func testConnectionFailedAccessibilityText() {
     capture("connection-failed", "light", accessibilityText: true)
+  }
+
+  // Dashboard scenarios (synthetic DashboardFixture data, fixed reference time).
+  private static let populated = ["agent-strip", "agent-tile-agent-atlas", "running-section"]
+  func testDashboardPopulatedLight() {
+    capture("dashboard-populated", "light", expect: Self.populated)
+  }
+  func testDashboardPopulatedDark() {
+    capture("dashboard-populated", "dark", expect: Self.populated)
+  }
+  func testDashboardPopulatedPlumDark() {
+    capture(
+      "dashboard-populated", "dark", expect: Self.populated, variant: "plum",
+      arguments: ["--fixture-theme", "plum"])
+  }
+  func testDashboardPopulatedAccessibilityText() {
+    capture("dashboard-populated", "light", accessibilityText: true, expect: ["agent-strip"])
+  }
+  func testDashboardEmptyLight() {
+    capture("dashboard-empty", "light", expect: ["agent-strip", "recent-empty"])
+  }
+  func testDashboardEmptyDark() {
+    capture("dashboard-empty", "dark", expect: ["agent-strip", "recent-empty"])
+  }
+  func testDashboardOfflineLight() {
+    capture("dashboard-offline", "light", expect: ["banner-offline", "agent-strip"])
+  }
+  func testDashboardOfflineDark() {
+    capture("dashboard-offline", "dark", expect: ["banner-offline", "agent-strip"])
+  }
+  func testDashboardSearchLight() {
+    capture("dashboard-search", "light", expect: ["search-results", "search-row-t-atlas-notes"])
+  }
+  func testDashboardSearchDark() {
+    capture("dashboard-search", "dark", expect: ["search-results", "search-row-t-atlas-notes"])
+  }
+  func testConversationPlaceholderLight() {
+    capture(
+      "conversation-placeholder", "light",
+      expect: ["conversation-header", "conversation-run-state", "transcript-placeholder"])
+  }
+  func testConversationPlaceholderDark() {
+    capture(
+      "conversation-placeholder", "dark",
+      expect: ["conversation-header", "conversation-run-state", "transcript-placeholder"])
+  }
+
+  // Dashboard behaviour (no screenshots): sections, navigation, archive, consoles sheet.
+  func testDashboardSectionsAndControls() {
+    let app = launch("dashboard-populated")
+    for id in [
+      "agent-strip", "agent-tile-agent-atlas", "agent-tile-agent-harbor", "agent-tile-agent-quill",
+      "agent-offline-toggle", "running-section", "running-row-t-atlas-launch",
+      "running-more-agent-atlas", "data-mode", "archive-toggle", "new-conversation",
+      "consoles-button",
+    ] {
+      XCTAssertTrue(element(app, id).waitForExistence(timeout: 10), "missing \(id)")
+    }
+    XCTAssertFalse(element(app, "agent-tile-agent-dormant").exists, "offline agent folds away")
+    XCTAssertTrue(
+      element(app, "agent-tile-agent-atlas").label.contains("pinned, 3 running"),
+      element(app, "agent-tile-agent-atlas").label)
+    for id in ["projects-section", "recent-section", "recent-row-t-atlas-notes", "load-older"] {
+      XCTAssertTrue(scrollTo(app, id), "missing \(id)")
+    }
+    XCTAssertTrue(element(app, "recent-row-t-atlas-notes").label.contains("unread"))
+    XCTAssertFalse(element(app, "recent-row-t-atlas-digest").exists, "cron channels stay out")
+    app.terminate()
+  }
+
+  func testDashboardOpensConversationNewConversationAndArchive() {
+    let app = launch("dashboard-populated")
+    XCTAssertTrue(element(app, "running-row-t-atlas-launch").waitForExistence(timeout: 10))
+    element(app, "running-row-t-atlas-launch").tap()
+    XCTAssertTrue(element(app, "transcript-placeholder").waitForExistence(timeout: 10))
+    XCTAssertTrue(element(app, "conversation-run-state").label.contains("Running"))
+    returnToDashboard(app)
+    element(app, "new-conversation").tap()
+    XCTAssertTrue(element(app, "composer-placeholder").waitForExistence(timeout: 10))
+    returnToDashboard(app)
+    element(app, "archive-toggle").tap()
+    XCTAssertTrue(scrollTo(app, "recent-row-t-atlas-archived"))
+    app.terminate()
+  }
+
+  func testConsolesRemainReachableFromTheDashboard() {
+    let app = launch("dashboard-populated")
+    XCTAssertTrue(element(app, "consoles-button").waitForExistence(timeout: 10))
+    element(app, "consoles-button").tap()
+    XCTAssertTrue(element(app, "add-console").waitForExistence(timeout: 10))
+    element(app, "consoles-done").tap()
+    XCTAssertTrue(element(app, "agent-strip").waitForExistence(timeout: 10))
+    app.terminate()
+  }
+
+  func testOfflineEmptyAndSearchScenarios() {
+    var app = launch("dashboard-offline")
+    XCTAssertTrue(element(app, "banner-offline").waitForExistence(timeout: 10))
+    XCTAssertTrue(element(app, "running-section").label.contains("last known"))
+    app.terminate()
+    app = launch("dashboard-empty")
+    XCTAssertTrue(element(app, "recent-empty").waitForExistence(timeout: 10))
+    XCTAssertFalse(element(app, "running-section").exists)
+    app.terminate()
+    app = launch("dashboard-search")
+    XCTAssertTrue(element(app, "search-row-t-atlas-notes").waitForExistence(timeout: 10))
+    XCTAssertTrue(element(app, "search-row-t-atlas-notes").label.contains("3 matches"))
+    XCTAssertFalse(element(app, "running-section").exists, "search replaces the sections")
+    app.terminate()
+  }
+
+  private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+    app.descendants(matching: .any)[id].firstMatch
+  }
+
+  private func launch(_ scenario: String) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", scenario, "--reset-test-data", "-AppleLanguages", "(en)", "-AppleLocale",
+      "en_US",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 15))
+    return app
+  }
+
+  /// Lists are lazy: scroll until the row exists (bounded, never sleeps).
+  private func scrollTo(_ app: XCUIApplication, _ id: String) -> Bool {
+    for _ in 0..<8 {
+      if element(app, id).waitForExistence(timeout: 1) { return true }
+      // The dashboard list (the iPad sidebar, not the detail column under the screen centre).
+      let list = app.collectionViews.firstMatch
+      if list.exists { list.swipeUp() } else { app.swipeUp() }
+    }
+    return element(app, id).exists
+  }
+
+  /// iPhone pops the pushed destination; iPad keeps the dashboard in the sidebar.
+  private func returnToDashboard(_ app: XCUIApplication) {
+    if !element(app, "new-conversation").isHittable {
+      app.navigationBars.buttons.element(boundBy: 0).tap()
+    }
+    XCTAssertTrue(element(app, "new-conversation").waitForExistence(timeout: 10))
   }
 
   // DEBUG design catalog: every theme in both appearances, plus accessibility fallbacks.
@@ -47,20 +191,28 @@ final class ScenarioTests: XCTestCase {
   }
 
   /// `accessibilityText` launches at Accessibility XL (AX3) so system chrome scales too.
-  private func capture(_ scenario: String, _ appearance: String, accessibilityText: Bool = false) {
+  /// `expect` lists identifiers that must exist (default: the scenario name itself).
+  private func capture(
+    _ scenario: String, _ appearance: String, accessibilityText: Bool = false,
+    expect: [String]? = nil, variant: String? = nil, arguments: [String] = []
+  ) {
     let app = XCUIApplication()
-    app.launchArguments = [
-      "--scenario", scenario, "--reset-test-data", "--appearance", appearance,
-      "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-    ]
+    app.launchArguments =
+      [
+        "--scenario", scenario, "--reset-test-data", "--appearance", appearance,
+        "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+      ] + arguments
     if accessibilityText {
       app.launchArguments += [
         "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL",
       ]
     }
     app.launch()
-    XCTAssertTrue(
-      app.descendants(matching: .any)[scenario].firstMatch.waitForExistence(timeout: 15))
+    for identifier in expect ?? [scenario] {
+      XCTAssertTrue(
+        app.descendants(matching: .any)[identifier].firstMatch.waitForExistence(timeout: 15),
+        "missing \(identifier)")
+    }
     XCTAssertTrue(
       app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 15))
     XCTAssertFalse(app.staticTexts["Ready"].exists, "Test readiness must not add visible text")
@@ -75,7 +227,8 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(screenshotHasContent(screenshot), "Do not publish a blank startup frame")
     let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name =
-      "synthetic-fixture__\(scenario)__\(appearance)" + (accessibilityText ? "__ax3" : "")
+      "synthetic-fixture__\(scenario)__\(appearance)"
+      + (variant.map { "__" + $0 } ?? (accessibilityText ? "__ax3" : ""))
     attachment.lifetime = .keepAlways
     add(attachment)
     app.terminate()

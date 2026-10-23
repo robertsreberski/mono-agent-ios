@@ -13,12 +13,15 @@ args = parser.parse_args()
 executable = args.app / "MonoAgent"
 if not executable.is_file():
     sys.exit("Release app executable missing; build the unsigned Release simulator app first")
-# Fixture transport, fixture hostname, DEBUG design catalog (types and scenario names)
+# Fixture transport, fixture hostname, DEBUG design catalog (types and scenario names),
+# DEBUG dashboard fixture data and scenario names
 # and design-package preview helpers must all be compiled out of Release. `nm -a` also
 # lists debug-map source file names, so DEBUG-only files must not be named after markers.
 MARKERS = (b"ScriptedTransport", b"console.example.ts.net", b"DesignCatalog", b"design-catalog",
            b"DesignPreviewMatrix", b"StoreScenario", b"ScenarioConsoleTransport", b"ScenarioEventSource",
-           b"store-offline", b"store-streaming", b"store-unread", b"store-uncertain")
+           b"store-offline", b"store-streaming", b"store-unread", b"store-uncertain",
+           b"DashboardFixture", b"dashboard-populated", b"dashboard-empty", b"dashboard-offline",
+           b"dashboard-search", b"conversation-placeholder", b"fixture-theme")
 images = [executable]
 debug_library = args.app / "MonoAgent.debug.dylib"
 if debug_library.is_file():
