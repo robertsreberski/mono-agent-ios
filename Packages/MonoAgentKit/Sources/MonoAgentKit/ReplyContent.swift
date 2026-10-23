@@ -7,12 +7,25 @@ public enum ReplyContentError: Error, Sendable, Equatable {
 
 /// Supplemental binary seam: retain headers for validation without exposing capability URLs to UI.
 public protocol ReplyContentReading: Sendable {
+  func uploadContent(id: String, maximumBytes: Int) async throws -> HTTPResponse
   func replyContent(
     reference: ReplyPartReference, query: ApiCapabilityQuery?, storedID: String?, maximumBytes: Int
   ) async throws -> HTTPResponse
 }
 
 extension APIClient {
+  public func uploadContent(id: String, maximumBytes: Int) async throws -> HTTPResponse {
+    let request = try request(.stagedContent, parameters: ["id": id], query: nil, body: nil)
+    let response: HTTPResponse
+    do {
+      response = try await transport.send(request, maximumBytes: maximumBytes)
+    } catch is CancellationError { throw CancellationError() } catch let error as ReplyContentError
+    { throw error } catch { throw APIError(status: 0, code: "transport_failed") }
+    guard APIRoute.stagedContent.descriptor.successStatus.contains(response.status) else {
+      throw APIError.response(response)
+    }
+    return response
+  }
   public func replyContent(
     reference: ReplyPartReference, query: ApiCapabilityQuery?, storedID: String?, maximumBytes: Int
   ) async throws -> HTTPResponse {
@@ -113,5 +126,38 @@ extension CapabilityService {
       id != ".", id != "..", !id.contains("/"), !id.isEmpty
     else { throw CapabilityError.invalidURL }
     return id
+  }
+}
+
+/// Sent uploads use the authenticated durable upload route, never a DTO-provided URL.
+extension ReplyContentReading {
+  public func downloadUpload(_ attachment: WebAttachment, maximumBytes: Int = 32 * 1024 * 1024)
+    async throws -> Data
+  {
+    guard attachment.uploaded, attachment.status == "committed", !attachment.id.isEmpty else {
+      throw ReplyContentError.unavailable
+    }
+    guard attachment.sizeBytes >= 0, attachment.sizeBytes <= maximumBytes else {
+      throw ReplyContentError.tooLarge
+    }
+    try Task.checkCancellation()
+    let response = try await uploadContent(id: attachment.id, maximumBytes: maximumBytes)
+    try Task.checkCancellation()
+    guard response.data.count == attachment.sizeBytes,
+      response.headers["content-length"].map({ Int($0) == attachment.sizeBytes }) ?? true
+    else { throw ReplyContentError.integrity }
+    return response.data
+  }
+}
+extension WebAttachment {
+  public var isUploadedImage: Bool {
+    kind == "image"
+      && ["image/png", "image/jpeg", "image/gif", "image/webp"].contains(contentType.lowercased())
+  }
+  public func hasSameFile(as other: Self) -> Bool {
+    id == other.id && name == other.name && contentType == other.contentType
+      && sizeBytes == other.sizeBytes
+      && kind == other.kind && status == other.status && uploaded == other.uploaded
+      && createdAt == other.createdAt
   }
 }

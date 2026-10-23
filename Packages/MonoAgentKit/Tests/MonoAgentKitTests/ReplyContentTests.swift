@@ -106,3 +106,50 @@ private func bytes(_ value: String = "abc", integrity: String = "digest") -> HTT
   part.mediaType = "image/svg+xml"
   #expect(!part.isReplyImage)
 }
+
+private func sentUpload() throws -> WebAttachment {
+  try JSONDecoder().decode(
+    WebAttachment.self,
+    from: Data(
+      #"{"id":"upload","name":"notes.txt","contentType":"text/plain","sizeBytes":3,"kind":"document","status":"committed","uploaded":true,"createdAt":"2030-01-02T12:00:00Z","contentUrl":"https://untrusted.example/ignored?token=fictional"}"#
+        .utf8))
+}
+@Test func sentUploadsUseBoundedDurableRouteWithoutFollowingDTOURL() async throws {
+  let script = ReplyScript([bytes()])
+  let api = APIClient(endpoint: Scenario.endpoint, transport: script)
+  #expect(try await api.downloadUpload(sentUpload()) == Data("abc".utf8))
+  #expect(await script.requests.first?.url?.path == "/api/v1/uploads/upload/content")
+  #expect(await script.requests.first?.url?.query == nil)
+  #expect(await script.requests.first?.httpMethod == "GET")
+  var invalid = try sentUpload()
+  invalid.uploaded = false
+  await #expect(throws: ReplyContentError.unavailable) { try await api.downloadUpload(invalid) }
+  await #expect(throws: ReplyContentError.tooLarge) {
+    try await api.downloadUpload(sentUpload(), maximumBytes: 2)
+  }
+  #expect(await script.requests.count == 1)
+}
+@Test func sentUploadsRejectInvalidLengthsAndMissingOrDeletedUploadsWithoutRetry() async throws {
+  let script = ReplyScript([
+    bytes("ab"), bytes("abcd"), .init(data: Data("abc".utf8), headers: ["content-length": "2"]),
+    .init(
+      data: Data(#"{"error":{"code":"upload_not_found","message":"Unavailable"}}"#.utf8),
+      status: 404),
+  ])
+  let api = APIClient(endpoint: Scenario.endpoint, transport: script)
+  for _ in 0..<3 {
+    await #expect(throws: ReplyContentError.integrity) {
+      try await api.downloadUpload(sentUpload())
+    }
+  }
+  await #expect(throws: APIError.self) { try await api.downloadUpload(sentUpload()) }
+  #expect(await script.requests.count == 4)
+}
+@Test func sentUploadBinaryTransferHonorsCallerCeiling() async throws {
+  let script = ReplyScript([bytes("abcd")])
+  let api = APIClient(endpoint: Scenario.endpoint, transport: script)
+  await #expect(throws: ReplyContentError.tooLarge) {
+    try await api.downloadUpload(sentUpload(), maximumBytes: 3)
+  }
+  #expect(await script.requests.count == 1)
+}

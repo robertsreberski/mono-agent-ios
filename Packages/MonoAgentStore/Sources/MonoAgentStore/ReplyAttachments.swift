@@ -13,6 +13,10 @@ public enum ReplyDownloadFailure: Error, Sendable, Equatable {
     case ReplyContentError.unavailable, CapabilityError.missingURL, CapabilityError.invalidURL:
       self = .unavailable
     case let error as APIError:
+      if error.status == 404 || error.status == 410 {
+        self = .unavailable
+        return
+      }
       switch error.code {
       case "reply_access_expired": self = .expired
       case "reply_part_expired", "reply_part_not_found", "reply_artifact_not_found",
@@ -85,6 +89,59 @@ extension ConsoleStore {
     }
     guard valid() else { throw CancellationError() }
     let lease = try await replyFiles.insert(data, key: key, name: part.name)
+    guard valid() else {
+      try? await replyFiles.release(lease)
+      throw CancellationError()
+    }
+    return lease
+  }
+  /// Only a sent, held upload is downloadable. Durable IDs survive cache sanitization;
+  /// advertised URLs are neither followed nor retained in the binary file cache.
+  public func downloadMessageAttachment(threadID: String, messageID: String, attachmentID: String)
+    async throws -> ReplyFileLease
+  {
+    func attachment() -> WebAttachment? {
+      conversations[threadID]?.messages.first(where: { $0.id == messageID })?.attachments.first(
+        where: { $0.id == attachmentID })
+    }
+    guard enabled, started, !stopping, !backgrounded, selectedThreadID == threadID,
+      !tombstones.keys.contains(threadID), let state = conversations[threadID],
+      let file = attachment(),
+      file.uploaded, file.status == "committed"
+    else { throw ReplyDownloadFailure.unavailable }
+    let generation = epoch
+    let selected = selection
+    func valid() -> Bool {
+      enabled && started && !stopping && !backgrounded && epoch == generation
+        && selection == selected
+        && selectedThreadID == threadID && conversations[threadID] === state
+        && !tombstones.keys.contains(threadID) && attachment()?.hasSameFile(as: file) == true
+        && !Task.isCancelled
+    }
+    guard file.sizeBytes >= 0, file.sizeBytes <= ReplyFileCache.maximumFileBytes else {
+      throw ReplyDownloadFailure.tooLarge
+    }
+    let key = String(
+      decoding: try JSONEncoder().encode([
+        "sent-upload", threadID, messageID, file.id, file.name, file.contentType,
+        String(file.sizeBytes), file.createdAt,
+      ]), as: UTF8.self)
+    if let hit = try await replyFiles.cached(key: key, name: file.name) {
+      guard valid() else {
+        try? await replyFiles.release(hit)
+        throw CancellationError()
+      }
+      return hit
+    }
+    let data: Data
+    do { data = try await api.downloadUpload(file) } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      guard valid() else { throw CancellationError() }
+      throw ReplyDownloadFailure(error)
+    }
+    guard valid() else { throw CancellationError() }
+    let lease = try await replyFiles.insert(data, key: key, name: file.name)
     guard valid() else {
       try? await replyFiles.release(lease)
       throw CancellationError()

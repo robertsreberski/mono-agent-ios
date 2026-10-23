@@ -48,7 +48,7 @@ if args.composer_only:
     EXPECTED = {key(entry): entry for entry in MATRIX if is_composer(entry["scenario"])}
 if args.replies_only:
     EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in {
-        "conversation-reply-files", "conversation-images", "conversation-restart-card"}}
+        "conversation-reply-files", "conversation-images", "conversation-restart-card", "conversation-attachments"}}
 if bool(args.iphone) != bool(args.ipad):
     parser.error("Supply both --iphone and --ipad, or neither for dynamic selection")
 if args.iphone:

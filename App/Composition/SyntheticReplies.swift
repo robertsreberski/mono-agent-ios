@@ -89,6 +89,21 @@
       part.sizeBytes = try imageBytes(index).count
       return part
     }
+    static func uploaded(_ id: String, image: Bool = false) throws -> WebAttachment {
+      var file: WebAttachment = try TranscriptFixture.decode(
+        #"{"id":"upload-file","name":"sample-notes.txt","contentType":"text/plain","sizeBytes":23,"kind":"document","status":"committed","uploaded":true,"createdAt":"2030-01-02T12:00:00Z"}"#
+      )
+      file.id = id
+      file.sizeBytes = bytes.count
+      if id == "upload-deleted" { file.name = "deleted-notes.txt" }
+      if image {
+        file.name = "uploaded-landscape.png"
+        file.contentType = "image/png"
+        file.kind = "image"
+        file.sizeBytes = try imageBytes(0).count
+      }
+      return file
+    }
     static func images(_ scenario: StoreScenario) throws -> [WebMessage] {
       var message = try TranscriptFixture.message(
         id: "sample-assistant", role: "assistant", text: "Here are the sample landscapes.")
@@ -96,6 +111,15 @@
         scenario == .conversationImagesEmpty ? 0 : scenario == .conversationImagesSingle ? 1 : 3
       if count == 0 { message.parts = [.text(.init(text: "No images attached."))] }
       message.parts += try (0..<count).map { .attachment(try imagePart($0)) }
+      if scenario == .conversationAttachments {
+        var user = try TranscriptFixture.message(
+          id: "sent-user", role: "user", text: "Sample image and notes.")
+        user.attachments = [
+          try uploaded("upload-image", image: true), try uploaded("upload-file"),
+          try uploaded("upload-deleted"),
+        ]
+        return [user]
+      }
       return [message]
     }
     static func response(_ request: URLRequest, scenario: StoreScenario) throws -> HTTPResponse? {
@@ -106,6 +130,19 @@
         if path.hasSuffix("/restart/sample-restart") {
           return HTTPResponse(data: try JSONEncoder().encode(restartOperation(outcome: "success")))
         }
+      }
+      if scenario == .conversationAttachments, let path = request.url?.path,
+        path.hasPrefix("/api/v1/uploads/")
+      {
+        if path.hasSuffix("/upload-deleted/content") {
+          return HTTPResponse(
+            data: Data(#"{"error":{"code":"upload_not_found","message":"Unavailable"}}"#.utf8),
+            status: 404)
+        }
+        if path.hasSuffix("/upload-image/content") {
+          return HTTPResponse(data: try imageBytes(0), contentType: "image/png")
+        }
+        return HTTPResponse(data: bytes, contentType: "text/plain")
       }
       guard scenario == .conversationReplyFiles || scenario.isReplyImageScenario,
         let url = request.url,

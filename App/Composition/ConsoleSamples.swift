@@ -29,6 +29,7 @@
     case conversationImagesSingle = "conversation-images-single"
     case conversationImagesEmpty = "conversation-images-empty"
     case conversationImages = "conversation-images"
+    case conversationAttachments = "conversation-attachments"
     case conversationReplyFiles = "conversation-reply-files"
     case conversationContext = "conversation-context"
     // Composer (C8): scripted send/upload/ask round trips through the synthetic Store.

@@ -140,3 +140,98 @@ struct ReplyFileCacheTests {
     }
   }
 }
+
+@MainActor struct SentUploadAttachmentTests {
+  private func attachment() throws -> WebAttachment {
+    try decode(
+      #"{"id":"sent-upload","name":"notes.txt","contentType":"text/plain","sizeBytes":3,"kind":"document","status":"committed","uploaded":true,"createdAt":"2030-01-02T12:00:00Z"}"#
+    )
+  }
+  private func live() async throws -> Harness {
+    let h = Harness()
+    await h.transport.set("/api/v1/bootstrap", [.response(Scenario.bootstrap)])
+    await h.store.start()
+    var message = try sampleMessage()
+    message.role = "user"
+    message.attachments = [try attachment()]
+    try h.seed(messages: [message])
+    h.store.selectedThreadID = "thread-example"
+    return h
+  }
+  private func download(_ h: Harness) async throws -> ReplyFileLease {
+    try await h.store.downloadMessageAttachment(
+      threadID: "thread-example", messageID: "message-example", attachmentID: "sent-upload")
+  }
+  @Test func restoredUploadUsesDurableIDAndSharedBoundedCache() async throws {
+    let h = try await live()
+    defer { try? FileManager.default.removeItem(at: h.directory) }
+    await h.transport.set(
+      "/api/v1/uploads/sent-upload/content", [.response(.init(data: Data("abc".utf8)))])
+    let lease = try await download(h)
+    #expect(lease.url.lastPathComponent == "notes.txt")
+    #expect(try Data(contentsOf: lease.url) == Data("abc".utf8))
+    await h.store.releaseReplyFile(lease)
+    let again = try await download(h)
+    #expect(again.url == lease.url)
+    #expect(await h.transport.count("/api/v1/uploads/sent-upload/content") == 1)
+    #expect(
+      h.store.conversations["thread-example"]?.messages.first?.attachments.first?.contentUrl == nil)
+    await h.store.releaseReplyFile(again)
+    try await h.store.clearReplyFileCache()
+    #expect(!FileManager.default.fileExists(atPath: lease.url.path))
+    await h.store.stop()
+  }
+  @Test func deletedUploadIsUnavailableAndNeverReplayed() async throws {
+    let h = try await live()
+    defer { try? FileManager.default.removeItem(at: h.directory) }
+    await h.transport.set(
+      "/api/v1/uploads/sent-upload/content", [.response(.init(data: Data(), status: 404))])
+    await #expect(throws: ReplyDownloadFailure.unavailable) { try await download(h) }
+    #expect(await h.transport.count("/api/v1/uploads/sent-upload/content") == 1)
+    await h.store.stop()
+  }
+  @Test func uploadLateResultsAfterStopSelectionCancellationOrReplacementAreDiscarded() async throws
+  {
+    for action in 0..<4 {
+      let h = try await live()
+      await h.transport.set("/api/v1/uploads/sent-upload/content", [.paused])
+      let read = Task { try await download(h) }
+      await eventually { await h.transport.pauseCount() == 1 }
+      if action == 0 { await h.store.stop() }
+      if action == 1 { h.store.selection += 1 }
+      if action == 2 { read.cancel() }
+      if action == 3 {
+        var message = try sampleMessage()
+        var changed = try attachment()
+        changed.name = "replacement.txt"
+        message.attachments = [changed]
+        try h.seed(messages: [message])
+      }
+      await h.transport.release(.init(data: Data("abc".utf8)))
+      await #expect(throws: CancellationError.self) { try await read.value }
+      await h.store.stop()
+      try? FileManager.default.removeItem(at: h.directory)
+    }
+  }
+}
+
+extension SentUploadAttachmentTests {
+  @Test func unknownUnuploadedAndOversizedUploadsAreRefusedBeforeIO() async throws {
+    let h = try await live()
+    defer { try? FileManager.default.removeItem(at: h.directory) }
+    for mode in 0..<4 {
+      var message = try sampleMessage()
+      var file = try attachment()
+      if mode == 0 { file.uploaded = false }
+      if mode == 1 { file.status = "staged" }
+      if mode == 2 { file.sizeBytes = ReplyFileCache.maximumFileBytes + 1 }
+      message.attachments = mode == 3 ? [] : [file]
+      try h.seed(messages: [message])
+      await #expect(throws: mode == 2 ? ReplyDownloadFailure.tooLarge : .unavailable) {
+        try await download(h)
+      }
+    }
+    #expect(await h.transport.count("/api/v1/uploads/sent-upload/content") == 0)
+    await h.store.stop()
+  }
+}

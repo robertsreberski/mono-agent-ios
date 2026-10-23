@@ -102,11 +102,20 @@ preview writes only while server digests match.
   binary transfer; neither UI nor disk cache receives capability URLs.
 - `ReplyFileCache` retains at most 64 MiB / 24 files / 24 hours, 32 MiB per file. Active
   leases prevent eviction; a full pinned cache refuses another insertion. Disk contains
-  bytes with hashed identity names only, excluded from backup and protected on iOS.
+  bytes beneath hashed identity directories with sanitized export basenames, excluded from backup and protected on iOS.
   `clearReplyFileCache` removes unleased bytes and decoded retention.
 - `decodeReplyImage(_:)` uses `ReplyImageCache`'s off-main ImageIO actor: raster-only,
   source <=40 million pixels / 16,384 per edge, decoded <=2,048 per edge. Decoded retention
   is 24 images / 32 MiB / 60s (lean: 8 / 8 MiB / 20s). Active UI images are not retained-cache entries.
+- `downloadMessageAttachment(threadID:messageID:attachmentID:)` reads only a held sent
+  upload (`committed` and `uploaded`) through Kit's bounded authenticated upload-content route.
+  It derives that route from the durable ID and ignores any advertised `contentUrl`. The
+  existing durable reply `storedUrl` handling is unchanged. It shares the leased file/image
+  caches, validates size and lifetime/selection/file identity, and treats missing/deleted
+  uploads as unavailable. No DTO URLs are written into the byte cache or re-adopted into history.
+- Reply and sent-upload GIFs intentionally show their first decoded frame, unlike the web's
+  animation; PNG/JPEG/GIF/WebP use the same bounded raster decoder. Sent files reuse native
+  QuickLook, Share and Save-to-Files actions; sent raster images reuse the strip/lightbox.
 - `restartProposalState`, `restartUnavailableReason`, `requestRestartConfirmation`,
   `cancelRestartConfirmation`, `confirmRestart` and `pollRestartProposal` own ephemeral
   proposal state. Only a confirmed available proposal can POST, never automatically.

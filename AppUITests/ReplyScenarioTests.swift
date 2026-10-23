@@ -11,6 +11,29 @@ import XCTest
   func testSingleImageDark() { imageVariant("single", "dark") }
   func testEmptyGalleryLight() { imageVariant("empty", "light") }
   func testEmptyGalleryDark() { imageVariant("empty", "dark") }
+  func testSentAttachmentsLight() { sentAttachments("light") }
+  func testSentAttachmentsDark() { sentAttachments("dark") }
+  private func sentAttachments(_ appearance: String) {
+    let app = launch("conversation-attachments", appearance)
+    let image = app.buttons["View uploaded-landscape.png"]
+    XCTAssertTrue(image.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["Download sample-notes.txt"].exists)
+    capture(app, "conversation-attachments", appearance)
+    image.tap()
+    XCTAssertTrue(element(app, "reply-lightbox").waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Share uploaded-landscape.png"].exists)
+    XCTAssertFalse(app.buttons["Next image"].exists)
+    capture(app, "conversation-attachments", appearance, variant: "lightbox")
+    app.buttons["Close image"].tap()
+    app.buttons["Download deleted-notes.txt"].tap()
+    XCTAssertTrue(app.staticTexts["This file is no longer available."].waitForExistence(timeout: 5))
+    capture(app, "conversation-attachments", appearance, variant: "unavailable")
+    app.buttons["Download sample-notes.txt"].tap()
+    XCTAssertTrue(app.buttons["Preview"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Share"].exists)
+    XCTAssertTrue(app.buttons["Save to Files"].exists)
+    app.terminate()
+  }
   private func imageVariant(_ variant: String, _ appearance: String) {
     let app = launch("conversation-images-" + variant, appearance)
     if variant == "single" {

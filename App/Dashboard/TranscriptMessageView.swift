@@ -77,10 +77,17 @@ struct TranscriptMessageView: View {
           }
         }
       }
-      ForEach(message.attachments, id: \.id) { attachment in
-        DeferredTranscriptPart(
-          title: attachment.name, kind: attachment.kind == "image" ? "Image" : "Attachment",
-          feature: "File viewer")
+      if message.attachments.contains(where: \.isUploadedImage) {
+        ReplyImagesView(
+          uploads: message.attachments.filter(\.isUploadedImage), message: message, store: store,
+          gallery: gallery)
+      }
+      if message.attachments.contains(where: { !$0.isUploadedImage }) {
+        WebFlowLayout(spacing: 6, lineSpacing: 6) {
+          ForEach(message.attachments.filter { !$0.isUploadedImage }, id: \.id) { attachment in
+            ReplyAttachmentView(upload: attachment, message: message, store: store)
+          }
+        }
       }
       if message.parts.isEmpty && message.status == "running" {
         Label("Thinking…", systemImage: "sparkles").webFont(.reasoningTrigger)
