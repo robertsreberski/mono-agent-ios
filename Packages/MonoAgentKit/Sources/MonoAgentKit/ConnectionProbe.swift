@@ -20,6 +20,15 @@ public struct HTTPResponse: Sendable {
 
 public protocol HTTPTransport: Sendable {
   func send(_ request: URLRequest) async throws -> HTTPResponse
+  func send(_ request: URLRequest, maximumBytes: Int) async throws -> HTTPResponse
+}
+
+extension HTTPTransport {
+  public func send(_ request: URLRequest, maximumBytes: Int) async throws -> HTTPResponse {
+    let response = try await send(request)
+    guard response.data.count <= maximumBytes else { throw ReplyContentError.tooLarge }
+    return response
+  }
 }
 
 final class NoRedirects: NSObject, URLSessionTaskDelegate {
@@ -52,6 +61,27 @@ public actor URLSessionTransport: FileUploadTransport {
     let (data, response) = try await session.upload(
       for: request, fromFile: file, delegate: UploadProgressDelegate(progress: progress))
     guard let response = response as? HTTPURLResponse else { throw ProbeError.connectivity }
+    return HTTPResponse(
+      data: data, status: response.statusCode,
+      contentType: response.value(forHTTPHeaderField: "Content-Type") ?? "",
+      headers: response.allHeaderFields.reduce(into: [:]) {
+        if let key = $1.key as? String, let value = $1.value as? String { $0[key] = value }
+      })
+  }
+
+  /// Incrementally consume untrusted binary bodies; never buffer beyond the caller's ceiling.
+  public func send(_ request: URLRequest, maximumBytes: Int) async throws -> HTTPResponse {
+    let (bytes, response) = try await session.bytes(for: request)
+    guard let response = response as? HTTPURLResponse else { throw ProbeError.connectivity }
+    guard response.expectedContentLength <= Int64(maximumBytes) else {
+      throw ReplyContentError.tooLarge
+    }
+    var data = Data()
+    for try await byte in bytes {
+      try Task.checkCancellation()
+      guard data.count < maximumBytes else { throw ReplyContentError.tooLarge }
+      data.append(byte)
+    }
     return HTTPResponse(
       data: data, status: response.statusCode,
       contentType: response.value(forHTTPHeaderField: "Content-Type") ?? "",

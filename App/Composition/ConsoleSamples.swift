@@ -25,6 +25,12 @@
     case conversationJobs = "conversation-jobs"
     case conversationJobStack = "conversation-job-stack"
     case conversationSubagents = "conversation-subagents"
+    case conversationRestartCard = "conversation-restart-card"
+    case conversationImagesSingle = "conversation-images-single"
+    case conversationImagesEmpty = "conversation-images-empty"
+    case conversationImages = "conversation-images"
+    case conversationAttachments = "conversation-attachments"
+    case conversationReplyFiles = "conversation-reply-files"
     case conversationContext = "conversation-context"
     // Composer (C8): scripted send/upload/ask round trips through the synthetic Store.
     case composerEmpty = "composer-empty"
@@ -37,6 +43,10 @@
     case conversationAskForm = "conversation-ask-form"
     case conversationQuickReplies = "conversation-quick-replies"
     case peerQuestionSheet = "peer-question-sheet"
+
+    var isReplyImageScenario: Bool {
+      [.conversationImages, .conversationImagesSingle, .conversationImagesEmpty].contains(self)
+    }
 
     var isTranscript: Bool { rawValue.hasPrefix("conversation-") || self == .fidelityChat }
     var isFidelity: Bool { self == .fidelityChat || self == .fidelityDashboard }
@@ -141,6 +151,9 @@
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
       if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }
+      if let scenario, let response = try RichReplyFixture.response(request, scenario: scenario) {
+        return response
+      }
       if let scenario, scenario.isTranscript,
         let response = try TranscriptFixture.response(request, scenario: scenario, theme: theme)
       {

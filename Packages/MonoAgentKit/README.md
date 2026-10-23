@@ -55,6 +55,12 @@ see `Contracts/console-api.lock.json`. There is no npm release at this pin.
   Progress is Sendable and reaches 100% only on server acceptance. Cancel the caller's
   Task; failures/cancellation delete known reservations best-effort. Returned staged files
   remain the caller's responsibility (`discard` when abandoned).
+- `ReplyContentReading` supplements the generated API with bounded binary responses and
+  integrity headers. The live transport consumes incrementally under a caller byte ceiling.
+  `CapabilityService.downloadAttachment` mints access for restored parts, validates renewed
+  identity and length/integrity, and renews access-expired reads at most once.
+  `uploadContent` / `downloadUpload` use the same bounded transport for committed uploads,
+  derive `/api/v1/uploads/:id/content` from the ID, ignore advertised URLs and validate length.
 - Actor `CapabilityService`: exact part-bound root-relative URL validation; supports durable
   stored upload content and short-lived attachment/MCP resources. Read expiry
   `reply_access_expired` renews access once. MCP mutations are **not** automatically replayed;

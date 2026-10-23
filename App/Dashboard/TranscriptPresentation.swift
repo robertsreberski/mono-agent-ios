@@ -32,11 +32,17 @@ enum TranscriptPresentation {
     for (index, part) in parts.enumerated() {
       if isActivity(part), let last = bands.last, last.parts.allSatisfy(isActivity) {
         bands[bands.count - 1] = Entry(id: last.id, parts: last.parts + [part])
+      } else if isReplyImage(part), let last = bands.last, last.parts.allSatisfy(isReplyImage) {
+        bands[bands.count - 1] = Entry(id: last.id, parts: last.parts + [part])
       } else {
         bands.append(Entry(id: index, parts: [part]))
       }
     }
     return bands
+  }
+  static func isReplyImage(_ part: WebMessagePart) -> Bool {
+    if case .attachment(let value) = part { return value.isReplyImage }
+    return false
   }
   static func isActivity(_ part: WebMessagePart) -> Bool {
     switch part {

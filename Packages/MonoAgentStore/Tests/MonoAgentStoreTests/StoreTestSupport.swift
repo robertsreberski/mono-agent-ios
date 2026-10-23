@@ -170,7 +170,8 @@ struct Harness {
     repository = FileConsoleRepository(directory: self.directory)
     store = ConsoleStore(
       profile: self.profile, api: APIClient(endpoint: Scenario.endpoint, transport: transport),
-      events: events, repository: repository, clock: clock)
+      events: events, repository: repository, clock: clock,
+      replyFiles: ReplyFileCache(directory: self.directory.appendingPathComponent("reply-files")))
   }
   func seed(messages: [WebMessage] = [], revision: Int = 1) throws {
     store.hold(

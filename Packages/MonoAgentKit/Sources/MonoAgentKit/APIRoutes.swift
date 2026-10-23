@@ -482,7 +482,7 @@ public enum APIRoute: String, Sendable, CaseIterable {
   }
 }
 
-public protocol ConsoleAPI: Sendable {
+public protocol ConsoleAPI: ReplyContentReading {
   func health(etag: String?) async throws -> ReadResult<ApiHealth>
   func mcpAppProxy() async throws -> Data
   func bootstrap(query: ApiBootstrapQuery, etag: String?) async throws -> ReadResult<ApiBootstrap>

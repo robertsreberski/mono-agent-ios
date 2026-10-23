@@ -68,6 +68,9 @@ public final class ConsoleStore {
   public internal(set) var skillRegistries: [String: SkillRegistryState] = [:]
   @ObservationIgnored var uploadTasks: [UUID: Task<[WebAttachment], any Error>] = [:]
 
+  @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
+  @ObservationIgnored let replyImages = ReplyImageCache()
+  @ObservationIgnored let replyFiles: ReplyFileCache
   @ObservationIgnored let api: any ConsoleAPI
   @ObservationIgnored let events: any ConsoleEventSource
   @ObservationIgnored let repository: any ConsoleRepository
@@ -138,10 +141,12 @@ public final class ConsoleStore {
   public init(
     profile: SavedConsole, api: any ConsoleAPI, events: any ConsoleEventSource,
     repository: any ConsoleRepository, clock: any StreamClock = SystemStreamClock(),
-    uploads: any UploadReservations = NoUploadReservations()
+    uploads: any UploadReservations = NoUploadReservations(),
+    replyFiles: ReplyFileCache? = nil
   ) {
     self.profile = profile
     namespace = ConsoleNamespace(profile: profile)
+    self.replyFiles = replyFiles ?? .live(namespace: profile.id.uuidString + namespace.identity)
     self.api = api
     self.events = events
     self.repository = repository

@@ -22,6 +22,7 @@ MARKERS = (b"fixture-opaque", b"ScreenFixture", b"fidelity-chat", b"fidelity-das
            b"store-offline", b"store-streaming", b"store-unread", b"store-uncertain",
            b"DashboardFixture", b"dashboard-populated", b"dashboard-empty", b"dashboard-offline",
            b"dashboard-search", b"conversation-placeholder", b"fixture-theme",
+           b"RichReplyFixture", b"conversation-reply-files", b"conversation-attachments", b"conversation-images", b"conversation-restart-card",
            b"JobFixture", b"conversation-jobs", b"conversation-job-stack", b"conversation-subagents", b"conversation-context",
            b"TranscriptFixture", b"conversation-streaming", b"conversation-tools", b"conversation-long", b"conversation-markdown",
            b"ComposerFixture", b"ComposerScript", b"composer-empty", b"composer-draft-attachments",

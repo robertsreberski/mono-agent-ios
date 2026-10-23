@@ -125,19 +125,23 @@ public struct ContextDisplay: View {
               }.webFont(.optionID).padding(.bottom, 6)
             }
           } else {
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-              GridRow {
+            VStack(spacing: 4) {
+              ContextTokenColumns {
                 Text("")
-                Text("Input").accessibilityLabel("Input including cache writes")
-                Text("Cached")
-                Text("Output")
+                Text("Input").frame(maxWidth: .infinity, alignment: .trailing).accessibilityLabel(
+                  "Input including cache writes")
+                Text("Cached").frame(maxWidth: .infinity, alignment: .trailing)
+                Text("Output").frame(maxWidth: .infinity, alignment: .trailing)
               }.webFont(.sheetSubtitle).foregroundStyle(WebColor.textMuted.color)
               ForEach(content.tokens) { row in
-                GridRow {
+                ContextTokenColumns {
                   Text(row.label).webFont(.contextNote).foregroundStyle(WebColor.textSoft.color)
-                  Text(row.input).webFont(.optionID)
-                  Text(row.cached).webFont(.optionID)
-                  Text(row.output).webFont(.optionID)
+                  Text(row.input).webFont(.optionID).frame(
+                    maxWidth: .infinity, alignment: .trailing)
+                  Text(row.cached).webFont(.optionID).frame(
+                    maxWidth: .infinity, alignment: .trailing)
+                  Text(row.output).webFont(.optionID).frame(
+                    maxWidth: .infinity, alignment: .trailing)
                 }.accessibilityElement(children: .combine)
               }
             }.frame(maxWidth: .infinity, alignment: .leading)
@@ -181,6 +185,29 @@ public struct ContextDisplay: View {
       .fixedSize(horizontal: false, vertical: true)
   }
 }
+/// Web fixed-layout token table: label 38%, the three numeric columns share the rest.
+private struct ContextTokenColumns: Layout {
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let width = proposal.width ?? 320
+    let height =
+      subviews.enumerated().map { index, view in
+        view.sizeThatFits(.init(width: width * (index == 0 ? 0.38 : 0.62 / 3), height: nil)).height
+      }.max() ?? 0
+    return CGSize(width: width, height: height)
+  }
+  func placeSubviews(
+    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+  ) {
+    var x = bounds.minX
+    for (index, view) in subviews.enumerated() {
+      let width = bounds.width * (index == 0 ? 0.38 : 0.62 / 3)
+      view.place(
+        at: CGPoint(x: x, y: bounds.minY), proposal: .init(width: width, height: bounds.height))
+      x += width
+    }
+  }
+}
+
 #if DEBUG
   #Preview("Context and cost") {
     DesignPreviewMatrix {

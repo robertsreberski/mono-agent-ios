@@ -8,6 +8,7 @@ struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
   let startsTurn: Bool
+  @State private var gallery = ReplyMessageGallery()
   private var isUser: Bool { row.message.role == "user" }
   private var role: String {
     isUser ? "You" : row.message.role == "assistant" ? "Assistant" : "System"
@@ -39,44 +40,81 @@ struct TranscriptMessageView: View {
     .quotable(message)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message-" + message.id)
+    .fullScreenCover(
+      isPresented: Binding(get: { gallery.openID != nil }, set: { if !$0 { gallery.openID = nil } })
+    ) {
+      ReplyLightbox(
+        images: gallery.images(in: message),
+        selected: Binding(
+          get: { gallery.openID ?? "" }, set: { gallery.openID = $0 }
+        )
+      ) { gallery.openID = nil }
+    }
+    .onDisappear { if gallery.openID == nil { gallery.clear(store: store) } }
   }
 
   @ViewBuilder private func messageContent(_ message: WebMessage) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      if let quote = message.quote {
-        MessageQuote(quote.text)
-
+    VStack(alignment: .leading, spacing: 0) {
+      if isUser, !message.attachments.isEmpty {
+        messageAttachments(message).padding(.bottom, 8)
       }
-      ForEach(TranscriptPresentation.activityBands(message.parts)) { band in
-        if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
-          TranscriptActivityBand(parts: band.parts, message: message, store: store)
-        } else if let part = band.parts.first {
-          if message.role == "system", case .text(let value) = part {
-            Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)
-              .textSelection(.enabled)
-          } else {
-            TranscriptPartView(part: part, message: message, store: store)
+      VStack(alignment: .leading, spacing: 10) {
+        if let quote = message.quote {
+          MessageQuote(quote.text)
+
+        }
+        ForEach(TranscriptPresentation.activityBands(message.parts)) { band in
+          if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
+            TranscriptActivityBand(parts: band.parts, message: message, store: store)
+          } else if band.parts.allSatisfy(TranscriptPresentation.isReplyImage) {
+            ReplyImagesView(
+              parts: band.parts.compactMap {
+                if case .attachment(let value) = $0 { return value }
+                return nil
+              }, message: message, store: store, gallery: gallery)
+          } else if let part = band.parts.first {
+            if message.role == "system", case .text(let value) = part {
+              Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)
+                .textSelection(.enabled)
+            } else {
+              TranscriptPartView(part: part, message: message, store: store)
+            }
           }
         }
+        if !isUser { messageAttachments(message) }
+        if message.parts.isEmpty && message.status == "running" {
+          Label("Thinking…", systemImage: "sparkles").webFont(.reasoningTrigger)
+            .foregroundStyle(WebColor.textMuted.color)
+        }
+        if let status = message.liveInputStatus {
+          Text("Follow-up · " + status).webFont(.messageAction)
+            .foregroundStyle(WebColor.textMuted.color)
+        }
+        if message.role == "assistant" {
+          RunAttributionView(message: message, store: store)
+        }
+        if ["failed", "cancelled", "interrupted"].contains(message.status) {
+          StatusIndicator(.failed, label: "Response " + message.status)
+        }
       }
-      ForEach(message.attachments, id: \.id) { attachment in
-        DeferredTranscriptPart(
-          title: attachment.name, kind: attachment.kind == "image" ? "Image" : "Attachment",
-          feature: "File viewer")
-      }
-      if message.parts.isEmpty && message.status == "running" {
-        Label("Thinking…", systemImage: "sparkles").webFont(.reasoningTrigger)
-          .foregroundStyle(WebColor.textMuted.color)
-      }
-      if let status = message.liveInputStatus {
-        Text("Follow-up · " + status).webFont(.messageAction)
-          .foregroundStyle(WebColor.textMuted.color)
-      }
-      if message.role == "assistant" {
-        RunAttributionView(message: message, store: store)
-      }
-      if ["failed", "cancelled", "interrupted"].contains(message.status) {
-        StatusIndicator(.failed, label: "Response " + message.status)
+    }
+  }
+
+  @ViewBuilder private func messageAttachments(_ message: WebMessage) -> some View {
+    if !message.attachments.isEmpty {
+      VStack(alignment: .trailing, spacing: 7) {
+        if message.attachments.contains(where: \.isUploadedImage) {
+          ReplyImagesView(
+            uploads: message.attachments.filter(\.isUploadedImage), message: message, store: store,
+            gallery: gallery)
+        }
+        if message.attachments.contains(where: { !$0.isUploadedImage }) {
+          WebFlowLayout(spacing: 7, lineSpacing: 7, alignTrailing: isUser) {
+            ForEach(message.attachments.filter { !$0.isUploadedImage }, id: \.id) { attachment in
+              ReplyAttachmentView(upload: attachment, message: message, store: store)
+            }
+          }
+        }
       }
     }
   }
@@ -149,7 +187,7 @@ struct TranscriptPartView: View {
     case .error(let value):
       ConnectionBanner(.problem, title: value.code ?? "Agent error", message: value.message)
     case .failure(let value):
-      ConnectionBanner(.problem, title: value.code, message: value.message)
+      ReplyFailureCard(code: value.code, message: value.message)
     case .subagent(let value):
       SubagentPartView(call: value, message: message, store: store)
     case .processJob(let value):
@@ -157,15 +195,12 @@ struct TranscriptPartView: View {
     case .processJobWake(let value):
       ProcessJobWakeView(wake: value)
     case .attachment(let value):
-      DeferredTranscriptPart(
-        title: value.name, kind: value.mediaType.hasPrefix("image/") ? "Image" : "Reply file",
-        feature: "File viewer")
+      ReplyAttachmentView(part: value, message: message, store: store)
     case .mcpApp(let value):
       DeferredTranscriptPart(
         title: value.title ?? value.toolName, kind: "MCP app", feature: "App viewer")
     case .restartProposal(let value):
-      DeferredTranscriptPart(
-        title: value.reason ?? "Restart agent", kind: "Restart proposal", feature: "Restart card")
+      ReplyRestartView(part: value, message: message, store: store)
     case .replyOptions(let value):
       QuickRepliesView(part: value, message: message, store: store)
     case .cronReplyContext(let value):

@@ -51,7 +51,9 @@ import Testing
       case .dashboardPopulated, .dashboardSearch, .conversationPlaceholder,
         .conversationTranscript, .conversationStreaming, .conversationTools, .conversationLong,
         .conversationMarkdown, .conversationJobs, .conversationJobStack, .conversationSubagents,
-        .conversationContext:
+        .conversationContext, .conversationReplyFiles, .conversationImages,
+        .conversationRestartCard, .conversationImagesSingle, .conversationImagesEmpty,
+        .conversationAttachments:
         #expect(store.agents.count == 4)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.count == 8)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.nextCursor != nil)

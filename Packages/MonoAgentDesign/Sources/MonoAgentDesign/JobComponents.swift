@@ -159,11 +159,16 @@ public struct WebFlowLayout: Layout {
   private let spacing: CGFloat
   private let lineSpacing: CGFloat
   private let fillMinimum: CGFloat
+  private let alignTrailing: Bool
 
-  public init(spacing: CGFloat = 5, lineSpacing: CGFloat = 0, fillMinimum: CGFloat = 80) {
+  public init(
+    spacing: CGFloat = 5, lineSpacing: CGFloat = 0, fillMinimum: CGFloat = 80,
+    alignTrailing: Bool = false
+  ) {
     self.spacing = spacing
     self.lineSpacing = lineSpacing
     self.fillMinimum = fillMinimum
+    self.alignTrailing = alignTrailing
   }
 
   public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ())
@@ -182,7 +187,7 @@ public struct WebFlowLayout: Layout {
   ) {
     var y = bounds.minY
     for row in arrange(width: bounds.width, subviews: subviews) {
-      var x = bounds.minX
+      var x = bounds.minX + (alignTrailing ? max(0, bounds.width - row.width) : 0)
       for item in row.items {
         // Baseline-ish alignment: centre each item on the row.
         subviews[item.index].place(
