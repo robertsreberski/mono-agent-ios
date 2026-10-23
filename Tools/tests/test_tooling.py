@@ -152,7 +152,7 @@ class ToolingTests(unittest.TestCase):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
         connection = {(s, a) for s, a, v in keys
-                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question-"))
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser"))
                       and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
@@ -160,6 +160,17 @@ class ToolingTests(unittest.TestCase):
                 self.assertIn((f"design-catalog-{theme}", appearance, None), keys)
         self.assertTrue(any(entry["textSize"] != "standard" and entry["scenario"].startswith("design-catalog") for entry in MATRIX))
         self.assertTrue(any(entry["transparency"] != "system" for entry in MATRIX))
+
+    def test_matrix_covers_fidelity_screens_and_additional_surfaces(self):
+        keys = {(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX}
+        for scenario in ("fidelity-chat", "fidelity-dashboard", "skill-browser", "peer-question"):
+            for appearance in ("light", "dark"):
+                self.assertIn((scenario, appearance, None), keys)
+        self.assertIn(("conversation-jobs", "light", "failed"), keys)
+        for scenario in ("composer-model-selector", "skill-browser", "conversation-ask-form",
+                         "conversation-quick-replies", "peer-question-sheet"):
+            self.assertIn((scenario, "light", "ax3"), keys)
+            self.assertIn((scenario, "light", "opaque"), keys)
 
     def test_matrix_covers_dashboard_scenarios_themes_and_accessibility(self):
         keys = {(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX}
