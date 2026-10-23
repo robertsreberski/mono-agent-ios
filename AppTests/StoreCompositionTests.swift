@@ -90,6 +90,23 @@ import Testing
             store.draft(sourceID: DashboardFixture.atlas, threadID: DashboardFixture.openThreadID)?
               .text == ComposerFixture.draftText)
         }
+      case .fidelityChat, .fidelityDashboard:
+        #expect(store.agents.map(\.label) == ["Atlas", "Grove"])
+        #expect(
+          store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.map(\.title) == [
+            "Garden planner", "Seed catalog", "Seedling notes",
+          ])
+        #expect(store.projects.first?.name == "Garden planner")
+        #expect(store.tags.first?.name == "Research")
+        #expect(store.activeFleet?.threads.first?.title == "Seed catalog")
+        #expect(model.launchThreadID == scenario.launchThreadID)
+        let rows = try ScreenFixture.messages()
+        #expect(rows.map(\.role) == ["system", "user", "assistant"])
+        #expect(QuoteFormatting.text(of: rows[1]) == ScreenFixture.question)
+        #expect(rows[2].parts == [.text(.init(text: ScreenFixture.plan))])
+        #expect(
+          store.isUnread(
+            try #require(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.last)))
       case .dashboardEmpty:
         #expect(store.agents.count == 1)
         #expect(store.buckets.values.allSatisfy { $0.threads.isEmpty })

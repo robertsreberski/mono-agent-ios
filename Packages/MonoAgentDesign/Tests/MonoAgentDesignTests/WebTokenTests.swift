@@ -90,7 +90,21 @@ struct WebTokenTests {
     #expect(WebType.search.spec.size == 16)
     #expect(WebType.conversationTitle.spec.size == 13)
     #expect(WebType.contextTrigger.spec.mono)
-    #expect(WebType.allCases.allSatisfy { $0.spec.size >= 8 && $0.spec.size <= 18 })
+    #expect(WebType.contextFigure.spec.size == 21)
+    #expect(WebType.contextFigureRegular.spec.size == 18)
+    #expect(WebType.stateTitle.spec.size == 23)
+    #expect(WebType.settingsTitle.spec.size == 16)
+    #expect(WebType.stateBody.spec.size == 13 && WebType.stateBody.spec.lineHeight == 1.55)
+    #expect(WebType.notice.spec.size == 11)
+    #expect(WebType.banner.spec.size == 10 && WebType.bannerRegular.spec.size == 11)
+    #expect(
+      WebType.allCases.allSatisfy {
+        switch $0 {
+        case .contextFigure: $0.spec.size == 21
+        case .stateTitle: $0.spec.size == 23
+        default: $0.spec.size >= 8 && $0.spec.size <= 18
+        }
+      })
   }
 
   @Test func geometryKeepsTheWebMetrics() {

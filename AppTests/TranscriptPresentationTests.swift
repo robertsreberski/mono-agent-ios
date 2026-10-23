@@ -19,6 +19,17 @@ struct TranscriptPresentationTests {
     #expect(TranscriptPresentation.clusters([.toolCall(ask), .toolCall(ask)]).count == 2)
     #expect(TranscriptPresentation.failed(try TranscriptFixture.tool(2)))
   }
+  @Test func activityBandsPreserveOrderAndExcludeAnswerSurfaces() throws {
+    let tool = WebMessagePart.toolCall(try TranscriptFixture.tool(1))
+    let text = WebMessagePart.text(.init(text: "A fictional response"))
+    var ask = try TranscriptFixture.tool(1)
+    ask.toolName = "AskUser"
+    let bands = TranscriptPresentation.activityBands([tool, tool, text, .toolCall(ask), tool])
+    #expect(bands.map(\.id) == [0, 2, 3, 4])
+    #expect(bands.map { $0.parts.count } == [2, 1, 1, 1])
+    #expect(bands.flatMap(\.parts) == [tool, tool, text, .toolCall(ask), tool])
+    #expect(!TranscriptPresentation.isActivity(.toolCall(ask)))
+  }
   @Test func previewsDoNotConfusePathsCommandsOrDates() throws {
     var call = try TranscriptFixture.tool(1)
     call.args = .object(["file_path": .string("docs/sample.md")])

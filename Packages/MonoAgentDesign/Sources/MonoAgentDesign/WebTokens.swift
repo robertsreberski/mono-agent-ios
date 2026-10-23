@@ -166,10 +166,28 @@ public enum WebType: CaseIterable, Sendable {
   case jobTitle
   /// `.process-job-meta`: 11.5.
   case jobMeta
+  /// `.process-job-time`, `.process-job-detail`: mono 11, tabular.
+  case jobMono
+  /// `.process-job-output`: mono 11 / 1.55.
+  case jobOutput
+  /// `.process-job-output-head`, `.process-job-call-tool`: 11.5 / 650.
+  case jobOutputHead
+  /// `.process-job-error`, `.peer-question`, call bodies: 12.5 / 1.5.
+  case jobDetail
+  /// `.activity-step-tool`: mono 10.5 / 600.
+  case stepTool
+  /// `.activity-step-summary`: 10.
+  case stepSummary
+  /// `.activity-step-time`, `.activity-row-time`: mono 9.
+  case stepTime
   /// `.attachment-chip`: 11.
   case attachment
   /// `.connection-banner` (phone): 10.
   case banner
+  case sheetTitle, sheetSubtitle, optionName, optionID, effortOption
+  case askLegend, askContext, askDetail, quote, quickReply
+  case contextFigure, contextFigureRegular, contextNote, contextEyebrow
+  case settingsTitle, stateTitle, stateBody, notice, bannerRegular
 
   public struct Spec: Sendable, Equatable {
     public var size: CGFloat
@@ -186,6 +204,13 @@ public enum WebType: CaseIterable, Sendable {
 
   public var spec: Spec {
     switch self {
+    case .settingsTitle:
+      Spec(size: 16, weight: .bold, tracking: -0.01, lineHeight: 1.25, textStyle: .headline)
+    case .stateTitle:
+      Spec(size: 23, weight: .bold, tracking: -0.025, lineHeight: 1.18, textStyle: .title2)
+    case .stateBody: Spec(size: 13, weight: .regular, lineHeight: 1.55, textStyle: .subheadline)
+    case .notice: Spec(size: 11, weight: .regular, textStyle: .caption)
+    case .bannerRegular: Spec(size: 11, weight: .regular, textStyle: .caption)
     case .eyebrow:
       Spec(size: 10, weight: .bold, tracking: 0.14, uppercase: true, textStyle: .caption2)
     case .sectionCount:
@@ -228,8 +253,31 @@ public enum WebType: CaseIterable, Sendable {
     case .jobEntry: Spec(size: 12, weight: .semibold, tabular: true, textStyle: .footnote)
     case .jobTitle: Spec(size: 13, weight: .semibold, textStyle: .subheadline)
     case .jobMeta: Spec(size: 11.5, weight: .regular, textStyle: .caption)
+    case .jobMono: Spec(size: 11, weight: .regular, mono: true, tabular: true, textStyle: .caption)
+    case .jobOutput:
+      Spec(size: 11, weight: .regular, lineHeight: 1.55, mono: true, textStyle: .caption)
+    case .jobOutputHead: Spec(size: 11.5, weight: .semibold, textStyle: .caption)
+    case .jobDetail: Spec(size: 12.5, weight: .regular, lineHeight: 1.5, textStyle: .footnote)
+    case .stepTool: Spec(size: 10.5, weight: .semibold, mono: true, textStyle: .caption2)
+    case .stepSummary: Spec(size: 10, weight: .regular, textStyle: .caption2)
+    case .stepTime: Spec(size: 9, weight: .regular, mono: true, tabular: true, textStyle: .caption2)
     case .attachment: Spec(size: 11, weight: .regular, textStyle: .caption)
     case .banner: Spec(size: 10, weight: .regular, textStyle: .caption2)
+    case .askLegend: Spec(size: 13, weight: .semibold, lineHeight: 1.45, textStyle: .subheadline)
+    case .askContext: Spec(size: 12, weight: .regular, lineHeight: 1.55, textStyle: .footnote)
+    case .askDetail: Spec(size: 11, weight: .regular, lineHeight: 1.45, textStyle: .caption)
+    case .quote: Spec(size: 11, weight: .regular, lineHeight: 1.45, textStyle: .caption)
+    case .quickReply: Spec(size: 14, weight: .regular, textStyle: .subheadline)
+    case .sheetTitle: Spec(size: 14, weight: .semibold, textStyle: .headline)
+    case .sheetSubtitle: Spec(size: 10.5, weight: .regular, lineHeight: 1.45, textStyle: .caption2)
+    case .optionName: Spec(size: 14, weight: .semibold, textStyle: .subheadline)
+    case .optionID: Spec(size: 11, weight: .regular, mono: true, textStyle: .caption)
+    case .effortOption: Spec(size: 12, weight: .semibold, textStyle: .footnote)
+    case .contextFigure: Spec(size: 21, weight: .bold, tabular: true, textStyle: .title3)
+    case .contextFigureRegular: Spec(size: 18, weight: .bold, tabular: true, textStyle: .title3)
+    case .contextNote: Spec(size: 12, weight: .regular, lineHeight: 1.45, textStyle: .footnote)
+    case .contextEyebrow:
+      Spec(size: 10, weight: .heavy, tracking: 0.08, uppercase: true, textStyle: .caption2)
     }
   }
 

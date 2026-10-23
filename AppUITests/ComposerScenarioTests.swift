@@ -38,7 +38,8 @@ import XCTest
     switch scenario {
     case "composer-empty": newConversation(app, variant: variant, capture: capture)
     case "composer-draft-attachments": draftAttachments(app, capture: capture)
-    case "composer-skill-picker": skillPicker(app, capture: capture)
+    case "composer-skill-picker":
+      skillPicker(app, appearance: appearance, variant: variant, capture: capture)
     case "composer-model-selector": modelSelector(app, capture: capture)
     case "composer-running": running(app, capture: capture)
     case "composer-send-failed": sendFailed(app, capture: capture)
@@ -104,7 +105,9 @@ import XCTest
     XCTAssertFalse(element(app, "attachment-field-notes.txt").exists, "Admission clears chips")
   }
 
-  private func skillPicker(_ app: XCUIApplication, capture: () -> Void) {
+  private func skillPicker(
+    _ app: XCUIApplication, appearance: String, variant: String?, capture: () -> Void
+  ) {
     let field = composerField(app)
     field.tap()
     field.typeText("Please use $rel")
@@ -117,6 +120,7 @@ import XCTest
     XCTAssertTrue(element(app, "skill-browse-weekly-digest").waitForExistence(timeout: 10))
     XCTAssertFalse(
       element(app, "skill-browse-legacy-export").isEnabled, "Unavailable skills are explained")
+    self.capture(app, "skill-browser", appearance, variant: variant)
     element(app, "skill-browse-weekly-digest").tap()
     XCTAssertTrue(fieldText(app).contains("$weekly-digest"))
     field.typeText("for this week")

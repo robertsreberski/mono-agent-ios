@@ -95,6 +95,12 @@
             }
             .contentSurface()
           }
+          catalogSection("Settings") {
+            SettingsGroup("Console") {
+              TextField("Display name", text: .constant("Sample console")).settingsField()
+              Text("Connect only to a console you trust.").webFont(.notice)
+            }
+          }
           catalogSection("States") { StateSpecimens() }
           catalogSection("Rich documents") {
             RichTextDocumentView(
@@ -120,6 +126,25 @@
               model: "sample:large", effort: "high",
               detail: "Current settings · inherited agent defaults")
           }
+          catalogSection("Answer surfaces") {
+            VStack(alignment: .leading, spacing: 14) {
+              MessageQuote("A fictional passage from the sample plan.")
+              ChoiceRow(
+                "Reserve now", detail: "Keep a sample packet", selected: true, multiple: false)
+              TextField("Custom reply", text: .constant("")).webInput()
+              Button("Submit answer") {}.buttonStyle(WebSubmitButtonStyle())
+              Button("Tell me more") {}.buttonStyle(WebReplyButtonStyle())
+            }.webFormCard()
+          }
+          catalogSection("Sheet parts") {
+            VStack(spacing: 0) {
+              WebSheetHeader("Run settings", subtitle: "Choose the next turn's route") {}
+              WebSearchField("Search models", text: .constant(""))
+              WebModelRow("Sample Large", detail: "sample:large", selected: true)
+              Button("High") {}.buttonStyle(WebEffortButtonStyle(selected: true))
+            }.background(WebColor.surfaceRaised.color)
+          }
+          catalogSection("Job rows and outcomes") { JobSpecimens() }
           catalogSection("Activity disclosure") {
             ActivityDisclosure(
               "Read ×2", summary: "sample.md, outline.md", detail: "42ms", expanded: .constant(true)
@@ -206,6 +231,45 @@
       VStack(alignment: .leading, spacing: DesignSpacing.sm) {
         SectionHeader(title)
         content()
+      }
+    }
+  }
+
+  private struct JobSpecimens: View {
+    @State private var expanded = true
+    var body: some View {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          ForEach(JobGlyphMark.allCases, id: \.self) { mark in
+            JobGlyph(
+              mark, tone: mark == .half ? .running : mark == .question ? .question : .neutral)
+          }
+        }
+        JobRowDisclosure(
+          "catalog-job", accessibilityLabel: "Sample job, Running", expanded: $expanded
+        ) {
+          JobGlyph(.half, tone: .running)
+        } title: {
+          Text("Run the sample suite")
+        } meta: {
+          WebFlowLayout {
+            Text("Running").foregroundStyle(WebJobTone.running.text)
+            JobMetaToken { Text("Bash") }
+            JobMetaToken { Text("4m 12s") }
+          }
+        } content: {
+          JobOutputBox("Sample suite completed: 12 checks")
+          JobErrorBox("The sample process exited.", code: "exit_nonzero")
+          Button("Refresh") {}.buttonStyle(WebSmallButtonStyle())
+        }
+        Button("History") {}.buttonStyle(JobHistoryToggleStyle(open: false, count: 3))
+        ActivityBand(meta: "2 steps · 1.2s", running: false, expanded: .constant(true)) {
+          ActivityDisclosure(
+            "Read ×2", summary: "sample.md, outline.md", expanded: .constant(false)
+          ) {
+            Text("Sample output")
+          }
+        }
       }
     }
   }

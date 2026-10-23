@@ -4,7 +4,32 @@ import XCTest
 
 @MainActor
 final class ScenarioTests: XCTestCase {
+  func testFidelityChatLight() {
+    capture("fidelity-chat", "light", expect: ["message-garden-plan", "composer-field"])
+  }
+  func testFidelityChatDark() {
+    capture("fidelity-chat", "dark", expect: ["message-garden-plan", "composer-field"])
+  }
+  func testFidelityDashboardLight() {
+    capture(
+      "fidelity-dashboard", "light",
+      expect: ["agent-strip", "recent-row-t-atlas-launch", "recent-row-seedling-notes"])
+  }
+  func testFidelityDashboardDark() {
+    capture(
+      "fidelity-dashboard", "dark",
+      expect: ["agent-strip", "recent-row-t-atlas-launch", "recent-row-seedling-notes"])
+  }
   func testConnectionEmptyLight() { capture("connection-empty", "light") }
+  func testConnectionEditorLight() { captureEditor("light") }
+  func testConnectionEditorDark() { captureEditor("dark") }
+  private func captureEditor(_ appearance: String) {
+    capture("connection-empty", appearance, variant: "editor") { app in
+      app.buttons["add-console"].tap()
+      XCTAssertTrue(app.textFields["console-url"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["connect-console"].exists)
+    }
+  }
   func testConnectionEmptyDark() { capture("connection-empty", "dark") }
   func testConnectionFailedLight() { capture("connection-failed", "light") }
   func testConnectionFailedDark() { capture("connection-failed", "dark") }
@@ -230,7 +255,8 @@ final class ScenarioTests: XCTestCase {
   /// `expect` lists identifiers that must exist (default: the scenario name itself).
   private func capture(
     _ scenario: String, _ appearance: String, accessibilityText: Bool = false,
-    expect: [String]? = nil, variant: String? = nil, arguments: [String] = []
+    expect: [String]? = nil, variant: String? = nil, arguments: [String] = [],
+    prepare: ((XCUIApplication) -> Void)? = nil
   ) {
     let app = XCUIApplication()
     app.launchArguments =
@@ -252,6 +278,7 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(
       app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 15))
     XCTAssertFalse(app.staticTexts["Ready"].exists, "Test readiness must not add visible text")
+    prepare?(app)
     let rendered = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in screenshotHasContent(XCUIScreen.main.screenshot()) },
       object: nil

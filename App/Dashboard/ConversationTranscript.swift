@@ -100,7 +100,9 @@ struct ConversationTranscript<Header: View>: View {
     }
     .scrollDismissesKeyboard(.immediately)
     .scrollPosition($scrollPosition)
-    .defaultScrollAnchor(.bottom, for: .initialOffset)
+    // Start at the reading edge. Bottom-follow is applied from measured geometry below;
+    // an initial bottom anchor can retain a stale offset when the native dock first lays out.
+    .defaultScrollAnchor(.top, for: .initialOffset)
     // Short transcripts sit at the top; bottom alignment left a gap that revealed the refresh
     // control above the first row once the composer dock enlarged the bottom inset.
     .defaultScrollAnchor(.top, for: .alignment)
@@ -116,7 +118,7 @@ struct ConversationTranscript<Header: View>: View {
       if old.contentHeight != next.contentHeight && policy.shouldScrollAfterWrite(next)
         && phase == .idle
       {
-        if next.contentHeight > next.viewportHeight {
+        if !next.contentFits {
           // Anchor to the realized bottom row, not the lazily estimated content edge: with a
           // short viewport (keyboard up) edge scrolling re-estimated rows and never settled.
           scrollPosition.scrollTo(id: "transcript-bottom", anchor: .bottom)

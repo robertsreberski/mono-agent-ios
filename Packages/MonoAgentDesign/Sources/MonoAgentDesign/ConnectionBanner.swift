@@ -40,6 +40,7 @@ public struct ConnectionBanner: View {
   @Environment(\.consoleTheme) private var theme
   @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.dynamicTypeSize) private var typeSize
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
   public init(
     _ kind: Kind, title: String, message: String? = nil,
@@ -54,42 +55,41 @@ public struct ConnectionBanner: View {
 
   public var body: some View {
     let tone = kind.tone.color(in: theme).color
-    let shape = RoundedRectangle(cornerRadius: DesignRadius.md, style: .continuous)
     // At accessibility sizes the icon moves above the text so lines keep their full width.
     let layout =
       typeSize.isAccessibilitySize
       ? AnyLayout(VStackLayout(alignment: .leading, spacing: DesignSpacing.sm))
-      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: DesignSpacing.md))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
     layout {
       Image(systemName: kind.systemImage)
         .foregroundStyle(tone)
-        .designFont(.headline)
+        .webFont(.banner)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-        Text(title).designFont(.sectionTitle).foregroundStyle(.primary)
+        Text(title).webFont(sizeClass == .regular ? .bannerRegular : .banner).fontWeight(.semibold)
+          .foregroundStyle(WebColor.text.color)
           .fixedSize(horizontal: false, vertical: true)
         if let message {
-          Text(message).designFont(.supporting).foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+          Text(message).webFont(sizeClass == .regular ? .bannerRegular : .banner).foregroundStyle(
+            WebColor.textSoft.color
+          )
+          .fixedSize(horizontal: false, vertical: true)
         }
         if let actionTitle, let action {
           Button(actionTitle, action: action)
-            .designButtonStyle(.secondary)
+            .buttonStyle(WebReplyButtonStyle())
             .controlSize(.small)
             .padding(.top, DesignSpacing.xs)
         }
       }
     }
-    .padding(DesignSpacing.md)
+    .padding(.vertical, 7)
+    .padding(.horizontal, 16)
+    .frame(minHeight: 34)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background {
-      shape.fill(DesignColor.contentSurface)
-        .overlay(shape.fill(tone.opacity(DesignColor.toneFillOpacity)))
-    }
-    .overlay {
-      shape.strokeBorder(
-        tone.opacity(contrast == .increased ? 1 : 0.35),
-        lineWidth: contrast == .increased ? 1.5 : 0.5)
+    .background(theme.palette.panel.color.overlay(tone.opacity(0.09)))
+    .overlay(alignment: .bottom) {
+      Rectangle().fill(tone.opacity(contrast == .increased ? 1 : 0.25)).frame(height: 1)
     }
     .accessibilityElement(children: action == nil ? .combine : .contain)
   }

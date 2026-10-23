@@ -125,11 +125,14 @@ public struct SuggestionRow: View {
   private let systemImage: String
   private let highlighted: Bool
   private let enabled: Bool
+  private let browsing: Bool
+  @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.consoleTheme) private var theme
 
   public init(
     _ title: String, subtitle: String? = nil, badge: String? = nil,
-    systemImage: String = "book.closed", highlighted: Bool = false, enabled: Bool = true
+    systemImage: String = "book.closed", highlighted: Bool = false, enabled: Bool = true,
+    browsing: Bool = false
   ) {
     self.title = title
     self.subtitle = subtitle
@@ -137,6 +140,7 @@ public struct SuggestionRow: View {
     self.systemImage = systemImage
     self.highlighted = highlighted
     self.enabled = enabled
+    self.browsing = browsing
   }
 
   /// Web `.composer-trigger-item`: 49 pt, radius 9, a 30 pt accent-soft icon tile, the name
@@ -152,10 +156,10 @@ public struct SuggestionRow: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(title).webFont(.triggerTitle)
           .foregroundStyle(highlighted ? WebColor.text.color : WebColor.textSoft.color)
-          .lineLimit(1)
+          .lineLimit(typeSize.isAccessibilitySize ? nil : (browsing ? 2 : 1))
         if let subtitle {
           Text(subtitle).webFont(.triggerDetail).foregroundStyle(WebColor.textMuted.color)
-            .lineLimit(1)
+            .lineLimit(typeSize.isAccessibilitySize ? nil : (browsing ? 2 : 1))
         }
       }
       Spacer(minLength: 8)
@@ -171,7 +175,7 @@ public struct SuggestionRow: View {
     .opacity(enabled ? 1 : 0.58)
     .padding(.vertical, 6)
     .padding(.horizontal, 8)
-    .frame(maxWidth: .infinity, minHeight: 49, alignment: .leading)
+    .frame(maxWidth: .infinity, minHeight: browsing ? 56 : 49, alignment: .leading)
     .background(
       highlighted ? WebColor.surfaceSubtle.color : .clear,
       in: RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
@@ -200,7 +204,7 @@ public struct QuotePreview: View {
       Image(systemName: "quote.opening").font(.system(size: 10, weight: .semibold))
         .foregroundStyle(theme.palette.accent.color)
         .accessibilityHidden(true)
-      Text(text).font(.system(size: 11)).foregroundStyle(WebColor.textMuted.color).lineLimit(3)
+      Text(text).webFont(.quote).foregroundStyle(WebColor.textMuted.color).lineLimit(3)
       Spacer(minLength: 0)
       if let onDismiss {
         Button("Remove quote", systemImage: "xmark", action: onDismiss)
@@ -240,32 +244,32 @@ public struct ChoiceRow: View {
   }
 
   public var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: DesignSpacing.sm) {
+    HStack(alignment: .firstTextBaseline, spacing: 9) {
       Image(
         systemName: multiple
           ? (selected ? "checkmark.square.fill" : "square")
           : (selected ? "largecircle.fill.circle" : "circle")
       )
-      .foregroundStyle(selected ? theme.palette.accent.color : .secondary)
+      .foregroundStyle(selected ? theme.palette.accent.color : WebColor.textMuted.color)
       .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: DesignSpacing.xxs) {
-        Text(label).designFont(.body).foregroundStyle(.primary)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(label).webFont(.effortOption).foregroundStyle(WebColor.text.color)
         if let detail, !detail.isEmpty {
-          Text(detail).designFont(.caption).foregroundStyle(.secondary)
+          Text(detail).webFont(.askDetail).foregroundStyle(WebColor.textSoft.color)
         }
       }
       Spacer(minLength: 0)
     }
-    .padding(DesignSpacing.sm)
+    .padding(10)
     .frame(maxWidth: .infinity, minHeight: DesignMetrics.minimumHitTarget, alignment: .leading)
     .background(
-      selected ? theme.palette.accentSoft.color : DesignColor.contentSurface,
+      selected ? theme.palette.accentSoft.color : WebColor.surface.color,
       in: RoundedRectangle(cornerRadius: DesignRadius.sm)
     )
     .overlay {
       RoundedRectangle(cornerRadius: DesignRadius.sm).stroke(
-        selected ? theme.palette.accent.color : DesignColor.separator,
-        lineWidth: selected ? 1.5 : 0.5)
+        selected ? theme.palette.accent.color : WebColor.line.color,
+        lineWidth: 1)
     }
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)

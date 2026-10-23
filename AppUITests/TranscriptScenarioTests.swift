@@ -4,6 +4,20 @@ import XCTest
 
 @MainActor final class TranscriptScenarioTests: XCTestCase {
   func testTranscriptLight() { capture("conversation-transcript", "light") }
+  func testShortTranscriptOpensAtFirstRow() {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-transcript", "--appearance", "light", "--reset-test-data",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    let first = element(app, "message-sample-user")
+    XCTAssertTrue(first.waitForExistence(timeout: 5))
+    XCTAssertTrue(first.isHittable)
+    XCTAssertGreaterThanOrEqual(first.frame.minY, transcriptScroll(app).frame.minY)
+    XCTAssertFalse(element(app, "jump-to-latest").exists)
+    app.terminate()
+  }
   func testTranscriptDark() { capture("conversation-transcript", "dark") }
   func testStreamingLight() { capture("conversation-streaming", "light") }
   func testStreamingDark() { capture("conversation-streaming", "dark") }

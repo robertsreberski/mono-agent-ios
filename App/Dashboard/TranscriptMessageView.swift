@@ -17,13 +17,21 @@ struct TranscriptMessageView: View {
   var body: some View {
     let message = row.message
     VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
-      if isUser {
+      if message.role == "system" {
+        messageContent(message)
+          .padding(.vertical, 8).padding(.horizontal, 12)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .overlay(alignment: .leading) {
+            Rectangle().fill(WebColor.lineStrong.color).frame(width: 2)
+          }
+          .padding(.vertical, 18)
+      } else if isUser {
         UserBubble { messageContent(message) }
       } else {
         messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
       }
       // Web: the action row belongs to a settled message, not one still being written.
-      if message.status != "running" { actions(message) }
+      if message.status != "running" && message.role != "system" { actions(message) }
     }
     .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
     // The whole row (not only its glyphs) opens the message menu, as hovering it does on the web.
@@ -36,26 +44,19 @@ struct TranscriptMessageView: View {
   @ViewBuilder private func messageContent(_ message: WebMessage) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       if let quote = message.quote {
-        Text(quote.text)
-          .font(.system(size: 11)).lineSpacing(3).lineLimit(4)
-          .foregroundStyle(WebColor.textSoft.color)
-          .padding(.vertical, 8).padding(.horizontal, 10)
-          .background(WebColor.surface.color.opacity(0.68), in: RoundedRectangle(cornerRadius: 7))
-          .overlay(alignment: .leading) {
-            Rectangle().fill(WebColor.lineStrong.color).frame(width: 2)
-          }
-          .textSelection(.enabled)
-          .accessibilityLabel("Quote: " + quote.text)
+        MessageQuote(quote.text)
+
       }
-      ForEach(TranscriptPresentation.clusters(message.parts)) { entry in
-        if entry.parts.count > 1 {
-          ToolClusterView(
-            calls: entry.parts.compactMap {
-              if case .toolCall(let call) = $0 { return call }
-              return nil
-            }, message: message, store: store)
-        } else if let part = entry.parts.first {
-          TranscriptPartView(part: part, message: message, store: store)
+      ForEach(TranscriptPresentation.activityBands(message.parts)) { band in
+        if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
+          TranscriptActivityBand(parts: band.parts, message: message, store: store)
+        } else if let part = band.parts.first {
+          if message.role == "system", case .text(let value) = part {
+            Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)
+              .textSelection(.enabled)
+          } else {
+            TranscriptPartView(part: part, message: message, store: store)
+          }
         }
       }
       ForEach(message.attachments, id: \.id) { attachment in
@@ -222,6 +223,38 @@ struct DeferredTranscriptPart: View {
   }
 }
 
+/// The web activity root preserves independent row disclosures and lazy tool payloads.
+struct TranscriptActivityBand: View {
+  let parts: [WebMessagePart]
+  let message: WebMessage
+  let store: ConsoleStore
+  @State private var expanded = true
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 1)) { context in
+      ActivityBand(
+        meta: "\(parts.count) \(parts.count == 1 ? "step" : "steps")"
+          + (TranscriptPresentation.elapsed(
+            message, now: context.date.addingTimeInterval(store.serverClockOffset)
+          )
+          .map { " · " + $0 } ?? ""),
+        running: message.status == "running", expanded: $expanded
+      ) {
+        ForEach(TranscriptPresentation.clusters(parts)) { entry in
+          if entry.parts.count > 1 {
+            ToolClusterView(
+              calls: entry.parts.compactMap {
+                if case .toolCall(let call) = $0 { return call }
+                return nil
+              }, message: message, store: store)
+          } else if let part = entry.parts.first {
+            TranscriptPartView(part: part, message: message, store: store)
+          }
+        }
+      }
+    }
+  }
+}
+
 struct ReasoningDisclosure: View {
   let text: String
   let message: WebMessage
@@ -235,7 +268,7 @@ struct ReasoningDisclosure: View {
         status: running ? .connecting : .disconnected,
         detail: TranscriptPresentation.elapsed(
           message, now: context.date.addingTimeInterval(store.serverClockOffset)),
-        identifier: "reasoning-disclosure",
+        glyph: .reasoning, identifier: "reasoning-disclosure",
         expanded: Binding(
           get: { userOpen ?? running },
           set: {
@@ -268,10 +301,8 @@ struct ToolClusterView: View {
         + " ×\(calls.count)",
       summary: TranscriptPresentation.clusterSummary(calls),
       status: running ? .connecting : failures > 0 ? .failed : .disconnected,
-      detail: [
-        failures > 0 ? "\(failures) failed" : nil,
-        TranscriptPresentation.duration(times.isEmpty ? nil : times.reduce(0, +)),
-      ].compactMap { $0 }.joined(separator: " · "), identifier: "tool-cluster",
+      detail: TranscriptPresentation.duration(times.isEmpty ? nil : times.reduce(0, +)),
+      alert: failures > 0 ? "\(failures) failed" : nil, identifier: "tool-cluster",
       expanded: Binding(
         get: { expanded },
         set: {
@@ -298,11 +329,10 @@ struct ToolCallView: View {
       summary: TranscriptPresentation.preview(call),
       status: call.status == "running"
         ? .connecting : TranscriptPresentation.failed(call) ? .failed : .disconnected,
-      detail: [
-        TranscriptPresentation.failed(call)
-          ? call.history?.terminalState ?? call.status : call.status,
-        TranscriptPresentation.duration(call.executionMs),
-      ].compactMap { $0 }.joined(separator: " · "), identifier: "tool-call-" + call.toolCallId,
+      detail: [call.status, TranscriptPresentation.duration(call.executionMs)]
+        .compactMap { $0 }.joined(separator: " · "),
+      alert: TranscriptPresentation.failed(call) ? call.history?.terminalState ?? call.status : nil,
+      identifier: "tool-call-" + call.toolCallId,
       expanded: Binding(
         get: { expanded },
         set: {

@@ -26,6 +26,25 @@ enum TranscriptPresentation {
     }
     return rows
   }
+  /// Consecutive activity shares one web panel; text, questions and markers end a band.
+  static func activityBands(_ parts: [WebMessagePart]) -> [Entry] {
+    var bands: [Entry] = []
+    for (index, part) in parts.enumerated() {
+      if isActivity(part), let last = bands.last, last.parts.allSatisfy(isActivity) {
+        bands[bands.count - 1] = Entry(id: last.id, parts: last.parts + [part])
+      } else {
+        bands.append(Entry(id: index, parts: [part]))
+      }
+    }
+    return bands
+  }
+  static func isActivity(_ part: WebMessagePart) -> Bool {
+    switch part {
+    case .reasoning, .subagent, .processJob, .processJobWake: true
+    case .toolCall(let call): toolName(call) != "AskUser"
+    default: false
+    }
+  }
   static func verb(_ name: String) -> String {
     let known = [
       "read_file": "Read", "edit_file": "Edit", "write_file": "Write",

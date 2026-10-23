@@ -608,6 +608,238 @@
       "textSize": "accessibility XL (AX3)",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "light",
+      "variant": "editor",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "dark",
+      "variant": "editor",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-chat",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-chat",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-dashboard",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "fidelity-dashboard",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "skill-browser",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "skill-browser",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "conversation-ask-form",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "conversation-ask-form",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "conversation-quick-replies",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "conversation-quick-replies",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "peer-question-sheet",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "peer-question-sheet",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "editorax3"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "editoropaque"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "conversation-context",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "conversation-subagents",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "peer-question",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "peer-question",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "peer-question",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum",
+      "variant": "plum"
+    },
+    {
+      "scenario": "peer-question",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "peer-question",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "opaque fallback",
+      "theme": "evergreen",
+      "variant": "opaque"
+    },
+    {
+      "scenario": "skill-browser",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "skill-browser",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "failed"
     }
   ]
 }

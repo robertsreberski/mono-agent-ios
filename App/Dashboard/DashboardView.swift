@@ -731,6 +731,9 @@ struct DashboardView: View {
         Image(systemName: store.effectiveDataMode == .lean ? "leaf" : "waveform.path.ecg")
           .font(.system(size: 11, weight: .medium))
         Text(label).fontWeight(.semibold)
+          .foregroundStyle(
+            store.effectiveDataMode == .lean ? theme.palette.accent.color : WebColor.textMuted.color
+          )
       }
       .webQuietPill(hitTarget: false)
     }

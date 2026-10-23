@@ -16,6 +16,21 @@ struct TranscriptFollowPolicyTests {
     #expect(policy.atBottom && policy.following)
     #expect(!policy.shouldShowJump)
   }
+  @Test func shortContentNeverScrollsPastTheReadingEdgeDuringInitialLayout() {
+    let policy = TranscriptFollowPolicy()
+    // Native safe-area bars can report a transient negative offset while sizing the dock.
+    let initial = TranscriptScrollMetrics(
+      contentHeight: 600, viewportHeight: 1000, contentOffset: -500,
+      topInset: 100, bottomInset: 40)
+    #expect(initial.contentFits)
+    #expect(initial.distanceFromBottom > 1)
+    #expect(!policy.shouldScrollAfterWrite(initial))
+    let overflow = TranscriptScrollMetrics(
+      contentHeight: 950, viewportHeight: 1000, contentOffset: 0,
+      topInset: 0, bottomInset: 150)
+    #expect(!overflow.contentFits)
+    #expect(policy.shouldScrollAfterWrite(overflow))
+  }
   @Test func expandingAndCollapsingAtBottomNeverPretendsToBeAUserScroll() {
     var policy = TranscriptFollowPolicy()
     policy.update(
