@@ -68,6 +68,7 @@ public final class ConsoleStore {
   public internal(set) var skillRegistries: [String: SkillRegistryState] = [:]
   @ObservationIgnored var uploadTasks: [UUID: Task<[WebAttachment], any Error>] = [:]
 
+  @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
   @ObservationIgnored let replyImages = ReplyImageCache()
   @ObservationIgnored let replyFiles: ReplyFileCache
   @ObservationIgnored let api: any ConsoleAPI

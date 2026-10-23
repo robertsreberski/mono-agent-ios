@@ -25,6 +25,7 @@
     case conversationJobs = "conversation-jobs"
     case conversationJobStack = "conversation-job-stack"
     case conversationSubagents = "conversation-subagents"
+    case conversationRestartCard = "conversation-restart-card"
     case conversationImages = "conversation-images"
     case conversationReplyFiles = "conversation-reply-files"
     case conversationContext = "conversation-context"

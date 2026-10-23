@@ -95,6 +95,9 @@
             }
             .contentSurface()
           }
+          catalogSection("Restart proposals") {
+            RestartProposalCard(.init(agentLabel: "Atlas"), request: {}, confirm: {}, cancel: {})
+          }
           catalogSection("Reply images") {
             ScrollView(.horizontal) {
               HStack(spacing: 6) {

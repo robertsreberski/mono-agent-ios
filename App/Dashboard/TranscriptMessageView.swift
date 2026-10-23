@@ -180,8 +180,7 @@ struct TranscriptPartView: View {
       DeferredTranscriptPart(
         title: value.title ?? value.toolName, kind: "MCP app", feature: "App viewer")
     case .restartProposal(let value):
-      DeferredTranscriptPart(
-        title: value.reason ?? "Restart agent", kind: "Restart proposal", feature: "Restart card")
+      ReplyRestartView(part: value, message: message, store: store)
     case .replyOptions(let value):
       QuickRepliesView(part: value, message: message, store: store)
     case .cronReplyContext(let value):

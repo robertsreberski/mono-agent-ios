@@ -7,6 +7,30 @@ import XCTest
   func testFilesDark() { files("dark") }
   func testImagesLight() { images("light") }
   func testImagesDark() { images("dark") }
+  func testRestartLight() { restart("light") }
+  func testRestartDark() { restart("dark") }
+
+  private func restart(_ appearance: String) {
+    let app = launch("conversation-restart-card", appearance)
+    let request = app.buttons.matching(identifier: "restart-request").firstMatch
+    XCTAssertTrue(request.waitForExistence(timeout: 5))
+    XCTAssertFalse(
+      app.buttons.matching(identifier: "restart-request").element(boundBy: 1).isEnabled)
+    capture(app, "conversation-restart-card", appearance)
+    request.tap()
+    let confirm = app.buttons["restart-confirm"]
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+    XCTAssertTrue(
+      app.staticTexts["Restarting may interrupt active conversations, jobs and monitors."].exists)
+    capture(app, "conversation-restart-card", appearance, variant: "confirmation")
+    app.buttons["restart-cancel"].tap()
+    XCTAssertFalse(element(app, "restart-outcome").exists)
+    request.tap()
+    confirm.tap()
+    XCTAssertTrue(
+      app.staticTexts["Restarted — agent is back online."].waitForExistence(timeout: 10))
+    app.terminate()
+  }
 
   private func images(_ appearance: String) {
     let app = launch("conversation-images", appearance)

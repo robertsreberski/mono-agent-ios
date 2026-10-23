@@ -37,6 +37,28 @@
       ]
       return [message]
     }
+    static func restarts() throws -> [WebMessage] {
+      var message = try TranscriptFixture.message(
+        id: "sample-assistant", role: "assistant", text: "")
+      message.parts = [
+        try TranscriptFixture.decode(
+          #"{"type":"restart_proposal","id":"restart","reason":"Restart the sample agent to apply the update.","restartable":{"state":"available"}}"#
+        ),
+        try TranscriptFixture.decode(
+          #"{"type":"restart_proposal","id":"unavailable-restart","reason":"This sample agent cannot restart here.","restartable":{"state":"unavailable","reason":"Restart is unavailable for this agent."}}"#
+        ),
+      ]
+      return [message]
+    }
+    static func restartOperation(outcome: String? = nil) throws -> WebAgentRestartOperation {
+      var value: WebAgentRestartOperation = try TranscriptFixture.decode(
+        #"{"id":"sample-restart","sourceId":"atlas","stage":"restarting","requestedAt":"2030-01-02T12:00:00Z","deadline":"2030-01-02T12:02:00Z"}"#
+      )
+      value.sourceId = try TranscriptFixture.thread(.conversationRestartCard).sourceId
+      value.outcome = outcome
+      if outcome != nil { value.stage = "back_online" }
+      return value
+    }
     static func imageBytes(_ index: Int) throws -> Data {
       guard
         let context = CGContext(
@@ -74,6 +96,14 @@
       return [message]
     }
     static func response(_ request: URLRequest, scenario: StoreScenario) throws -> HTTPResponse? {
+      if scenario == .conversationRestartCard, let path = request.url?.path {
+        if path.hasSuffix("/parts/restart/restart"), request.httpMethod == "POST" {
+          return HTTPResponse(data: try JSONEncoder().encode(restartOperation()))
+        }
+        if path.hasSuffix("/restart/sample-restart") {
+          return HTTPResponse(data: try JSONEncoder().encode(restartOperation(outcome: "success")))
+        }
+      }
       guard [.conversationReplyFiles, .conversationImages].contains(scenario),
         let url = request.url,
         url.path.contains("/reply-attachments/")

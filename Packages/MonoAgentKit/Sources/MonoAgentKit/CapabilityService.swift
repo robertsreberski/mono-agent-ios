@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 
-public struct ReplyPartReference: Sendable, Equatable {
+public struct ReplyPartReference: Sendable, Hashable {
   public let threadId: String
   public let messageId: String
   public let partId: String
