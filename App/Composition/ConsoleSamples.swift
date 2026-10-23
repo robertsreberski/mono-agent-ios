@@ -20,6 +20,10 @@
     case conversationTools = "conversation-tools"
     case conversationLong = "conversation-long"
     case conversationMarkdown = "conversation-markdown"
+    case conversationJobs = "conversation-jobs"
+    case conversationJobStack = "conversation-job-stack"
+    case conversationSubagents = "conversation-subagents"
+    case conversationContext = "conversation-context"
 
     var isTranscript: Bool { rawValue.hasPrefix("conversation-") }
 

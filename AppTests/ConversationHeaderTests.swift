@@ -48,7 +48,7 @@ struct ConversationHeaderTests {
     #expect(summary == cache.thread)
     let fleet = try #require(bootstrap.activeThreads)
     let active = fleet.threads.contains { $0.id == cache.thread.id }
-    #expect(active == (cache.thread.runState.status == "running"))
+    #expect(active == DashboardModel.presentation(cache.thread).active)
     #expect(
       ConversationHeaderModel.route(
         cache.thread, agent: nil, latest: cache.messages.last?.attribution

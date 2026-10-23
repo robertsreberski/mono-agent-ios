@@ -308,6 +308,126 @@
       "textSize": "accessibility XL (AX3)",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum",
+      "variant": "plum"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum",
+      "variant": "plum"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "conversation-subagents",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-subagents",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-subagents",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum",
+      "variant": "plum"
+    },
+    {
+      "scenario": "conversation-subagents",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "conversation-context",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-context",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-context",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "plum",
+      "variant": "plum"
+    },
+    {
+      "scenario": "conversation-context",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
     }
   ]
 }

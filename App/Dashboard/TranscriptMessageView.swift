@@ -113,13 +113,11 @@ struct TranscriptPartView: View {
     case .failure(let value):
       ConnectionBanner(.problem, title: value.code, message: value.message)
     case .subagent(let value):
-      DeferredTranscriptPart(
-        title: value.label ?? value.name ?? "Delegation", kind: "Subagent",
-        feature: "Progress viewer")
+      SubagentPartView(call: value, message: message, store: store)
     case .processJob(let value):
-      DeferredTranscriptPart(title: value.job.summary, kind: "Process job", feature: "Job viewer")
+      ProcessJobLifecycleView(job: value.job, store: store)
     case .processJobWake(let value):
-      DeferredTranscriptPart(title: value.jobId, kind: "Process job wake", feature: "Job viewer")
+      ProcessJobWakeView(wake: value)
     case .attachment(let value):
       DeferredTranscriptPart(
         title: value.name, kind: value.mediaType.hasPrefix("image/") ? "Image" : "Reply file",
@@ -150,6 +148,13 @@ struct TranscriptPartView: View {
       if let marker = TranscriptPresentation.compaction(value, running: message.status == "running")
       {
         Text(marker).designFont(.supporting).foregroundStyle(.secondary)
+      } else if value.event == "context_usage"
+        || UsagePresentation.layers(value.data).contains(where: {
+          $0["kind"] == .string("context_usage")
+        })
+      {
+        Label("Context measurement recorded", systemImage: "chart.pie").designFont(.caption)
+          .foregroundStyle(.secondary)
       } else {
         DeferredTranscriptPart(
           title: value.kind ?? value.event, kind: "Telemetry", feature: "Context viewer")

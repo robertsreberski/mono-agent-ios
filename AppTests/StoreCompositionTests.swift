@@ -50,13 +50,15 @@ import Testing
       case .uncertain: #expect(store.pendingSubmissions.count == 1)
       case .dashboardPopulated, .dashboardSearch, .conversationPlaceholder,
         .conversationTranscript, .conversationStreaming, .conversationTools, .conversationLong,
-        .conversationMarkdown:
+        .conversationMarkdown, .conversationJobs, .conversationJobStack, .conversationSubagents,
+        .conversationContext:
         #expect(store.agents.count == 4)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.count == 8)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.nextCursor != nil)
-        #expect(
-          store.activeFleet?.runningCounts[DashboardFixture.atlas]
-            == (scenario.isTranscript && scenario != .conversationStreaming ? 2 : 3))
+        let active =
+          try scenario.isTranscript
+          ? DashboardModel.presentation(TranscriptFixture.thread(scenario)).active : true
+        #expect(store.activeFleet?.runningCounts[DashboardFixture.atlas] == (active ? 3 : 2))
         #expect(store.isRunningConfirmed(threadID: "t-atlas-launch"))
         let notes = try #require(
           store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.first {

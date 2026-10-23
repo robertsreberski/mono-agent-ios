@@ -42,7 +42,10 @@ enum DashboardRows {
     now: Date
   ) -> ConversationRowContent {
     let presentation = DashboardModel.presentation(thread)
-    let preview = presentation.text.isEmpty ? DashboardModel.excerpt(thread) : presentation.text
+    let preview =
+      thread.runState.status == "running"
+      ? DashboardModel.runningStatus(thread)
+      : presentation.text.isEmpty ? DashboardModel.excerpt(thread) : presentation.text
     let rowTags = thread.tagIds.compactMap { id in
       tags.first { $0.id == id && $0.sourceId == thread.sourceId }
     }

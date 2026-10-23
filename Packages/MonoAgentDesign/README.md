@@ -81,6 +81,8 @@ colour is never the only cue.
 | Rich documents | `RichTextDocumentView(source:)`, `RichDocument.parse(_:)` | Bounded off-main GFM parsing, native selectable inline text; HTML stays literal. Exact swift-markdown 0.7.3 / swift-cmark 0.9.0; see root README and bundled ThirdPartyNotices |
 | Code | `CodeDocumentView(source:language:)` | Horizontal scroller, accessible selectable monospaced text, copy; bounded display with explicit notice |
 | Activity | `ActivityDisclosure(_:summary:status:detail:identifier:expanded:content:)` | Value-driven expansion, lazy payload construction, non-colour status and VoiceOver expansion state |
+| Content disclosure | `ContentDisclosure(_:expanded:content:label:)` | Opaque native button, independent nested identifiers, lazy payload, minimum hit target |
+| Context/cost | `ContextDisplay(_:expanded:)`, `ContextDisplayContent` | Value-only disclosure; header or composer placement, explicit unknown/partial labels, AX-stacked rows |
 | Route | `RouteBadge(model:effort:detail:)` | Read-only route label with full accessible provenance, not evidence of a run |
 
 Every component file has `#Preview`s across the four themes, dark mode, accessibility sizes

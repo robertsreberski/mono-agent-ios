@@ -21,45 +21,49 @@ struct ConversationTranscript<Header: View>: View {
   }
   var body: some View {
     ScrollView {
-      LazyVStack(alignment: .leading, spacing: DesignSpacing.lg) {
+      VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+        // Keep the header eager: lazy offscreen headers can disappear from the AX hierarchy.
         header
-        historyStatus
-        if let cursor = state.nextCursor {
-          Button(
-            paging ? "Loading history…" : "Load older messages",
-            systemImage: "clock.arrow.circlepath"
-          ) {
-            let anchor =
-              state.orderedMessageIDs.first { visibleIDs.contains($0) }
-              ?? state.orderedMessageIDs.first
-            paging = true
-            policy.beginPaging()
-            Task {
-              await store.loadOlder()
-              if let anchor { scrollPosition.scrollTo(id: anchor, anchor: .top) }
-              paging = false
-              policy.paging = false
-            }
-          }.disabled(paging).accessibilityIdentifier("transcript-load-older").id("paging-" + cursor)
-        }
-        ForEach(Array(state.orderedMessageIDs.enumerated()), id: \.element) { index, id in
-          if let row = state.messageStates[id] {
-            TranscriptMessageView(row: row, store: store, startsTurn: startsTurn(index, id: id))
-              .id(id)
+        LazyVStack(alignment: .leading, spacing: DesignSpacing.lg) {
+          historyStatus
+          if let cursor = state.nextCursor {
+            Button(
+              paging ? "Loading history…" : "Load older messages",
+              systemImage: "clock.arrow.circlepath"
+            ) {
+              let anchor =
+                state.orderedMessageIDs.first { visibleIDs.contains($0) }
+                ?? state.orderedMessageIDs.first
+              paging = true
+              policy.beginPaging()
+              Task {
+                await store.loadOlder()
+                if let anchor { scrollPosition.scrollTo(id: anchor, anchor: .top) }
+                paging = false
+                policy.paging = false
+              }
+            }.disabled(paging).accessibilityIdentifier("transcript-load-older").id(
+              "paging-" + cursor)
           }
+          ForEach(Array(state.orderedMessageIDs.enumerated()), id: \.element) { index, id in
+            if let row = state.messageStates[id] {
+              TranscriptMessageView(row: row, store: store, startsTurn: startsTurn(index, id: id))
+                .id(id)
+            }
+          }
+          if let pending = heldCompaction, !hasCompactionResult(since: pending) {
+            Label("Compacting context… · manual", systemImage: "arrow.triangle.2.circlepath")
+              .designFont(.supporting).accessibilityIdentifier("manual-compaction-running")
+          }
+          if state.orderedMessageIDs.isEmpty {
+            EmptyStateView(
+              "No messages yet", systemImage: "text.bubble",
+              message: "This conversation has no loaded messages.")
+          }
+          Color.clear.frame(height: DesignSpacing.sm).id("transcript-bottom")
         }
-        if let pending = heldCompaction, !hasCompactionResult(since: pending) {
-          Label("Compacting context… · manual", systemImage: "arrow.triangle.2.circlepath")
-            .designFont(.supporting).accessibilityIdentifier("manual-compaction-running")
-        }
-        if state.orderedMessageIDs.isEmpty {
-          EmptyStateView(
-            "No messages yet", systemImage: "text.bubble",
-            message: "This conversation has no loaded messages.")
-        }
-        Color.clear.frame(height: DesignSpacing.sm).id("transcript-bottom")
+        .scrollTargetLayout()
       }
-      .scrollTargetLayout()
       .padding(DesignSpacing.lg)
       .frame(maxWidth: DesignMetrics.readableWidth)
       .frame(maxWidth: .infinity)

@@ -16,6 +16,40 @@ import XCTest
   func testMarkdownPlumDark() { capture("conversation-markdown", "dark", variant: "plum") }
   func testMarkdownAccessibility() { capture("conversation-markdown", "light", variant: "ax3") }
 
+  func testLongPagingPreservesMessageAnchorAndHeaderAccessibility() {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-long", "--appearance", "light", "--reset-test-data",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    let older = element(app, "transcript-load-older")
+    for _ in 0..<120 {
+      if older.exists && older.isHittable { break }
+      transcriptScroll(app).swipeDown(velocity: .fast)
+    }
+    XCTAssertTrue(older.exists && older.isHittable)
+    XCTAssertTrue(
+      element(app, "conversation-header").exists,
+      "The eager header must return to the accessibility hierarchy")
+    let anchor = element(app, "message-long-40")
+    XCTAssertTrue(anchor.exists)
+    older.tap()
+    let paged = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        !self.element(app, "transcript-load-older").exists
+          && self.element(app, "message-long-40").exists
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [paged], timeout: 10), .completed)
+    XCTAssertTrue(
+      anchor.isHittable,
+      "Paging must retain the previously visible message, not jump to the new first row")
+    XCTAssertTrue(element(app, "jump-to-latest").exists)
+    element(app, "jump-to-latest").tap()
+    XCTAssertTrue(element(app, "message-long-539").waitForExistence(timeout: 10))
+    app.terminate()
+  }
+
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
     app.descendants(matching: .any)[id].firstMatch
   }
