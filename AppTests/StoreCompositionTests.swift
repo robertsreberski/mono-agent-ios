@@ -52,7 +52,7 @@ import Testing
         .conversationTranscript, .conversationStreaming, .conversationTools, .conversationLong,
         .conversationMarkdown, .conversationJobs, .conversationJobStack, .conversationSubagents,
         .conversationContext, .conversationReplyFiles, .conversationImages,
-        .conversationRestartCard:
+        .conversationRestartCard, .conversationImagesSingle, .conversationImagesEmpty:
         #expect(store.agents.count == 4)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.count == 8)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.nextCursor != nil)
