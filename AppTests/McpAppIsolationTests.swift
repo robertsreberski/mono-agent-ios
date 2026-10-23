@@ -374,4 +374,227 @@ struct McpAppIsolationTests {
     #expect(console.requests == 0 && evil.requests == 0)
   }
 
+  @Test func forgedEventsAndStaleSessionsNeverDeliver() async throws {
+    let previousRecorder = McpEnvelopeRecorder()
+    let previous = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: previousRecorder)
+    attach(previous)
+    try await waitUntil { previousRecorder.deliveries.count == 1 }
+    let stale = try #require(previousRecorder.deliveries.first)
+    let oldNonce = try #require(stale["sessionNonce"] as? String)
+    let oldGeneration = try #require(stale["sessionGeneration"] as? String)
+    previous.close()
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          parent.postMessage({...session,nonce:'wrong-nonce',payload:{marker:'bad-nonce'}},'*');
+          parent.postMessage({...session,generation:'wrong-generation',payload:{marker:'bad-generation'}},'*');
+          parent.postMessage({...session,nonce:'\(oldNonce)',generation:'\(oldGeneration)',payload:{marker:'stale-session'}},'*');
+          deliver({marker:'valid-after-forgeries'});
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    let ready = try #require(recorder.deliveries.first)
+    let nonce = try #require(ready["sessionNonce"] as? String)
+    let generation = try #require(ready["sessionGeneration"] as? String)
+    _ = try await host.webView.callAsyncJavaScript(
+      """
+      const frame=document.querySelector('iframe');
+      const data={nonce,generation,payload:{marker:'forged-main-world'}};
+      // Exact source/origin/session forgery across content worlds must fail isTrusted.
+      window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,origin:'null',data}));
+      window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,origin:'https://wrong.example',data}));
+      // A browser-authenticated event from the shell is the wrong frame and non-null origin.
+      window.postMessage(data,'*');
+      // The named native handler must not exist in the page world.
+      return typeof window.webkit?.messageHandlers?.mcpEnvelope;
+      """, arguments: ["nonce": nonce, "generation": generation], in: nil, contentWorld: .page)
+    try await probe(host)
+    try await waitUntil { recorder.deliveries.count >= 2 }
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(recorder.deliveries.count == 2)
+    #expect(recorder.deliveries.last?["marker"] as? String == "valid-after-forgeries")
+    #expect(!host.isRetired)
+    let handler = try await host.webView.evaluateJavaScript(
+      "typeof window.webkit?.messageHandlers?.mcpEnvelope")
+    #expect(handler as? String == "undefined")
+  }
+
+  @Test func wrongFrameNeverDeliversAfterNavigationRejection() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    let ready = try #require(recorder.deliveries.first)
+    _ = try await host.webView.callAsyncJavaScript(
+      """
+      const other=document.createElement('iframe');other.sandbox='allow-scripts';
+      other.srcdoc=`<script>parent.postMessage({nonce:'${nonce}',generation:'${generation}',payload:{marker:'wrong-frame'}},'*')</script>`;
+      document.body.append(other);
+      """, arguments: ["nonce": ready["sessionNonce"]!, "generation": ready["sessionGeneration"]!],
+      in: nil, contentWorld: .page)
+    try await waitUntil { host.isRetired }
+    #expect(recorder.deliveries.count == 1)
+    #expect(host.retirementReason == "Navigation rejected")
+  }
+
+  @Test func secondFrameLoadEventRetiresListener() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    // Synthetic DOM load explicitly exercises the counter independently of navigation policy.
+    _ = try await host.webView.evaluateJavaScript(
+      "document.querySelector('iframe').dispatchEvent(new Event('load'))")
+    try await waitUntil { host.isRetired }
+    #expect(host.retirementReason == "Inner frame loaded more than once")
+    #expect(recorder.deliveries.count == 1)
+  }
+
+  @Test func oversizedMessagesRejectedInJavascriptAndNatively() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          deliver({marker:'oversized',text:'x'.repeat(\(McpAppBridgeListener.maximumEnvelopeBytes))});
+          deliver({marker:'after-oversized'});
+          """), delegate: recorder)
+    attach(host)
+    defer { host.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    try await probe(host)
+    try await waitUntil { recorder.deliveries.count >= 2 }
+    #expect(recorder.deliveries.count == 2)
+    #expect(recorder.deliveries.last?["marker"] as? String == "after-oversized")
+    let ready = try #require(recorder.deliveries.first)
+    let base: [String: Any] = [
+      "nonce": ready["sessionNonce"]!, "generation": ready["sessionGeneration"]!,
+      "kind": "envelope", "payload": ["text": ""],
+    ]
+    let overhead = try JSONSerialization.data(withJSONObject: base).count
+    var exact = base
+    exact["payload"] = [
+      "text": String(repeating: "x", count: McpAppBridgeListener.maximumEnvelopeBytes - overhead)
+    ]
+    #expect(
+      try JSONSerialization.data(withJSONObject: exact).count
+        == McpAppBridgeListener.maximumEnvelopeBytes)
+    let accepted = try await postNativeTransport(host, body: exact)
+    #expect(accepted == "accepted")
+    #expect(recorder.deliveries.count == 3)
+    exact["payload"] = [
+      "text": String(
+        repeating: "x", count: McpAppBridgeListener.maximumEnvelopeBytes - overhead + 1)
+    ]
+    let rejected = try await postNativeTransport(host, body: exact)
+    #expect(rejected == "rejected")
+    #expect(recorder.deliveries.count == 3)
+    var stale = base
+    stale["generation"] = "retired-generation"
+    #expect(try await postNativeTransport(host, body: stale) == "rejected")
+    #expect(recorder.deliveries.count == 3)
+  }
+
+  private func postNativeTransport(_ host: McpAppHost, body: [String: Any]) async throws -> String?
+  {
+    let value = try await host.webView.callAsyncJavaScript(
+      """
+      try { return await window.webkit.messageHandlers.mcpEnvelope.postMessage(body); }
+      catch { return 'rejected'; }
+      """, arguments: ["body": body], in: nil, contentWorld: McpAppBridgeListener.world)
+    return value as? String
+  }
+
+  @Test func perHostCookiesStorageAndParentDomAreIsolated() async throws {
+    let firstRecorder = McpEnvelopeRecorder()
+    let first = try await McpAppHost.make(
+      html: "<script>\(Self.sessionScript)</script>", delegate: firstRecorder)
+    attach(first)
+    defer { first.close() }
+    try await waitUntil { firstRecorder.deliveries.count == 1 }
+    let cookie = try #require(
+      HTTPCookie(properties: [
+        .domain: "fixture.example", .path: "/", .name: "canary", .value: "fictional-cookie",
+      ]))
+    await first.webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
+    let firstCookies = await first.webView.configuration.websiteDataStore.httpCookieStore
+      .allCookies()
+    #expect(firstCookies.contains { $0.name == "canary" && $0.value == "fictional-cookie" })
+    let storageSeed = try await first.webView.callAsyncJavaScript(
+      """
+      document.body.dataset.canary='fictional-parent';
+      const result={};
+      try { localStorage.setItem('canary','fictional-local'); result.local=true; } catch { result.local=false; }
+      result.indexed=await new Promise(resolve => {
+        try {
+          const request=indexedDB.open('mcp-canary',1);
+          request.onupgradeneeded=()=>request.result.createObjectStore('values').put('fictional-indexed','canary');
+          request.onsuccess=()=>{request.result.close();resolve(true);};request.onerror=()=>resolve(false);
+        } catch {resolve(false);}
+      });
+      return result;
+      """, arguments: [:], in: nil, contentWorld: .page)
+    print("MCP shell storage seed: \(storageSeed ?? "nil")")
+    let seeded = try #require(storageSeed as? [String: Any])
+    #expect(seeded["local"] as? Bool == true)
+    #expect(seeded["indexed"] as? Bool == true)
+    let recorder = McpEnvelopeRecorder()
+    let second = try await McpAppHost.make(
+      html: appHtml(
+        probe: """
+          try { deliver({leak:'parent',value:parent.document.body.dataset.canary}); } catch {}
+          try { const value=document.cookie; if(value) deliver({leak:'cookie',value}); } catch {}
+          try { deliver({leak:'local',value:localStorage.getItem('canary')}); } catch {}
+          try {
+            const r=indexedDB.open('mcp-canary',1);
+            r.onsuccess=()=>{deliver({leak:'indexed'});r.result.close();};
+          } catch {}
+          setTimeout(()=>deliver({marker:'storage-probed'}),300);
+          """), delegate: recorder)
+    attach(second)
+    defer { second.close() }
+    try await waitUntil { recorder.deliveries.count == 1 }
+    #expect(
+      first.webView.configuration.websiteDataStore !== second.webView.configuration.websiteDataStore
+    )
+    #expect(
+      first.webView.configuration.userContentController
+        !== second.webView.configuration.userContentController)
+    #expect(!first.webView.configuration.websiteDataStore.isPersistent)
+    #expect(!second.webView.configuration.websiteDataStore.isPersistent)
+    let secondCookies = await second.webView.configuration.websiteDataStore.httpCookieStore
+      .allCookies()
+    #expect(secondCookies.isEmpty)
+    let secondStorage =
+      try await second.webView.callAsyncJavaScript(
+        """
+        const result={};
+        try { result.local=localStorage.getItem('canary'); } catch { result.local='unavailable'; }
+        result.indexed=await new Promise(resolve => {
+          try { const r=indexedDB.open('mcp-canary',1);
+            r.onupgradeneeded=()=>{};
+            r.onsuccess=()=>{const exists=r.result.objectStoreNames.contains('values');r.result.close();resolve(exists);};
+            r.onerror=()=>resolve(false);
+          } catch {resolve(false);}
+        });return result;
+        """, arguments: [:], in: nil, contentWorld: .page) as? [String: Any]
+    #expect(secondStorage?["local"] is NSNull)
+    #expect(secondStorage?["indexed"] as? Bool == false)
+    _ = try await second.webView.evaluateJavaScript(
+      "document.body.dataset.canary='fictional-second-parent'")
+    try await probe(second)
+    try await waitUntil {
+      recorder.deliveries.contains { $0["marker"] as? String == "storage-probed" }
+    }
+    print("MCP storage deliveries: \(recorder.deliveries)")
+    #expect(recorder.deliveries.count == 2)
+    #expect(recorder.deliveries.last?["marker"] as? String == "storage-probed")
+  }
+
 }
