@@ -47,6 +47,11 @@ final class AppModel {
     @ObservationIgnored private let fixtureTheme: String
     /// A DEBUG design-catalog scenario replaces the console shell; storage stays isolated.
     let catalog: DesignCatalogScenario?
+    @ObservationIgnored private(set) var composerScript: ComposerScript?
+    /// Composer fixture scenarios add a synthetic attachment source to the attach menu.
+    var offersSampleAttachments: Bool { storeScenario?.isComposer == true }
+  #else
+    var offersSampleAttachments: Bool { false }
   #endif
 
   init() {
@@ -213,10 +218,12 @@ final class AppModel {
     let events: any ConsoleEventSource
     #if DEBUG
       if scenario != nil {
+        let script = storeScenario?.isComposer == true ? ComposerScript(storeScenario) : nil
+        composerScript = script
         api = APIClient(
           endpoint: profile.endpoint,
-          transport: ScenarioConsoleTransport(storeScenario, theme: fixtureTheme))
-        events = ScenarioEventSource(storeScenario)
+          transport: ScenarioConsoleTransport(storeScenario, theme: fixtureTheme, script: script))
+        events = ScenarioEventSource(storeScenario, script: script)
       } else {
         api = APIClient(endpoint: profile.endpoint)
         events = EventStream(endpoint: profile.endpoint)

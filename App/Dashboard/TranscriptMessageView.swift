@@ -66,6 +66,7 @@ struct TranscriptMessageView: View {
       message.role == "user" ? DesignColor.contentSurface : .clear,
       in: RoundedRectangle(cornerRadius: DesignRadius.md)
     )
+    .quotable(message)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message-" + message.id)
   }
@@ -82,9 +83,7 @@ struct TranscriptPartView: View {
       ReasoningDisclosure(text: value.text, message: message, store: store)
     case .toolCall(let call):
       if TranscriptPresentation.toolName(call) == "AskUser" {
-        DeferredTranscriptPart(
-          title: TranscriptPresentation.preview(call), kind: "Question from agent",
-          feature: "Ask form")
+        AskUserCard(call: call, message: message, store: store)
       } else {
         ToolCallView(call: call, message: message, store: store)
       }
@@ -129,9 +128,7 @@ struct TranscriptPartView: View {
       DeferredTranscriptPart(
         title: value.reason ?? "Restart agent", kind: "Restart proposal", feature: "Restart card")
     case .replyOptions(let value):
-      DeferredTranscriptPart(
-        title: value.options.joined(separator: " · "), kind: "Suggested replies",
-        feature: "Composer")
+      QuickRepliesView(part: value, message: message, store: store)
     case .cronReplyContext(let value):
       VStack(alignment: .leading, spacing: DesignSpacing.sm) {
         Label("Imported cron result · " + value.source.jobId, systemImage: "clock.arrow.circlepath")

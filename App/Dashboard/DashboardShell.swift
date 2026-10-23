@@ -61,6 +61,12 @@ struct DashboardShell: View {
         }
       }
     }
+    .environment(
+      \.openNewConversation,
+      NewConversationAction { source in
+        route = .newConversation(profile: store.profile.id, sourceID: source)
+      }
+    )
     .onChange(of: route) { _, value in storedRoute = value?.encoded ?? "" }
     .task(id: model.isReady) { applyLaunchRoute() }
   }

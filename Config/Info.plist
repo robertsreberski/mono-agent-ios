@@ -14,6 +14,8 @@
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>NSLocalNetworkUsageDescription</key><string>Connect to the console URL you enter on your local network when you tap Connect.</string>
+<key>NSCameraUsageDescription</key><string>Take a photo to attach to a message you send to an agent.</string>
+<key>NSPhotoLibraryUsageDescription</key><string>Attach photos you choose to a message you send to an agent.</string>
 <!-- Arbitrary user-entered HTTP hosts require this global policy. Do not add narrower
      global ATS exception keys: they override it. This also applies to future WKWebView;
      the embedded-app feature must separately harden its web content and navigation. -->

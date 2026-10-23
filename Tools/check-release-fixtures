@@ -23,7 +23,11 @@ MARKERS = (b"ScriptedTransport", b"console.example.ts.net", b"DesignCatalog", b"
            b"DashboardFixture", b"dashboard-populated", b"dashboard-empty", b"dashboard-offline",
            b"dashboard-search", b"conversation-placeholder", b"fixture-theme",
            b"JobFixture", b"conversation-jobs", b"conversation-job-stack", b"conversation-subagents", b"conversation-context",
-           b"TranscriptFixture", b"conversation-streaming", b"conversation-tools", b"conversation-long", b"conversation-markdown")
+           b"TranscriptFixture", b"conversation-streaming", b"conversation-tools", b"conversation-long", b"conversation-markdown",
+           b"ComposerFixture", b"ComposerScript", b"composer-empty", b"composer-draft-attachments",
+           b"composer-skill-picker", b"composer-model-selector", b"composer-running", b"composer-send-failed",
+           b"composer-quote", b"conversation-ask-form", b"conversation-quick-replies", b"peer-question-sheet",
+           b"Sample files (synthetic)")
 images = [executable]
 debug_library = args.app / "MonoAgent.debug.dylib"
 if debug_library.is_file():

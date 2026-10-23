@@ -1,0 +1,445 @@
+// SPDX-License-Identifier: GPL-3.0-only
+import MonoAgentDesign
+import MonoAgentKit
+import MonoAgentStore
+import SwiftUI
+
+/// AskUser question form (web `AskUserTool`): 1–5 questions with options, multi-select and a
+/// custom reply, submitted through the Store's `answerAsk` (`POST /threads/:id/ask`).
+struct AskUserCard: View {
+  let call: WebToolCall
+  let message: WebMessage
+  let store: ConsoleStore
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var snapshot: ChannelAskSnapshot?
+  @State private var assignedID: String?
+  @State private var unavailable = false
+  @State private var draft = AskFormDraft()
+  @State private var submitting = false
+  @State private var error: String?
+
+  private var expectedID: String? {
+    AskForm.interactionID(call.structuredResult) ?? AskForm.interactionID(call.result)
+  }
+  private var persisted: String? {
+    AskForm.persistedStatus(call.structuredResult) ?? AskForm.persistedStatus(call.result)
+  }
+  private var running: Bool { call.status == "running" }
+  private var interrupted: Bool {
+    TranscriptPresentation.failed(call) && !running && call.result == nil
+      && call.structuredResult == nil
+  }
+  private var contextMessage: String? {
+    if let text = snapshot?.message { return text }
+    if case .object(let args)? = call.args, case .string(let text)? = args["message"] {
+      return text
+    }
+    return nil
+  }
+  private var terminal: String? {
+    if let status = snapshot?.status { return status == "pending" ? nil : status }
+    return persisted
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignSpacing.md) {
+      HStack(spacing: DesignSpacing.sm) {
+        StatusIndicator(
+          interrupted ? .failed : terminal == nil ? .connecting : .online,
+          label: interrupted ? "Question interrupted" : "Input needed")
+        Spacer()
+      }
+      .accessibilityAddTraits(.isHeader)
+      if let contextMessage {
+        Text(contextMessage).designFont(.body).textSelection(.enabled)
+      }
+      content
+    }
+    .contentSurface()
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Question from the agent")
+    .accessibilityIdentifier("ask-card")
+    .task(id: pollKey) { await poll() }
+  }
+
+  @ViewBuilder private var content: some View {
+    if interrupted {
+      EmptyView()
+    } else if let snapshot, let terminal {
+      VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+        Text(terminal == "answered" ? "Answers submitted." : "Question \(terminal).")
+          .designFont(.headline)
+        ForEach(AskForm.summary(snapshot), id: \.self) { line in
+          Text(line).designFont(.supporting).foregroundStyle(.secondary)
+        }
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("ask-complete")
+    } else if let snapshot {
+      form(snapshot)
+    } else if let terminal {
+      Text(terminal == "answered" ? "Answers submitted." : "Question \(terminal).")
+        .designFont(.headline).accessibilityIdentifier("ask-complete")
+    } else if unavailable {
+      Text("Question unavailable. It may have expired, been evicted, or the agent may be offline.")
+        .designFont(.supporting).foregroundStyle(.secondary)
+    } else {
+      Label("Preparing the questions…", systemImage: "hourglass").designFont(.supporting)
+    }
+  }
+
+  private func form(_ snapshot: ChannelAskSnapshot) -> some View {
+    VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+      ForEach(Array(snapshot.questions.enumerated()), id: \.element.id) { index, question in
+        let prior =
+          index < snapshot.activeQuestionIndex
+          ? snapshot.answers.first { $0.questionId == question.id } : nil
+        QuestionFields(
+          question: question, draft: $draft, prior: prior, disabled: prior != nil || submitting)
+      }
+      if let error {
+        StatusIndicator(.failed, label: error).accessibilityIdentifier("ask-error")
+      }
+      if let missing = AskForm.firstIncomplete(snapshot, draft), !submitting {
+        Text(
+          missing.multiSelect
+            ? "Choose at least one answer for “\(missing.header)”."
+            : "Choose one answer or write a custom reply for “\(missing.header)”."
+        )
+        .designFont(.caption).foregroundStyle(.secondary)
+      }
+      Button(
+        submitting
+          ? "Submitting…" : snapshot.questions.count == 1 ? "Submit answer" : "Submit answers"
+      ) {
+        Task { await submit(snapshot) }
+      }
+      .designButtonStyle(.primary)
+      .disabled(!AskForm.isComplete(snapshot, draft) || submitting)
+      .accessibilityIdentifier("ask-submit")
+    }
+  }
+
+  private var pollKey: String {
+    [
+      message.threadId, call.toolCallId, call.status, expectedID ?? "",
+      String(describing: scenePhase), store.connection == .live ? "live" : "not-live",
+    ].joined(separator: "|")
+  }
+
+  /// Web AskReconciliation: exact by-id reads when the id is known, otherwise the pending ask
+  /// while the call runs; 250 ms → 2 s backoff (doubled on a lean link); hidden scenes ask
+  /// nothing and conclude nothing.
+  private func poll() async {
+    guard !interrupted, scenePhase == .active else { return }
+    let lean = store.effectiveDataMode == .lean
+    if lean, persisted != nil, !running { return }
+    var delay = lean ? 0.5 : 0.25
+    let maximum = lean ? 4.0 : 2.0
+    while !Task.isCancelled {
+      if snapshot.map({ $0.status != "pending" }) == true { return }
+      // Not live: conclude nothing yet; the poll restarts when the connection does.
+      guard store.connection == .live else { return }
+      let id = expectedID ?? assignedID
+      if id == nil && !running {
+        unavailable = true
+        return
+      }
+      do {
+        if let value = try await store.askSnapshot(threadID: message.threadId, interactionID: id) {
+          snapshot = AskForm.normalized(value, now: Date())
+          assignedID = value.interactionId
+          unavailable = false
+        } else if id != nil {
+          unavailable = true
+        }
+      } catch is CancellationError {
+        return
+      } catch {
+        unavailable = true
+      }
+      if snapshot.map({ $0.status != "pending" }) == true { return }
+      do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+      delay = min(maximum, delay * 2)
+    }
+  }
+
+  private func submit(_ snapshot: ChannelAskSnapshot) async {
+    guard AskForm.isComplete(snapshot, draft) else { return }
+    submitting = true
+    error = nil
+    do {
+      let next = try await store.answerAsk(
+        threadID: message.threadId, interactionID: snapshot.interactionId,
+        answers: AskForm.answers(snapshot, draft))
+      if let next {
+        self.snapshot = next
+      } else {
+        var answered = snapshot
+        answered.status = "answered"
+        answered.answers = AskForm.answers(snapshot, draft)
+        self.snapshot = answered
+      }
+    } catch AskAnswerError.incomplete {
+      error = "Please complete every question."
+    } catch AskAnswerError.inactive {
+      error = "This question is no longer active."
+    } catch {
+      self.error = "Could not submit the answer."
+    }
+    submitting = false
+  }
+}
+
+private struct QuestionFields: View {
+  let question: ChannelAskQuestion
+  @Binding var draft: AskFormDraft
+  let prior: ChannelAskAnswer?
+  let disabled: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+      VStack(alignment: .leading, spacing: DesignSpacing.xxs) {
+        Text(question.header).designFont(.caption).foregroundStyle(.secondary)
+        Text(question.question).designFont(.headline)
+        if question.multiSelect {
+          Text("Choose any").designFont(.caption).foregroundStyle(.secondary)
+        }
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(.isHeader)
+      ForEach(question.options, id: \.id) { option in
+        let selected =
+          prior.map { $0.selectedOptionIds.contains(option.id) }
+          ?? draft.isSelected(option.id, in: question)
+        Button {
+          draft.toggle(option.id, in: question)
+        } label: {
+          ChoiceRow(
+            option.label, detail: option.description, selected: selected,
+            multiple: question.multiSelect)
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityIdentifier("ask-option-\(question.id)-\(option.id)")
+      }
+      TextField(
+        "Custom reply",
+        text: Binding(
+          get: { prior?.customReply ?? draft.custom[question.id] ?? "" },
+          set: { draft.setCustom($0, for: question) }), axis: .vertical
+      )
+      .textFieldStyle(.roundedBorder)
+      .lineLimit(1...4)
+      .disabled(disabled)
+      .accessibilityLabel("Custom reply for \(question.header)")
+      .accessibilityIdentifier("ask-custom-\(question.id)")
+    }
+  }
+}
+
+/// Suggested replies beneath a final answer (web `ReplyOptionsPart`). Tapping one sends its
+/// label through the composer's submission path; they disable while running, after a later
+/// user message, once one was sent, or when the conversation is not the composer's.
+struct QuickRepliesView: View {
+  let part: ReplyOptionsPart
+  let message: WebMessage
+  let store: ConsoleStore
+  @Environment(\.composerActions) private var actions
+  @State private var sent = false
+  @State private var sending = false
+
+  private var laterUser: Bool {
+    guard let state = store.conversations[message.threadId],
+      let index = state.orderedMessageIDs.firstIndex(of: message.id)
+    else { return true }
+    return state.orderedMessageIDs[(index + 1)...].contains {
+      state.messageStates[$0]?.message.role == "user"
+    }
+  }
+  private var disabled: Bool {
+    let running =
+      store.conversations[message.threadId].map {
+        $0.runningConfirmed && $0.thread.runState.status == "running"
+      } ?? false
+    return message.status != "complete" || running || laterUser || sent || sending
+      || actions.sendReply == nil || actions.threadID != message.threadId
+  }
+
+  var body: some View {
+    let buttons = ForEach(part.options, id: \.self) { label in
+      Button(label) {
+        guard !disabled, let send = actions.sendReply else { return }
+        sending = true
+        Task {
+          sent = await send(label)
+          sending = false
+        }
+      }
+      .designButtonStyle(.secondary)
+      .disabled(disabled)
+      .accessibilityIdentifier("quick-reply-" + label)
+    }
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: DesignSpacing.sm) { buttons }
+      VStack(alignment: .leading, spacing: DesignSpacing.sm) { buttons }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Suggested replies")
+    .accessibilityIdentifier("quick-replies")
+  }
+}
+
+/// Entry point from a process-job row with a peer question. The C7b job card will own this
+/// placement; until then the transcript's job placeholder presents it.
+struct PeerQuestionEntry: View {
+  let question: PeerProcessJobQuestion
+  @Environment(\.composerActions) private var actions
+  @State private var presented = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+      Label(
+        "Peer question · " + PeerQuestionForm.stateLabel(question.state),
+        systemImage: "person.2.wave.2"
+      )
+      .designFont(.supporting)
+      Text(question.message).designFont(.caption).foregroundStyle(.secondary).lineLimit(2)
+      Button(question.state == "awaiting_answer" ? "Review and draft a reply" : "Review question") {
+        presented = true
+      }
+      .designButtonStyle(.secondary)
+      .accessibilityIdentifier("peer-question-open")
+    }
+    .sheet(isPresented: $presented) {
+      PeerQuestionAnswerSheet(question: question) { reply in
+        guard let insert = actions.insert else { throw PeerReplyError.composerUnavailable }
+        insert(reply)
+      }
+    }
+  }
+}
+
+enum PeerReplyError: Error { case composerUnavailable }
+
+/// The peer-answer form, driven by the question model and a submit seam. The console has no
+/// peer answer route and the web shows peer text as untrusted reference: the default seam
+/// drafts a reply into the composer for the operator to send to their own agent explicitly.
+struct PeerQuestionAnswerSheet: View {
+  let question: PeerProcessJobQuestion
+  let submit: @MainActor (String) async throws -> Void
+  @Environment(\.dismiss) private var dismiss
+  @State private var values: [String: [String]] = [:]
+  @State private var note = ""
+  @State private var error: String?
+
+  private var fields: [PeerQuestionField] { PeerQuestionForm.describe(question.requestedSchema) }
+  private var open: Bool { question.state == "awaiting_answer" }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          LabeledContent("State", value: PeerQuestionForm.stateLabel(question.state))
+          LabeledContent("Peer", value: question.peer + " / " + question.thread)
+          if let expires = TranscriptPresentation.date(question.expiresAt) {
+            LabeledContent(
+              "Expires", value: expires.formatted(date: .abbreviated, time: .shortened))
+          }
+          Text(question.message).textSelection(.enabled)
+        } footer: {
+          Text("Untrusted peer text; not owner approval. The agent answers through PeerAgent.")
+        }
+        ForEach(fields) { field in
+          Section {
+            if let description = field.description {
+              Text(description).designFont(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(field.options, id: \.self) { option in
+              Button {
+                toggle(option, in: field)
+              } label: {
+                ChoiceRow(
+                  option, selected: values[field.key]?.contains(option) == true,
+                  multiple: field.multiple)
+              }
+              .buttonStyle(.plain)
+              .disabled(!open)
+              .accessibilityIdentifier("peer-option-\(field.key)-\(option)")
+            }
+            if field.options.isEmpty {
+              TextField(
+                field.freeText ? "Answer" : "Value",
+                text: Binding(
+                  get: { values[field.key]?.first ?? "" }, set: { values[field.key] = [$0] }),
+                axis: .vertical
+              )
+              .disabled(!open)
+              .accessibilityIdentifier("peer-text-\(field.key)")
+            }
+          } header: {
+            Text(
+              field.label + (field.required ? " · required" : "")
+                + (field.multiple ? " · choose any" : ""))
+          }
+        }
+        Section("Note to your agent") {
+          TextField("Optional context", text: $note, axis: .vertical)
+            .disabled(!open)
+            .accessibilityIdentifier("peer-note")
+        }
+        Section("Raw form") {
+          Text("questionId " + question.questionId).designFont(.caption)
+          CodeDocumentView(source: rawSchema, language: "JSON schema")
+        }
+        if let error {
+          StatusIndicator(.failed, label: error)
+        }
+      }
+      .navigationTitle("Peer question")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Add to Composer") { Task { await send() } }
+            .disabled(!open || !PeerQuestionForm.missingRequired(fields, values: values).isEmpty)
+            .accessibilityHint("Drafts the reply in the composer; you send it yourself")
+            .accessibilityIdentifier("peer-submit")
+        }
+      }
+    }
+    .accessibilityIdentifier("peer-sheet")
+  }
+
+  private var rawSchema: String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    return (try? encoder.encode(question.requestedSchema)).map {
+      String(decoding: $0, as: UTF8.self)
+    } ?? "{}"
+  }
+
+  private func toggle(_ option: String, in field: PeerQuestionField) {
+    var current = values[field.key] ?? []
+    if field.multiple {
+      if let index = current.firstIndex(of: option) {
+        current.remove(at: index)
+      } else {
+        current.append(option)
+      }
+    } else {
+      current = current == [option] ? [] : [option]
+    }
+    values[field.key] = current
+  }
+
+  private func send() async {
+    do {
+      try await submit(
+        PeerQuestionForm.reply(question, fields: fields, values: values, note: note))
+      dismiss()
+    } catch {
+      self.error = "The composer is not available for this conversation."
+    }
+  }
+}
