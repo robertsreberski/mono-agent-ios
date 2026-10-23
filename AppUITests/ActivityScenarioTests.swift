@@ -100,6 +100,13 @@ import XCTest
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "84k / 200k tokens"))
           .firstMatch.exists)
     } else {
+      if scenario == "conversation-job-stack" && variant == nil {
+        // The closed shelf (current jobs inline, count chips) before it opens.
+        let closed = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        closed.name = "synthetic-fixture__\(scenario)__\(appearance)__closed"
+        closed.lifetime = .keepAlways
+        add(closed)
+      }
       element(app, "job-stack").tap()
       if scenario == "conversation-jobs" {
         dockReveal(app, "job-card-running").tap()

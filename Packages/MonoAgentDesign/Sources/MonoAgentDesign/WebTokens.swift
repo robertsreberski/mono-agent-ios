@@ -472,3 +472,40 @@ public struct Eyebrow: View {
       .lineLimit(1)
   }
 }
+
+#if DEBUG
+  private struct WebTokenPreview: View {
+    @Environment(\.consoleTheme) private var theme
+    var body: some View {
+      VStack(alignment: .leading, spacing: WebSpace.sectionHeadBottom) {
+        HStack {
+          VStack(alignment: .leading, spacing: 3) {
+            Eyebrow("Sample console")
+            Text("Atlas").webFont(.agentName).foregroundStyle(WebColor.text.color)
+          }
+          Spacer()
+          Button("Settings", systemImage: "slider.horizontal.3") {}
+            .buttonStyle(WebTileButtonStyle())
+          Button("New", systemImage: "plus") {}.buttonStyle(WebTileButtonStyle(.accent))
+        }
+        Text("Row title 12 / 650").webFont(.rowTitle).foregroundStyle(WebColor.text.color)
+        Text("Subtitle 10").webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+        Button {
+        } label: {
+          Label("Archived", systemImage: "archivebox")
+        }
+        .buttonStyle(WebQuietPillStyle())
+      }
+      .padding(WebSpace.dashboardGutter)
+      .background(theme.palette.panel.color)
+    }
+  }
+
+  #Preview("Web tokens — themes") { DesignPreviewMatrix { WebTokenPreview() } }
+
+  #Preview("Web tokens — dark, AX") {
+    DesignPreviewMatrix { WebTokenPreview() }
+      .preferredColorScheme(.dark)
+      .dynamicTypeSize(.accessibility3)
+  }
+#endif

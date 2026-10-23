@@ -101,6 +101,13 @@ struct DashboardView: View {
       content(now: model.referenceDate ?? context.date)
     }
     .background(theme.palette.panel.color.ignoresSafeArea())
+    .overlay(alignment: .trailing) {
+      // Web: the 340 pt dashboard column ends in a 1 px line beside the chat.
+      if selectable {
+        Rectangle().fill(WebColor.line.color).frame(width: 1).ignoresSafeArea()
+          .accessibilityHidden(true)
+      }
+    }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(ready ? "scenario-ready" : "dashboard-loading")
     .navigationTitle(selectedAgent?.label ?? consoleName)

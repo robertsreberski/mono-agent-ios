@@ -471,14 +471,16 @@ struct ProcessJobLifecycleView: View {
         + JobPresentation.title(job),
       systemImage: JobPresentation.command(job) ? "terminal" : "person.crop.circle"
     )
-    .designFont(.supporting)
+    // Web: a quiet activity line in the transcript; the job itself lives in the shelf.
+    .webFont(.activityMeta)
+    .foregroundStyle(WebColor.textMuted.color)
     .accessibilityHint("Details in Background jobs above the message field")
   }
 }
 struct ProcessJobWakeView: View {
   let wake: ProcessJobWakePart
   var body: some View {
-    Label("Job \(wake.jobId) · wake \(wake.disposition)", systemImage: "bell.badge").designFont(
-      .caption)
+    Label("Job \(wake.jobId) · wake \(wake.disposition)", systemImage: "bell.badge")
+      .webFont(.activityMeta).foregroundStyle(WebColor.textMuted.color)
   }
 }

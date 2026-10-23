@@ -11,6 +11,7 @@ struct ConversationScreen: View {
   let route: AppRoute
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.consoleTheme) private var theme
+  @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var onScreen = false
   /// A new conversation created by this screen's composer (C8); the route stays unchanged.
   @State private var createdThreadID: String?
@@ -121,10 +122,13 @@ struct ConversationScreen: View {
   // MARK: Header (web `.chat-header`)
 
   @ToolbarContentBuilder private var headerToolbar: some ToolbarContent {
-    ToolbarItem(placement: .principal) {
-      // The system centres the principal item; giving it all the room between the 44 pt back
-      // button and the trailing tile keeps the web's leading-aligned title block.
-      header.frame(width: max(120, screenWidth - 2 * (16 + 44 + 6)), alignment: .leading)
+    // iPad (no back button): leading. Phones: the principal slot between the 44 pt back button
+    // and the trailing tile, given all of that room so the title block stays leading-aligned.
+    ToolbarItem(placement: sizeClass == .regular ? .topBarLeading : .principal) {
+      header.frame(
+        width: max(
+          120, sizeClass == .regular ? screenWidth - (16 + 60) : screenWidth - 2 * (16 + 44 + 6)),
+        alignment: .leading)
     }
     .sharedBackgroundVisibility(.hidden)
     ToolbarItem(placement: .topBarTrailing) { detailsMenu }

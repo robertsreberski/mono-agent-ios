@@ -50,6 +50,32 @@ Chip and banner fills are the tone at 14% opacity. Their icons keep at least 3:1
 labels use primary text. Every status also has a distinct SF Symbol and a text label, so
 colour is never the only cue.
 
+## Web console tokens (fidelity)
+
+The app mirrors the web console's `styles.css`, not generic iOS metrics:
+
+- `ThemePalette` adds `panel` (the shared dashboard/chat material), `rail` (code blocks),
+  `accentGlow` (focus ring) and `jobStackBackground`; `WebColor` carries the
+  theme-independent surfaces (`surface`, `surfaceRaised`, `surfaceSubtle`, `surfaceHover`),
+  text (`text`, `textSoft`, `textMuted`), lines (`line`, `lineStrong`), `delegation` and the
+  fixed job status hues (`jobProgress…`, `jobWarningText`, `jobSuccessText`). Exact values and
+  AA contrast on every web surface are unit-tested (`WebTokenTests`).
+- `WebType` / `.webFont(_:)`: each role is the web px size at the default content size
+  (`@ScaledMetric(relativeTo:)`), so Dynamic Type still scales it; weights, em tracking,
+  line-height and uppercase eyebrows are carried over. Family: SF / SF Mono (the web has no
+  `@font-face`).
+- `WebSpace`, `WebRadius`, `WebMetrics`, `.webShadow(_:)`: gutters (dashboard 17, transcript
+  12/24, dock 8/24, header 9), 23/28 section rhythm, 58 pt rows, 36 pt tiles in 44 pt hit
+  targets, 42 pt search, 34 pt send, composer radius 14/16, shadow-sm/lg.
+- Web primitives: `WebTileButtonStyle`, `WebQuietPillStyle` / `.webQuietPill()`,
+  `WebRowButtonStyle`, `Eyebrow`, `ProjectBadge`, `TagBadge`, `UserBubble`,
+  `MessageActionButton`, `TranscriptNotice`, `TranscriptMarkerRow`, `AttributionBox`,
+  `CodeDocumentView(style: .block)`.
+
+Glass stays limited to floating chrome: header tiles and back button, the composer root and
+job shelf, footer/jump pills and system sheets. Their Reduce Transparency fallback is the
+opaque web fill (`floatingGlass(in:tint:opaqueFill:)`).
+
 ## Tokens
 
 - `DesignSpacing` `xxs 2 · xs 4 · sm 8 · md 12 · lg 16 · xl 24 · xxl 32`.
