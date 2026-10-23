@@ -80,9 +80,11 @@ struct ConversationTranscript<Header: View>: View {
     } action: { old, next in
       policy.update(next, userDriven: phase == .interacting || phase == .decelerating)
       if old.contentHeight != next.contentHeight && policy.shouldScrollAfterWrite(next)
-        && phase == .idle
+        && phase == .idle && !next.contentFits
       {
-        scrollPosition.scrollTo(edge: .bottom)
+        // Anchor to the realized bottom row, not the lazily estimated content edge: with a
+        // short viewport (keyboard up) edge scrolling re-estimated rows and never settled.
+        scrollPosition.scrollTo(id: "transcript-bottom", anchor: .bottom)
       }
     }
     .accessibilityIdentifier("conversation-transcript")
