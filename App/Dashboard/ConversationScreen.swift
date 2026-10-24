@@ -48,6 +48,9 @@ struct ConversationScreen: View {
   }
 
   var body: some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("ConversationScreen")
+    #endif
     VStack(spacing: 0) {
       if let threadID, let state = store.conversations[threadID] {
         ConversationTranscript(state: state, store: store) {

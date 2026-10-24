@@ -20,6 +20,7 @@ struct MonoAgentApp: App {
         #endif
       }
       #if DEBUG
+        .task { await PerformanceProbe.measure() }
         .prefersOpaqueSurfaces(model.opaqueFixtureSurfaces)
         .environment(\.mcpDiagnostics, model.mcpScript?.diagnostics)
       #endif

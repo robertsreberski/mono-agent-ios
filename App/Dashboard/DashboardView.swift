@@ -101,6 +101,9 @@ struct DashboardView: View {
   @FocusState private var searchFocused: Bool
 
   var body: some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("DashboardView")
+    #endif
     TimelineView(.everyMinute) { context in
       content(now: model.referenceDate ?? context.date)
     }

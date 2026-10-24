@@ -37,6 +37,9 @@ struct ComposerBar: View {
   /// Web `.thread-footer` dock: the job shelf first, then the composer, on a fade from the
   /// transcript into the panel; 8 pt gutters on phones, 24 on tablets, column ≤ 820.
   var body: some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("ComposerBar")
+    #endif
     let regular = sizeClass == .regular
     VStack(spacing: 6) {
       if let state = conversation {

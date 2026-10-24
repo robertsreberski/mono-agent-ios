@@ -19,6 +19,9 @@ struct TranscriptMessageView: View {
   /// Web message layout: the user's turn is a neutral bubble on the trailing edge with its
   /// actions below; assistant prose sits directly on the panel (no bubble, card or avatar).
   var body: some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("TranscriptMessageView")
+    #endif
     let message = row.message
     VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
       if message.role == "system" {
@@ -273,6 +276,9 @@ struct TranscriptActivityBand: View {
   @State private var expanded = true
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { context in
+      #if DEBUG
+        let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
+      #endif
       ActivityBand(
         meta: "\(parts.count) \(parts.count == 1 ? "step" : "steps")"
           + (TranscriptPresentation.elapsed(
@@ -305,6 +311,9 @@ struct ReasoningDisclosure: View {
   private var running: Bool { message.status == "running" }
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { context in
+      #if DEBUG
+        let _ = PerformanceProbe.body("ReasoningDisclosure.clock")
+      #endif
       ActivityDisclosure(
         running ? "Thinking…" : "Reasoning",
         status: running ? .connecting : .disconnected,
@@ -467,6 +476,9 @@ struct RunAttributionView: View {
         }
       }
       TimelineView(.periodic(from: .now, by: 1)) { context in
+        #if DEBUG
+          let _ = PerformanceProbe.body("RunAttributionView.clock")
+        #endif
         Text(
           [
             TranscriptPresentation.cost(cost),
