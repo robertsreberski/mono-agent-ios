@@ -103,17 +103,20 @@ extension ConsoleStore {
         return
       }
       let state = conversations[id]
-      let message = state?.record.messages.first { $0.id == delta.messageId }
+      let message = state.flatMap { state in
+        state.messageIndex(delta.messageId).map { state.record.messages[$0] }
+      }
       let result = DeltaReducer.apply(
         delta, to: message, threadHeld: state != nil,
         repairedToolCallIds: state?.record.repairedToolCallIDs ?? [])
       switch result.outcome {
       case .applied:
         if let state, let message = result.message,
-          let index = state.record.messages.firstIndex(where: { $0.id == message.id })
+          let index = state.messageIndex(message.id)
         {
           state.record.messages[index] = message
-          publish(state, terminal: message.status != "running")
+          state.pendingMessageIndices.insert(index)
+          publish(state, terminal: message.status != "running", delta: true)
           scheduleCache()
         }
       case .stale, .unheld: break

@@ -18,7 +18,7 @@ struct ConversationContextView: View {
     _expanded = State(initialValue: expanded)
   }
   static func content(_ state: ConversationState) -> ContextDisplayContent {
-    let projection = UsagePresentation.context(messages: state.messages, thread: state.thread)
+    let projection = state.context
     let rows = UsagePresentation.rows(state.usage).map {
       ContextDisplayContent.Row($0.label, $0.value)
     }

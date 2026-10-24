@@ -28,7 +28,7 @@ struct ConversationJobStack: View {
   @State private var disclosures = JobDisclosureState()
   @Environment(\.horizontalSizeClass) private var sizeClass
   var body: some View {
-    let items = JobShelf.items(messages: state.messages)
+    let items = state.jobItems
     let deadlines = items.flatMap(\.jobs).compactMap { job -> Date? in
       guard job.peerQuestion?.state == "awaiting_answer" else { return nil }
       return JobPresentation.date(job.peerQuestion?.expiresAt)?.addingTimeInterval(
@@ -130,7 +130,8 @@ struct ConversationJobStack: View {
   @ViewBuilder private func group(_ item: JobShelfItem, now: Date) -> some View {
     if item.family != nil {
       ProcessJobGroupView(
-        item: item, messages: state.messages, threadID: state.thread.id, store: store, now: now,
+        item: item, messages: state.jobParentMessages, threadID: state.thread.id, store: store,
+        now: now,
         disclosures: disclosures, onAnswerPeerQuestion: onAnswerPeerQuestion)
     } else {
       ProcessJobCardView(

@@ -189,9 +189,7 @@ struct ConversationScreen: View {
   private var knownRoute: ConversationHeaderModel.Route? {
     guard let thread else { return nil }
     let state = store.conversations[thread.id]
-    let latest = state?.orderedMessageIDs.reversed().lazy.compactMap {
-      state?.messageStates[$0]?.message.attribution
-    }.first(where: ConversationHeaderModel.hasReportedModel)
+    let latest = state?.latestReportedAttribution
     return ConversationHeaderModel.route(thread, agent: agent, latest: latest)
   }
 

@@ -375,17 +375,20 @@ public final class ConsoleStore {
   func publishAll() {
     publicationTask?.cancel()
     publicationTask = nil
-    for state in conversations.values { state.publish() }
+    for state in conversations.values { state.publishPending() }
   }
-  func publish(_ state: ConversationState, terminal: Bool = false) {
-    if effectiveDataMode == .full || terminal {
-      state.publish()
+  func publish(_ state: ConversationState, terminal: Bool = false, delta: Bool = false) {
+    if !delta { state.needsFullPublication = true }
+    if terminal || (!delta && effectiveDataMode == .full) {
+      state.publishPending()
       return
     }
     guard publicationTask == nil else { return }
     let generation = epoch
     publicationTask = Task { [weak self, clock] in
-      do { try await clock.sleep(seconds: 1) } catch { return }
+      do { try await clock.sleep(seconds: self?.effectiveDataMode == .lean ? 1 : 1.0 / 12) } catch {
+        return
+      }
       guard let self, self.epoch == generation, !Task.isCancelled else { return }
       self.publishAll()
     }

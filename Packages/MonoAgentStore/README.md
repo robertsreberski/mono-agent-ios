@@ -70,8 +70,8 @@ Screens must not instantiate API clients or submit directly.
   Timeout/cancellation settles the caller but **not** the physical write queue: a transport
   that ignores cancellation blocks subsequent writes on that thread until it actually completes.
 - `setDataMode(.auto/.lean/.full)` persists per console. Auto uses full unless the app's
-  NWPathMonitor adapter reports Low Data Mode. Full publishes applied deltas immediately;
-  lean batches only transcript publication for one second, never terminal writes or shared run
+  NWPathMonitor adapter reports Low Data Mode. Full coalesces transcript publication at 12 Hz; terminal writes remain immediate.
+  Lean batches only transcript publication for one second, never terminal writes or shared run
   metadata, and halves
   thread/message page sizes (50→25 and 30→15). The cache reducer always applies every delta immediately.
 
