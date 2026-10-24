@@ -9,6 +9,24 @@ import Testing
 #if DEBUG
   @MainActor
   struct StoreCompositionTests {
+    @Test func wakeConflictUsesTypedErrorAndDoesNotCloseEditor() async throws {
+      let model = AppModel(scenario: .consoleOnline, storeScenario: .wakeConflict)
+      await model.start()
+      let store = try #require(model.store)
+      await store.select(sourceID: DashboardFixture.atlas, threadID: "t-atlas-launch")
+      let id = try #require(store.openWakeEditor(threadID: "t-atlas-launch"))
+      await store.refreshWakeEditor(id)
+      #expect(store.wakeEditor?.schedule?.revision == 1)
+      var draft = try #require(store.wakeEditor?.draft)
+      draft.compactFirst = false
+      store.editWakeDraft(id, draft: draft)
+      store.mutateWakeEditor(id, action: .save)
+      try? await store.settleThreadWrites("t-atlas-launch")
+      #expect(store.wakeEditor?.failure?.conflict == true)
+      #expect(store.wakeEditor?.schedule?.revision == 1)
+      await store.stop()
+    }
+
     @Test func failedReconnectRetainsOfflineStoreWithoutCrossConsoleReplacement() async throws {
       let model = AppModel(scenario: .consoleOnline)
       await model.start()
@@ -93,7 +111,9 @@ import Testing
             store.draft(sourceID: DashboardFixture.atlas, threadID: DashboardFixture.openThreadID)?
               .text == ComposerFixture.draftText)
         }
-      case .fidelityChat, .fidelityDashboard:
+      case .fidelityChat, .fidelityDashboard, .conversationActions, .projectPage, .projectSettings,
+        .tagMenu, .tagSettings, .wakeNew, .wakeOnce, .wakeWeekly, .wakeConflict, .organizeLong,
+        .organizeArchivedSearch:
         #expect(store.agents.map(\.label) == ["Atlas", "Grove"])
         #expect(
           store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.map(\.title) == [

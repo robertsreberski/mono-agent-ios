@@ -34,6 +34,7 @@
       var atlas = value.agents.first { $0.sourceId == DashboardFixture.atlas }!
       atlas.label = "Atlas"
       atlas.runningCount = 1
+      atlas.supportsManualCompaction = true
       atlas.models = ["atlas/standard"]
       atlas.defaultModel = "atlas/standard"
       atlas.defaultEffort = "medium"

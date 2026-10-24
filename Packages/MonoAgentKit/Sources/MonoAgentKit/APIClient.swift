@@ -88,6 +88,7 @@ extension RequestBuilder {
 }
 
 public actor APIClient: ConsoleAPI {
+  public static let manualCompactionTimeout: TimeInterval = 120
   public let endpoint: ConsoleEndpoint
   let transport: any HTTPTransport
   let builder: RequestBuilder
@@ -115,6 +116,7 @@ public actor APIClient: ConsoleAPI {
     }
     var request = try builder.request(
       route: route.descriptor, parameters: parameters, query: values)
+    if route == .compact { request.timeoutInterval = Self.manualCompactionTimeout }
     if let body {
       request.httpBody = try JSONEncoder().encode(body)
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")

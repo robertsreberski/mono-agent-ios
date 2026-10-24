@@ -4,6 +4,448 @@ import XCTest
 
 @MainActor
 final class ScenarioTests: XCTestCase {
+  private func swipePicker(_ app: XCUIApplication, _ id: String) {
+    let menu = element(app, id)
+    XCTAssertGreaterThan(menu.frame.width, 0)
+    XCTAssertGreaterThan(menu.frame.height, 0)
+    // Popover UIScrollViews report an empty AX visible-frame on this runtime.
+    // A real finger drag inside the measured viewport still exercises native scrolling.
+    menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).press(
+      forDuration: 0.05,
+      thenDragTo: menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+  }
+
+  func testArchivedSearchResultOpensColdWithoutNavigatingAway() {
+    let app = launch("organize-archived-search")
+    let search = app.textFields["search-field"]
+    XCTAssertTrue(search.waitForExistence(timeout: 5))
+    search.tap()
+    search.typeText("Archived cold note")
+    let hit = app.buttons["search-row-cold-archived"]
+    XCTAssertTrue(hit.waitForExistence(timeout: 5))
+    hit.tap()
+    let title = app.buttons["rename-conversation"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    XCTAssertEqual(title.label, "Archived cold note")
+    app.buttons["conversation-actions"].tap()
+    XCTAssertTrue(app.buttons["action-archive"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["action-archive"].label, "Restore conversation")
+  }
+  func testLongTagAndProjectPickersAtAccessibilitySize() {
+    let app = launch("organize-long", accessibilityText: true)
+    func reach(_ id: String, in menu: String) -> XCUIElement {
+      let target = app.buttons[id]
+      for _ in 0..<18 where !target.isHittable { self.swipePicker(app, menu) }
+      XCTAssertTrue(target.isHittable)
+      return target
+    }
+    app.buttons["conversation-tags"].tap()
+    reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
+    XCTAssertEqual(app.buttons["conversation-tags"].value as? String, "Label 30")
+    app.buttons["conversation-tags"].tap()
+    reach("edit-tags", in: "tag-picker-scroll").tap()
+    reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
+    XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+    app.buttons["Cancel"].tap()
+    app.buttons["conversation-tags"].tap()
+    reach("new-tag", in: "tag-picker-scroll").tap()
+    XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+    app.buttons["Cancel"].tap()
+    app.buttons["conversation-actions"].tap()
+    app.buttons["action-project"].tap()
+    reach("assign-project-collection-12", in: "project-picker-scroll").tap()
+    XCTAssertTrue(app.staticTexts["Collection 12"].waitForExistence(timeout: 5))
+  }
+
+  func testTagLongMenuLight() { captureLongRegistry("light", projects: false) }
+  func testTagLongMenuDark() { captureLongRegistry("dark", projects: false) }
+  func testProjectLongPickerLight() { captureLongRegistry("light", projects: true) }
+  func testProjectLongPickerDark() { captureLongRegistry("dark", projects: true) }
+  private func captureLongRegistry(_ appearance: String, projects: Bool) {
+    capture(
+      "organize-long", appearance, accessibilityText: true, expect: ["conversation-actions"],
+      variant: projects ? "projectsax3" : "tagsax3"
+    ) { app in
+      if projects {
+        app.buttons["conversation-actions"].tap()
+        app.buttons["action-project"].tap()
+      } else {
+        app.buttons["conversation-tags"].tap()
+      }
+      let target = app.buttons[projects ? "assign-project-collection-12" : "new-tag"]
+      let menu = projects ? "project-picker-scroll" : "tag-picker-scroll"
+      for _ in 0..<18 where !target.isHittable { self.swipePicker(app, menu) }
+      XCTAssertTrue(target.isHittable)
+    }
+  }
+
+  func testWakeNewLight() { captureWake("wake-new", "light") }
+  func testWakeNewDark() { captureWake("wake-new", "dark") }
+  func testWakeOnceLight() { captureWake("wake-once", "light") }
+  func testWakeOnceDark() { captureWake("wake-once", "dark") }
+  func testWakeWeeklyLight() { captureWake("wake-weekly", "light") }
+  func testWakeWeeklyDark() { captureWake("wake-weekly", "dark") }
+  func testWakeConflictLight() { captureWake("wake-conflict", "light", conflict: true) }
+  func testWakeConflictDark() { captureWake("wake-conflict", "dark", conflict: true) }
+  func testWakeStatusLight() {
+    capture("wake-once", "light", expect: ["conversation-header"], variant: "status")
+  }
+  func testWakeStatusDark() {
+    capture("wake-once", "dark", expect: ["conversation-header"], variant: "status")
+  }
+  private func openWake(_ app: XCUIApplication) {
+    app.buttons["conversation-actions"].tap()
+    XCTAssertTrue(app.buttons["action-wake"].waitForExistence(timeout: 5))
+    app.buttons["action-wake"].tap()
+    XCTAssertTrue(app.segmentedControls["wake-kind"].waitForExistence(timeout: 5))
+  }
+  private func scrollWake(_ app: XCUIApplication, to target: XCUIElement, down: Bool = false) {
+    for _ in 0..<5 where !target.isHittable {
+      if down {
+        element(app, "wake-scroll").swipeDown()
+      } else {
+        element(app, "wake-scroll").swipeUp()
+      }
+    }
+    XCTAssertTrue(target.isHittable)
+  }
+  private func saveWake(_ app: XCUIApplication) {
+    let save = app.buttons["organize-save"]
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: save)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+    save.tap()
+  }
+  private func captureWake(_ scenario: String, _ appearance: String, conflict: Bool = false) {
+    capture(scenario, appearance, expect: ["conversation-actions"]) { app in
+      self.openWake(app)
+      if conflict {
+        let compact = app.switches["wake-compact-first"]
+        self.scrollWake(app, to: compact)
+        compact.tap()
+        self.saveWake(app)
+        let reload = app.buttons["wake-reload"]
+        XCTAssertTrue(reload.waitForExistence(timeout: 5))
+        self.scrollWake(app, to: reload, down: true)
+      }
+    }
+  }
+  func testWakeCreateWeeklyPauseResumeAndDeleteConfirmation() {
+    let app = launch("wake-new")
+    openWake(app)
+    app.segmentedControls["wake-kind"].buttons["Weekly"].tap()
+    app.buttons["wake-day-1"].tap()
+    app.buttons["wake-add-time"].tap()
+    XCTAssertTrue(app.buttons["wake-remove-time-1"].exists)
+    app.buttons["wake-remove-time-1"].tap()
+    let compact = app.switches["wake-compact-first"]
+    scrollWake(app, to: compact)
+    compact.tap()
+    saveWake(app)
+    XCTAssertTrue(element(app, "wake-editor").waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
+    openWake(app)
+    let toggle = app.buttons["wake-toggle"]
+    XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+    toggle.tap()
+    XCTAssertTrue(app.buttons["Resume schedule"].waitForExistence(timeout: 5))
+    toggle.tap()
+    XCTAssertTrue(app.buttons["Pause schedule"].waitForExistence(timeout: 5))
+    let delete = app.buttons["delete-wake"]
+    scrollWake(app, to: delete)
+    delete.tap()
+    XCTAssertTrue(app.alerts["Delete this schedule?"].waitForExistence(timeout: 5))
+    app.alerts.buttons["Keep schedule"].tap()
+    XCTAssertTrue(delete.exists)
+    delete.tap()
+    app.alerts.buttons["Delete"].tap()
+    XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
+    XCTAssertTrue(element(app, "wake-editor").waitForNonExistence(timeout: 5))
+    openWake(app)
+    XCTAssertTrue(
+      app.descendants(matching: .any).matching(
+        NSPredicate(format: "label BEGINSWITH %@", "New schedule")
+      ).firstMatch.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["delete-wake"].exists)
+    XCTAssertFalse(app.buttons["wake-toggle"].exists)
+  }
+  func testWakeChangedElsewhereLoadsLatestAndKeepsEditorOpen() {
+    let app = launch("wake-conflict")
+    openWake(app)
+    let compact = app.switches["wake-compact-first"]
+    scrollWake(app, to: compact)
+    compact.tap()
+    saveWake(app)
+    let reload = app.buttons["wake-reload"]
+    guard reload.waitForExistence(timeout: 5) else {
+      XCTFail(app.debugDescription)
+      return
+    }
+    scrollWake(app, to: reload, down: true)
+    reload.tap()
+    XCTAssertTrue(app.staticTexts["Scheduled wake-up"].exists)
+    let save = app.buttons["organize-save"]
+    XCTAssertTrue(save.waitForExistence(timeout: 5))
+    XCTAssertFalse(save.isEnabled)
+  }
+
+  func testConversationActionsLight() { captureConversationActions("light") }
+  func testConversationActionsDark() { captureConversationActions("dark") }
+  private func captureConversationActions(_ appearance: String) {
+    capture(
+      "conversation-actions", appearance,
+      expect: ["conversation-actions"]
+    ) { app in
+      app.buttons["conversation-actions"].tap()
+      for id in ["action-archive"] {
+        XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5))
+      }
+    }
+  }
+
+  func testConversationActionsRenameCompactArchiveAndDeleteConfirmation() {
+    let app = launch("conversation-actions")
+    func open() {
+      let button = app.buttons["conversation-actions"]
+      XCTAssertTrue(button.waitForExistence(timeout: 5))
+      button.tap()
+    }
+    element(app, "rename-conversation").tap()
+    let title = app.alerts.textFields["Title"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    title.tap()
+    let previous = title.value as? String ?? ""
+    title.typeText(
+      String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count)
+        + "Orchard outline updated")
+    app.alerts.buttons["Save"].tap()
+    XCTAssertTrue(
+      app.buttons.matching(
+        NSPredicate(
+          format: "identifier == %@ AND label == %@", "rename-conversation",
+          "Orchard outline updated")
+      ).firstMatch.waitForExistence(timeout: 5))
+    app.buttons["context-display"].tap()
+    XCTAssertTrue(app.buttons["compact-context"].waitForExistence(timeout: 5))
+    app.buttons["compact-context"].tap()
+    XCTAssertTrue(
+      app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Compacted")).firstMatch
+        .waitForExistence(timeout: 5))
+    app.buttons["sheet-close"].tap()
+    open()
+    app.buttons["action-archive"].tap()
+    XCTAssertTrue(app.alerts["Archive conversation"].waitForExistence(timeout: 5))
+    app.alerts.buttons["Cancel"].tap()
+    open()
+    app.buttons["action-archive"].tap()
+    app.alerts.buttons["Archive conversation"].tap()
+    XCTAssertTrue(app.buttons["archive-toggle"].waitForExistence(timeout: 5))
+    app.buttons["archive-toggle"].tap()
+    XCTAssertTrue(app.buttons["recent-row-t-atlas-launch"].waitForExistence(timeout: 5))
+    app.buttons["recent-row-t-atlas-launch"].tap()
+    open()
+    let delete = app.buttons["action-delete"]
+    XCTAssertTrue(delete.waitForExistence(timeout: 5))
+    delete.tap()
+    XCTAssertTrue(
+      app.alerts.staticTexts[
+        "Permanently delete this conversation and its attachments? This cannot be undone."
+      ].exists)
+    app.alerts.buttons["Cancel"].tap()
+    XCTAssertTrue(app.buttons["conversation-actions"].exists)
+    open()
+    app.buttons["action-delete"].tap()
+    app.alerts.buttons["Permanently delete"].tap()
+    XCTAssertTrue(app.buttons["archive-toggle"].waitForExistence(timeout: 5))
+  }
+
+  func testProjectPageLight() { captureProject("light") }
+  func testProjectPageDark() { captureProject("dark") }
+  func testProjectSettingsLight() { captureProject("light", settings: true) }
+  func testProjectSettingsDark() { captureProject("dark", settings: true) }
+  func testProjectCreateLight() { captureProject("light", create: true) }
+  func testProjectCreateDark() { captureProject("dark", create: true) }
+  private func captureProject(_ appearance: String, settings: Bool = false, create: Bool = false) {
+    capture(
+      create || settings ? "project-settings" : "project-page", appearance,
+      expect: ["new-project"], variant: create ? "create" : settings ? "edit" : nil
+    ) { app in
+      if create {
+        app.buttons["new-project"].tap()
+      } else {
+        XCTAssertTrue(self.scrollTo(app, "project-row-garden"))
+        app.buttons["project-row-garden"].tap()
+        XCTAssertTrue(self.element(app, "project-page").waitForExistence(timeout: 5))
+        if settings {
+          app.buttons["project-settings-button"].tap()
+        } else if UIDevice.current.userInterfaceIdiom == .pad {
+          let row = app.buttons["project-member-t-atlas-launch"]
+          XCTAssertTrue(row.waitForExistence(timeout: 5))
+          row.tap()
+          XCTAssertEqual(
+            XCTWaiter.wait(
+              for: [
+                XCTNSPredicateExpectation(
+                  predicate: NSPredicate(format: "selected == true"), object: row)
+              ], timeout: 5), .completed)
+        }
+      }
+      if settings || create {
+        XCTAssertTrue(app.textFields["project-name"].waitForExistence(timeout: 5))
+      }
+    }
+  }
+
+  func testProjectMemberKeepsProjectNavigation() {
+    let app = launch("project-page")
+    app.buttons["project-row-garden"].tap()
+    let row = app.buttons["project-member-t-atlas-launch"]
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    row.tap()
+    XCTAssertTrue(element(app, "conversation-header").waitForExistence(timeout: 5))
+    if UIDevice.current.userInterfaceIdiom == .pad {
+      XCTAssertTrue(app.buttons["project-settings-button"].exists)
+      XCTAssertEqual(
+        XCTWaiter.wait(
+          for: [
+            XCTNSPredicateExpectation(
+              predicate: NSPredicate(format: "selected == true"), object: row)
+          ], timeout: 5), .completed)
+    } else {
+      app.buttons["conversation-back"].tap()
+      XCTAssertTrue(app.buttons["project-settings-button"].waitForExistence(timeout: 5))
+    }
+  }
+
+  func testProjectCreateEditAndDeleteCancelConfirm() {
+    let app = launch("project-settings")
+    app.buttons["new-project"].tap()
+    let name = app.textFields["project-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText("Research notes")
+    app.buttons["Blue project color"].tap()
+    let context = app.textFields["project-context"]
+    if context.exists {
+      context.tap()
+      context.typeText("Fictional shared briefing")
+    }
+    app.buttons["organize-save"].tap()
+    XCTAssertTrue(element(app, "project-page").waitForExistence(timeout: 5))
+    app.buttons["project-settings-button"].tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText(" updated")
+    app.buttons["organize-save"].tap()
+    XCTAssertTrue(app.staticTexts["Research notes updated"].waitForExistence(timeout: 5))
+    app.buttons["project-settings-button"].tap()
+    XCTAssertTrue(app.buttons["delete-project"].waitForExistence(timeout: 5))
+    app.buttons["delete-project"].tap()
+    XCTAssertTrue(
+      app.alerts.staticTexts[
+        "Delete this project? Its conversations move back to the agent. This cannot be undone."
+      ].exists)
+    app.alerts.buttons["Cancel"].tap()
+    XCTAssertTrue(name.exists)
+    app.buttons["delete-project"].tap()
+    app.alerts.buttons["Delete project"].tap()
+    XCTAssertTrue(self.element(app, "project-settings").waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["new-project"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["project-row-project-created-1"].exists)
+    XCTAssertTrue(app.buttons["project-row-garden"].exists)
+  }
+
+  func testTagMenuLight() { captureTags("light") }
+  func testTagMenuDark() { captureTags("dark") }
+  func testTagSettingsLight() { captureTags("light", settings: true) }
+  func testTagSettingsDark() { captureTags("dark", settings: true) }
+  func testTagCreateLight() { captureTags("light", create: true) }
+  func testTagCreateDark() { captureTags("dark", create: true) }
+  private func captureTags(_ appearance: String, settings: Bool = false, create: Bool = false) {
+    capture(
+      create || settings ? "tag-settings" : "tag-menu", appearance,
+      expect: ["conversation-tags"], variant: create ? "create" : settings ? "edit" : nil
+    ) { app in
+      app.buttons["conversation-tags"].tap()
+      XCTAssertTrue(app.buttons["tag-menu-research"].waitForExistence(timeout: 5))
+      if create { app.buttons["new-tag"].tap() }
+      if settings {
+        app.buttons["edit-tags"].tap()
+        app.buttons["tag-menu-research"].tap()
+      }
+      if settings || create {
+        XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+      }
+    }
+  }
+
+  func testDashboardTagMenuEntry() {
+    let app = launch("tag-menu")
+    returnToDashboard(app)
+    let row = app.buttons["recent-row-t-atlas-launch"]
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    row.press(forDuration: 1)
+    let tags = app.buttons.matching(
+      NSPredicate(
+        format: "label == %@ AND identifier != %@", "Conversation tags", "conversation-tags")
+    ).firstMatch
+    XCTAssertTrue(tags.waitForExistence(timeout: 5))
+    tags.tap()
+    app.buttons["New tag…"].tap()
+    XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+  }
+
+  func testTagToggleCreateEditAndDeleteCancelConfirm() {
+    let app = launch("tag-menu")
+    let trigger = app.buttons["conversation-tags"]
+    trigger.tap()
+    app.buttons["tag-menu-research"].tap()
+    let noTags = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "No tags"), object: trigger)
+    XCTAssertEqual(XCTWaiter.wait(for: [noTags], timeout: 5), .completed)
+    trigger.tap()
+    app.buttons["tag-menu-research"].tap()
+    let research = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "Research"), object: trigger)
+    XCTAssertEqual(XCTWaiter.wait(for: [research], timeout: 5), .completed)
+    trigger.tap()
+    app.buttons["new-tag"].tap()
+    let name = app.textFields["tag-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText("Planning")
+    app.buttons["Blue tag color"].tap()
+    app.buttons["organize-save"].tap()
+    XCTAssertTrue(trigger.waitForExistence(timeout: 5))
+    trigger.tap()
+    app.buttons["edit-tags"].tap()
+    XCTAssertTrue(app.buttons["tag-menu-tag-created-1"].waitForExistence(timeout: 5))
+    app.buttons["tag-menu-tag-created-1"].tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText(" notes")
+    app.buttons["organize-save"].tap()
+    trigger.tap()
+    app.buttons["edit-tags"].tap()
+    app.buttons["tag-menu-tag-created-1"].tap()
+    XCTAssertTrue(app.buttons["delete-tag"].waitForExistence(timeout: 5))
+    app.buttons["delete-tag"].tap()
+    XCTAssertTrue(
+      app.alerts.staticTexts[
+        "Delete this tag from all conversations? Conversations are kept. This cannot be undone."
+      ].exists)
+    app.alerts.buttons["Cancel"].tap()
+    XCTAssertTrue(name.exists)
+    app.buttons["delete-tag"].tap()
+    app.alerts.buttons["Delete tag"].tap()
+    XCTAssertTrue(self.element(app, "tag-settings").waitForNonExistence(timeout: 5))
+    XCTAssertTrue(trigger.waitForExistence(timeout: 5))
+    XCTAssertEqual(trigger.value as? String, "Research")
+    trigger.tap()
+    XCTAssertTrue(app.buttons["new-tag"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["tag-menu-tag-created-1"].exists)
+  }
+
   func testFidelityChatLight() {
     capture("fidelity-chat", "light", expect: ["message-garden-plan", "composer-field"])
   }
@@ -197,12 +639,17 @@ final class ScenarioTests: XCTestCase {
     app.descendants(matching: .any)[id].firstMatch
   }
 
-  private func launch(_ scenario: String) -> XCUIApplication {
+  private func launch(_ scenario: String, accessibilityText: Bool = false) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = [
       "--scenario", scenario, "--reset-test-data", "-AppleLanguages", "(en)", "-AppleLocale",
       "en_US",
     ]
+    if accessibilityText {
+      app.launchArguments += [
+        "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+      ]
+    }
     app.launch()
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 15))
     return app

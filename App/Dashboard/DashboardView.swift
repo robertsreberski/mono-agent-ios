@@ -18,6 +18,8 @@ struct DashboardView: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Binding var query: String
   let search: ThreadSearchModel
+  @State private var projectEditor: ProjectEditorRequest?
+  @State private var tagEditor: TagEditorRequest?
   @State private var showOffline = false
   @State private var expandedAgents: Set<String> = []
   @State private var loadingOlder = false
@@ -44,7 +46,9 @@ struct DashboardView: View {
   private var bucket: ThreadBucket? { bucketKey.flatMap { store.buckets[$0] } }
 
   private var recentThreads: [WebThread] {
-    (bucket?.threads ?? []).filter(DashboardModel.isRecent)
+    (bucket?.threads ?? []).filter {
+      DashboardModel.isRecent($0) && ($0.archivedAt != nil) == archived
+    }
   }
 
   private var authoritativeFleet: Bool {
@@ -119,6 +123,13 @@ struct DashboardView: View {
       updateSearch()
     }
     .onChange(of: store.isStarted) { updateSearch() }
+    .sheet(item: $tagEditor) { TagSettings(store: store, request: $0) }
+    .sheet(item: $projectEditor) { request in
+      ProjectSettings(store: store, request: request) { project in
+        route = .project(
+          profile: store.profile.id, sourceID: project.sourceId, projectID: project.id)
+      }
+    }
     .task(id: ready) { if ready { updateSearch() } }
   }
 
@@ -411,17 +422,55 @@ struct DashboardView: View {
     return Button {
       route = target
     } label: {
-      ConversationRow(content)
-        .background {
-          if selected {
-            shape.fill(WebColor.surfaceRaised.color).webShadow(.small)
-              .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
-          }
+      VStack(alignment: .leading, spacing: 0) {
+        ConversationRow(content)
+        if let id = target.threadID,
+          let summary =
+            (store.conversations[id]?.thread
+            ?? store.buckets.values.flatMap(\.threads).first { $0.id == id })?.wakeSchedule
+        {
+          WakeScheduleStatus(WakeScheduleModel.status(summary)).padding(.leading, 38).padding(
+            .bottom, 6)
         }
+      }
+      .background {
+        if selected {
+          shape.fill(WebColor.surfaceRaised.color).webShadow(.small)
+            .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+        }
+      }
     }
     .buttonStyle(WebRowButtonStyle())
     .accessibilityAddTraits(selected ? .isSelected : [])
     .accessibilityIdentifier(identifier)
+    .contextMenu {
+      if case .conversation(_, _, let id, _) = target,
+        let thread = store.conversations[id]?.thread
+          ?? store.buckets.values.flatMap(\.threads).first(where: { $0.id == id })
+      {
+        Menu("Conversation tags", systemImage: "tag") {
+          ForEach(store.tags.filter { $0.sourceId == thread.sourceId }, id: \.id) { tag in
+            Button(
+              "\(thread.tagIds.contains(tag.id) ? "Remove" : "Add") \(tag.name)",
+              systemImage: thread.tagIds.contains(tag.id) ? "checkmark" : "tag"
+            ) {
+              let ids =
+                thread.tagIds.contains(tag.id)
+                ? thread.tagIds.filter { $0 != tag.id } : thread.tagIds + [tag.id]
+              Task { try? await store.setConversationTags(threadID: id, tagIDs: ids) }
+            }
+          }
+          Button("New tag…", systemImage: "plus") {
+            tagEditor = .init(sourceID: thread.sourceId, threadID: id)
+          }
+          Menu("Edit tags") {
+            ForEach(store.tags.filter { $0.sourceId == thread.sourceId }, id: \.id) { tag in
+              Button(tag.name) { tagEditor = .init(sourceID: thread.sourceId, tagID: tag.id) }
+            }
+          }
+        }.disabled(!store.canOrganize)
+      }
+    }
   }
 
   // MARK: Running
@@ -514,27 +563,33 @@ struct DashboardView: View {
 
   @ViewBuilder private func projectsSection(now: Date) -> some View {
     let projects = projects
-    if !projects.isEmpty, let agent = selectedAgentID {
+    if let agent = selectedAgentID {
       VStack(alignment: .leading, spacing: 0) {
-        Button {
-          projectsCollapsed.toggle()
-        } label: {
-          HStack(spacing: 6) {
-            Image(systemName: "chevron.down")
-              .font(.system(size: 10, weight: .semibold))
-              .rotationEffect(.degrees(projectsCollapsed ? -90 : 0))
-              .foregroundStyle(WebColor.textMuted.color)
-              .accessibilityHidden(true)
-            sectionHead("Projects", note: projectsCollapsed ? "\(projects.count) hidden" : nil)
+        HStack {
+          Button {
+            projectsCollapsed.toggle()
+          } label: {
+            HStack(spacing: 6) {
+              Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .rotationEffect(.degrees(projectsCollapsed ? -90 : 0))
+                .foregroundStyle(WebColor.textMuted.color)
+                .accessibilityHidden(true)
+              sectionHead("Projects", note: projectsCollapsed ? "\(projects.count) hidden" : nil)
+            }
+            .contentShape(Rectangle())
           }
-          .contentShape(Rectangle())
+          .buttonStyle(.plain)
+          .accessibilityLabel("Projects, \(projects.count)")
+          .accessibilityValue(projectsCollapsed ? "Collapsed" : "Expanded")
+          .accessibilityHint(projectsCollapsed ? "Shows the projects" : "Hides the projects")
+          .accessibilityAddTraits(.isHeader)
+          .accessibilityIdentifier("projects-section")
+          Button("New", systemImage: "plus") { projectEditor = .init(sourceID: agent) }
+            .buttonStyle(.plain).webFont(.footer).foregroundStyle(WebColor.textMuted.color)
+            .frame(minHeight: 44).disabled(!store.canOrganize).accessibilityIdentifier(
+              "new-project")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Projects, \(projects.count)")
-        .accessibilityValue(projectsCollapsed ? "Collapsed" : "Expanded")
-        .accessibilityHint(projectsCollapsed ? "Shows the projects" : "Hides the projects")
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("projects-section")
         if !projectsCollapsed {
           rowList(projects) { project in
             rowButton(

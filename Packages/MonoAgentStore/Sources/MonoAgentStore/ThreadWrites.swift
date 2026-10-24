@@ -2,7 +2,7 @@
 import Foundation
 import MonoAgentKit
 
-enum ThreadWriteOutcome: Sendable { case success, failed, timedOut, cancelled }
+public enum ThreadWriteOutcome: Sendable { case success, failed, timedOut, cancelled }
 /// Per-waiter cancellation never changes the operation's outcome or its ordering barrier.
 actor ThreadWriteSignal {
   private var result: ThreadWriteOutcome?
@@ -41,7 +41,9 @@ actor ThreadWriteSignal {
 }
 extension ConsoleStore {
   public func enqueueThreadWrite(
-    threadID: String, operation: @escaping @Sendable () async throws -> Void
+    threadID: String,
+    onFinish: (@MainActor @Sendable (ThreadWriteOutcome) -> Void)? = nil,
+    operation: @escaping @Sendable () async throws -> Void
   ) {
     let previous = writeTasks[threadID]
     let token = UUID()
@@ -93,6 +95,7 @@ extension ConsoleStore {
         }
       }
       state.cancel = nil
+      onFinish?(outcome ?? .cancelled)
       await state.completionResult.finish(.success)
     }
     state.completion = completion

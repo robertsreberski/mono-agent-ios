@@ -218,3 +218,15 @@ private actor SensitiveErrorTransport: HTTPTransport {
   }
   #expect(decoded == values)
 }
+
+@Test func manualCompactionHasItsOwnLongerRequestBudget() async throws {
+  let client = APIClient(endpoint: try ConsoleEndpoint("https://console.example.ts.net"))
+  let compact = try await client.request(
+    .compact, parameters: ["id": "thread-example"], query: nil, body: ApiEmpty())
+  #expect(compact.timeoutInterval == APIClient.manualCompactionTimeout)
+  #expect(compact.timeoutInterval > 15)
+  let patch = try await client.request(
+    .patchThread, parameters: ["id": "thread-example"], query: nil,
+    body: ApiPatchThread(title: "Title"))
+  #expect(patch.timeoutInterval == 15)
+}

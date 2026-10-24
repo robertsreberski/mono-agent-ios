@@ -50,6 +50,7 @@ struct ConversationContextView: View {
     }
     return content
   }
+  @Environment(\.consoleTheme) private var theme
   @State private var loading = false
   @State private var failed = false
   var body: some View {
@@ -64,8 +65,38 @@ struct ConversationContextView: View {
           Text("Totals could not be refreshed. Unknown values are not zero.").webFont(.contextNote)
           Button("Retry totals") { Task { await refresh() } }
         }
+        if store.agents.first(where: { $0.sourceId == state.thread.sourceId })?
+          .supportsManualCompaction == true
+        {
+          Divider()
+          let busy =
+            store.manualCompactions[state.thread.id] == .pending
+            || state.thread.compaction?.status == "running"
+          HStack(spacing: 12) {
+            Text(
+              busy
+                ? "Summarizing earlier turns…"
+                : store.manualCompactions[state.thread.id]?.statusText(
+                  measuredModel: UsagePresentation.context(
+                    messages: state.messages, thread: state.thread
+                  ).model)
+                  ?? (!store.canCompactConversation(state.thread)
+                    ? "Available when this turn finishes."
+                    : "Summarizes earlier turns to free space.")
+            )
+            .webFont(.contextNote).accessibilityIdentifier("compact-status")
+            Spacer()
+            Button(busy ? "Compacting…" : "Compact") {
+              store.compactConversation(threadID: state.thread.id)
+            }
+            .buttonStyle(.glassProminent).tint(theme.palette.accent.color)
+            .disabled(!store.canCompactConversation(state.thread) || busy)
+            .accessibilityIdentifier("compact-context")
+          }
+        }
       }
     }
+    .onDisappear { store.clearCompactionResult(threadID: state.thread.id) }
     .task(id: String(expanded) + ":" + String(state.thread.revision)) {
       if expanded { await refresh() }
     }

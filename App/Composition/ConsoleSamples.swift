@@ -11,6 +11,17 @@
     case unread = "store-unread"
     case uncertain = "store-uncertain"
     case fidelityChat = "fidelity-chat"
+    case conversationActions = "conversation-actions"
+    case organizeLong = "organize-long"
+    case organizeArchivedSearch = "organize-archived-search"
+    case projectPage = "project-page"
+    case projectSettings = "project-settings"
+    case wakeNew = "wake-new"
+    case wakeOnce = "wake-once"
+    case wakeWeekly = "wake-weekly"
+    case wakeConflict = "wake-conflict"
+    case tagMenu = "tag-menu"
+    case tagSettings = "tag-settings"
     case fidelityDashboard = "fidelity-dashboard"
     case dashboardPopulated = "dashboard-populated"
     case dashboardEmpty = "dashboard-empty"
@@ -54,8 +65,20 @@
       [.conversationImages, .conversationImagesSingle, .conversationImagesEmpty].contains(self)
     }
 
-    var isTranscript: Bool { rawValue.hasPrefix("conversation-") || self == .fidelityChat }
-    var isFidelity: Bool { self == .fidelityChat || self == .fidelityDashboard }
+    var isTranscript: Bool {
+      rawValue.hasPrefix("conversation-") || self == .fidelityChat || self == .conversationActions
+        || self == .tagMenu || self == .tagSettings || rawValue.hasPrefix("wake-")
+        || self == .organizeLong
+    }
+    var isOrganize: Bool {
+      [
+        .conversationActions, .projectPage, .projectSettings, .tagMenu, .tagSettings, .wakeNew,
+        .wakeOnce, .wakeWeekly, .wakeConflict, .organizeLong, .organizeArchivedSearch,
+      ].contains(self)
+    }
+    var isFidelity: Bool {
+      self == .fidelityChat || self == .fidelityDashboard || isOrganize
+    }
 
     /// Composer scenarios are served by a stateful per-instance `ComposerScript`.
     var isComposer: Bool {
@@ -143,6 +166,7 @@
     let theme: String
     let script: ComposerScript?
     let mcp: McpUiScript?
+    let organize: OrganizeScript?
     init(
       _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
       mcp: McpUiScript? = nil
@@ -151,6 +175,8 @@
       self.theme = theme
       self.script = script
       self.mcp = mcp
+      organize =
+        scenario?.isOrganize == true ? OrganizeScript(wakeScenario: scenario?.rawValue) : nil
     }
     func upload(
       _ request: URLRequest, file: URL, progress: @escaping @Sendable (Double) -> Void
@@ -161,6 +187,7 @@
     func send(_ request: URLRequest) async throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
+      if let organize { return try await organize.response(request, theme: theme) }
       if let response = try await mcp?.response(request) { return response }
       if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }
       if let scenario, let response = try RichReplyFixture.response(request, scenario: scenario) {

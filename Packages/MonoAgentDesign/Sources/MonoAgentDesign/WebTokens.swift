@@ -99,6 +99,7 @@ public enum WebType: CaseIterable, Sendable {
   /// `.dashboard-section-count`: 10 / 500.
   case sectionCount
   /// `.dashboard-agent-name`: 18 / 700 / −.01em.
+  case projectName, projectMeta, projectContext, projectFootnote
   case agentName
   /// `.agent-chip-initials`: 12 / 700 / .02em.
   case agentInitials
@@ -205,6 +206,12 @@ public enum WebType: CaseIterable, Sendable {
 
   public var spec: Spec {
     switch self {
+    case .projectName:
+      Spec(size: 22, weight: .bold, tracking: -0.015, lineHeight: 1.15, textStyle: .title2)
+    case .projectMeta:
+      Spec(size: 11, weight: .regular, lineHeight: 1.4, tabular: true, textStyle: .caption)
+    case .projectContext: Spec(size: 12, weight: .regular, lineHeight: 1.5, textStyle: .subheadline)
+    case .projectFootnote: Spec(size: 10, weight: .regular, textStyle: .caption2)
     case .replyName: Spec(size: 12, weight: .bold, textStyle: .subheadline)
     case .replyMeta: Spec(size: 10, weight: .regular, lineHeight: 1.4, textStyle: .caption2)
     case .replyAction: Spec(size: 10, weight: .bold, textStyle: .caption2)

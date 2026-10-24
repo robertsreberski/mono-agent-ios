@@ -87,8 +87,16 @@ class MatrixError(Exception):
 def surface(scenario):
     if scenario.startswith("design-catalog"):
         return "design catalog"
+    if scenario.startswith("project-"):
+        return "project"
+    if scenario.startswith("tag-"):
+        return "tag"
+    if scenario.startswith("wake-"):
+        return "wake schedule"
     if scenario.startswith("dashboard-") or scenario in {"console-online", "fidelity-dashboard"}:
         return "dashboard"
+    if scenario.startswith("organize-"):
+        return "conversation"
     if scenario.startswith("conversation-") or is_composer(scenario) or scenario in {"fidelity-chat", "skill-browser", "peer-question"}:
         return "conversation"
     return "connection"
