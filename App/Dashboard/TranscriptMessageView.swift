@@ -8,6 +8,15 @@ struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
   @State private var gallery = ReplyMessageGallery()
+  #if DEBUG
+    @Environment(\.fixtureReferenceDate) private var referenceDate
+  #endif
+  private var actionDate: Date {
+    #if DEBUG
+      if let referenceDate { return referenceDate }
+    #endif
+    return Date().addingTimeInterval(store.serverClockOffset)
+  }
   private var hasMcp: Bool {
     row.message.parts.contains { if case .mcpApp = $0 { true } else { false } }
   }
@@ -134,7 +143,7 @@ struct TranscriptMessageView: View {
       if isUser { Spacer(minLength: 0) }
       Text(
         DashboardModel.relativeTime(
-          message.createdAt, now: Date().addingTimeInterval(store.serverClockOffset))
+          message.createdAt, now: actionDate)
       )
       .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
       .accessibilityLabel(
@@ -277,7 +286,10 @@ struct TranscriptActivityBand: View {
   let store: ConsoleStore
   @State private var expanded = true
   var body: some View {
-    RunningTimeline(running: TranscriptPresentation.needsElapsedTimeline(status: message.status)) {
+    RunningTimeline(
+      running: TranscriptPresentation.needsElapsedTimeline(status: message.status),
+      offset: { store.serverClockOffset }
+    ) {
       date in
       #if DEBUG
         let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
@@ -315,7 +327,10 @@ struct ReasoningDisclosure: View {
   @State private var userOpen: Bool?
   private var running: Bool { message.status == "running" }
   var body: some View {
-    RunningTimeline(running: TranscriptPresentation.needsElapsedTimeline(status: message.status)) {
+    RunningTimeline(
+      running: TranscriptPresentation.needsElapsedTimeline(status: message.status),
+      offset: { store.serverClockOffset }
+    ) {
       date in
       #if DEBUG
         let _ = PerformanceProbe.body("ReasoningDisclosure.clock")
@@ -325,7 +340,7 @@ struct ReasoningDisclosure: View {
         status: running ? .connecting : .disconnected,
         detail: TranscriptPresentation.elapsed(
           message,
-          now: message.status == "running" ? date.addingTimeInterval(store.serverClockOffset) : date
+          now: date
         ),
         glyph: .reasoning, identifier: "reasoning-disclosure",
         expanded: Binding(
@@ -483,8 +498,10 @@ struct RunAttributionView: View {
           }
         }
       }
-      RunningTimeline(running: TranscriptPresentation.needsElapsedTimeline(status: message.status))
-      { date in
+      RunningTimeline(
+        running: TranscriptPresentation.needsElapsedTimeline(status: message.status),
+        offset: { store.serverClockOffset }
+      ) { date in
         #if DEBUG
           let _ = PerformanceProbe.body("RunAttributionView.clock")
         #endif

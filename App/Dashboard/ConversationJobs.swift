@@ -424,6 +424,9 @@ struct JobCallOutcomes: View {
 private struct ProcessJobElapsed: View {
   let job: ProcessJobProjection
   let offset: TimeInterval
+  #if DEBUG
+    @Environment(\.fixtureReferenceDate) private var referenceDate
+  #endif
   var body: some View {
     if JobPresentation.terminal(job) {
       label(now: Date())
@@ -432,7 +435,12 @@ private struct ProcessJobElapsed: View {
     }
   }
   @ViewBuilder private func label(now: Date) -> some View {
-    if let elapsed = JobPresentation.elapsed(job, now: now.addingTimeInterval(offset)) {
+    #if DEBUG
+      let serverDate = referenceDate ?? now.addingTimeInterval(offset)
+    #else
+      let serverDate = now.addingTimeInterval(offset)
+    #endif
+    if let elapsed = JobPresentation.elapsed(job, now: serverDate) {
       Text(JobPresentation.duration(elapsed)).webFont(.jobMono)
         .accessibilityLabel(
           "Job \(JobPresentation.terminal(job) ? "duration" : "elapsed time") "
