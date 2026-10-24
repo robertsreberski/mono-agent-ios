@@ -1340,6 +1340,20 @@
       "textSize": "accessibility XL (AX3)",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "quote-selection",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "quote-selection",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }
