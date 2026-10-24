@@ -23,7 +23,9 @@ import XCTest
         scenario == "conversation-streaming" ? "transcript-stale" : "transcript-fresh"
       ].firstMatch
       let header = app.descendants(matching: .any)["conversation-top-bar"].firstMatch
-      let top = header.exists ? max(scroll.frame.minY, header.frame.maxY) : scroll.frame.minY
+      let nativeHeader = app.navigationBars.firstMatch
+      let headerBottom = header.exists ? header.frame.maxY : nativeHeader.frame.maxY
+      let top = max(scroll.frame.minY, headerBottom)
       let aligned = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
           notice.exists && notice.frame.midY >= top
