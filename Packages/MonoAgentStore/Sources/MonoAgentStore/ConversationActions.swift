@@ -3,13 +3,12 @@ import Foundation
 import MonoAgentKit
 
 public enum ConversationAction: String, Sendable, Identifiable {
-  case archive, delete, compact
+  case archive, delete
   public var id: String { rawValue }
   public var title: String {
     switch self {
     case .archive: "Archive conversation"
     case .delete: "Permanently delete"
-    case .compact: "Compact context"
     }
   }
   public var confirmation: String {
@@ -18,7 +17,6 @@ public enum ConversationAction: String, Sendable, Identifiable {
       "Archive this conversation? Empty conversations will be permanently removed. Conversations with messages remain available in Archived."
     case .delete:
       "Permanently delete this conversation and its attachments? This cannot be undone."
-    case .compact: "Summarizes earlier turns to free space."
     }
   }
 }
@@ -35,14 +33,21 @@ public enum ManualCompactionState: Sendable, Equatable {
   case pending
   case result(AgentManualCompactionResult)
   case failed
+  case rejected
 
   public var text: String {
     switch self {
+    case .rejected: "Compaction failed."
     case .pending: "Summarizing earlier turns…"
     case .failed: "Connection lost — the outcome is unknown. Refresh this conversation."
     case .result(let result):
       switch result.status {
-      case "succeeded": "Compacted."
+      case "succeeded":
+        if let before = result.tokensBefore, let after = result.tokensAfter {
+          "Compacted · \(UsagePresentation.tokens(before)) → \(result.tokenCountsExact == true ? "" : "≈")\(UsagePresentation.tokens(after))"
+        } else {
+          "Compacted."
+        }
       case "skipped":
         result.reason == "model_changed"
           ? "Switch back to this conversation's model to compact this session."
@@ -81,8 +86,7 @@ extension ConsoleStore {
   public func requestConversationAction(_ action: ConversationAction, threadID: String) {
     guard canOrganize, pendingConversationActions[threadID] == nil,
       let thread = conversations[threadID]?.thread,
-      action != .delete || canDeleteConversation(thread),
-      action != .compact || canCompactConversation(thread)
+      action != .delete || canDeleteConversation(thread)
     else { return }
     conversationActionConfirmation = .init(
       id: UUID(), threadID: threadID, action: action, epoch: epoch, selection: selection)
@@ -108,17 +112,33 @@ extension ConsoleStore {
         }
         store.completeConversationDeletion(thread.id)
       }
-    case .compact:
-      guard canCompactConversation(thread) else { return }
-      manualCompactions[thread.id] = .pending
-      queueConversationOperation(threadID: thread.id) { store, context in
-        let result = try await store.api.compact(id: thread.id, body: .init())
-        guard store.organizeContextIsCurrent(context, threadID: thread.id) else {
-          throw CancellationError()
-        }
-        store.manualCompactions[thread.id] = .result(result)
-      }
+
     }
+  }
+
+  /// One-click, context-popover-only command, matching the web CompactFooter.
+  public func compactConversation(threadID: String) {
+    guard let thread = conversations[threadID]?.thread, canCompactConversation(thread),
+      pendingConversationActions[threadID] == nil
+    else { return }
+    manualCompactions[threadID] = .pending
+    queueConversationOperation(threadID: threadID) { store, context in
+      let result: ApiCompaction
+      do { result = try await store.api.compact(id: threadID, body: .init()) } catch {
+        if store.organizeContextIsCurrent(context, threadID: threadID) {
+          store.manualCompactions[threadID] = error is APIError ? .rejected : .failed
+        }
+        throw error
+      }
+      guard store.organizeContextIsCurrent(context, threadID: threadID) else {
+        throw CancellationError()
+      }
+      store.manualCompactions[threadID] = .result(result)
+    }
+  }
+
+  public func clearCompactionResult(threadID: String) {
+    if manualCompactions[threadID] != .pending { manualCompactions[threadID] = nil }
   }
 
   public func renameConversation(threadID: String, title: String) {
@@ -142,7 +162,24 @@ extension ConsoleStore {
       guard store.organizeContextIsCurrent(context, threadID: threadID) else {
         throw CancellationError()
       }
+      store.observe(threadID)
       store.patchSummary(saved)
+      if body.archived != nil {
+        let archived = saved.archivedAt != nil
+        for key in store.buckets.keys where key.sourceID == saved.sourceId {
+          if key.archived != archived {
+            store.buckets[key]?.threads.removeAll { $0.id == saved.id }
+          } else if store.buckets[key]?.threads.contains(where: { $0.id == saved.id }) == false {
+            store.buckets[key]?.threads.insert(saved, at: 0)
+          }
+        }
+      }
+      for id in store.projectMembers.keys {
+        store.projectMembers[id]?.threads.removeAll { $0.id == saved.id }
+        if saved.projectId == id, saved.archivedAt == nil {
+          store.projectMembers[id]?.threads.insert(saved, at: 0)
+        }
+      }
       // The web archive confirmation explicitly includes removal of empty conversations.
       if body.archived == true, saved.trigger == nil, saved.messageCount == 0 {
         do {
@@ -181,7 +218,7 @@ extension ConsoleStore {
           self.manualCompactions[threadID] = outcome == .cancelled ? nil : .failed
         }
         guard self.organizeContextIsCurrent(context, threadID: threadID) else { return }
-        if outcome == .failed || outcome == .timedOut {
+        if outcome == .failed || outcome == .timedOut, self.manualCompactions[threadID] == nil {
           self.errorMessage = "The conversation change was not confirmed. Refresh before retrying."
         } else if outcome == .success {
           self.errorMessage = nil

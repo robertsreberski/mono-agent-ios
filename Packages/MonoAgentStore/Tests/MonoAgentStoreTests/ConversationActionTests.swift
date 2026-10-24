@@ -60,7 +60,7 @@ struct ConversationActionTests {
     await h.store.stop()
   }
 
-  @Test(arguments: [ConversationAction.archive, .delete, .compact])
+  @Test(arguments: [ConversationAction.archive, .delete])
   func actionsRequireOneShotConfirmationAndCancelNeverWrites(action: ConversationAction)
     async throws
   {
@@ -185,17 +185,21 @@ struct ConversationActionTests {
     await h.store.stop()
   }
 
-  @Test(arguments: [ConversationAction.delete, .compact])
-  func lateDestructiveOrCompactResponseIsDropped(action: ConversationAction) async throws {
-    let h = try await live(archived: action == .delete)
-    let route = action == .compact ? path + "/compact" : path
+  @Test(arguments: ["delete", "compact"])
+  func lateDestructiveOrCompactResponseIsDropped(action: String) async throws {
+    let h = try await live(archived: action == "delete")
+    let route = action == "compact" ? path + "/compact" : path
     await h.transport.set(route, [.paused])
-    h.store.requestConversationAction(action, threadID: "thread-example")
-    h.store.confirmConversationAction(try #require(h.store.conversationActionConfirmation).id)
+    if action == "compact" {
+      h.store.compactConversation(threadID: "thread-example")
+    } else {
+      h.store.requestConversationAction(.delete, threadID: "thread-example")
+      h.store.confirmConversationAction(try #require(h.store.conversationActionConfirmation).id)
+    }
     await eventually { await h.transport.pauseCount() == 1 }
     h.store.selection += 1
     let reply =
-      action == .delete
+      action == "delete"
       ? HTTPResponse(data: Data(), status: 204)
       : HTTPResponse(
         data: Data(
@@ -228,8 +232,7 @@ struct ConversationActionTests {
     let h = try await live()
     let compactPath = path + "/compact"
     await h.transport.set(compactPath, [.paused])
-    h.store.requestConversationAction(.compact, threadID: "thread-example")
-    h.store.confirmConversationAction(try #require(h.store.conversationActionConfirmation).id)
+    h.store.compactConversation(threadID: "thread-example")
     #expect(h.store.manualCompactions["thread-example"] == .pending)
     await eventually { await h.transport.pauseCount() == 1 }
     let result = try decode(

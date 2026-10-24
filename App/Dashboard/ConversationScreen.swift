@@ -10,6 +10,7 @@ struct ConversationScreen: View {
   let model: AppModel
   let store: ConsoleStore
   let route: AppRoute
+  var navigate: (AppRoute?) -> Void = { _ in }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.consoleTheme) private var theme
   @Environment(\.horizontalSizeClass) private var sizeClass
@@ -21,8 +22,10 @@ struct ConversationScreen: View {
   @State private var actionsOpen = false
   @State private var renaming = false
   @State private var renamedTitle = ""
-  @State private var pendingRename = false
   @State private var pendingAction: ConversationAction?
+  @State private var projectPicker = false
+  @State private var projectEditor: ProjectEditorRequest?
+  @State private var pendingProjectEditor: ProjectEditorRequest?
 
   private var threadID: String? { route.threadID ?? createdThreadID }
   private var sourceID: String { route.sourceID ?? "" }
@@ -49,10 +52,7 @@ struct ConversationScreen: View {
           if let error = store.errorMessage {
             ConnectionBanner(.problem, title: "Conversation change", message: error)
           }
-          if let result = store.manualCompactions[threadID] {
-            TranscriptNotice(result.text)
-              .accessibilityIdentifier("manual-compaction-status")
-          }
+
         }
       } else {
         ScrollView {
@@ -103,10 +103,15 @@ struct ConversationScreen: View {
       onScreen = false
       applyVisibility()
     }
+    .sheet(item: $projectEditor) { request in
+      ProjectSettings(store: store, request: request) { project in
+        navigate(
+          .project(profile: store.profile.id, sourceID: project.sourceId, projectID: project.id))
+      }
+    }
     .onChange(of: scenePhase) { applyVisibility() }
     .onChange(of: store.selectedThreadID) {
       actionsOpen = false
-      pendingRename = false
       pendingAction = nil
       renaming = false
       store.cancelConversationAction()
@@ -127,12 +132,14 @@ struct ConversationScreen: View {
       ), presenting: store.conversationActionConfirmation
     ) { request in
       Button("Cancel", role: .cancel) { store.cancelConversationAction() }
-      Button(request.action.title, role: request.action == .compact ? nil : .destructive) {
+      Button(request.action.title, role: .destructive) {
         store.confirmConversationAction(request.id)
       }
     } message: { request in
       Text(request.action.confirmation)
     }
+    .onChange(of: thread?.archivedAt) { old, new in if old != new { navigate(nil) } }
+    .onChange(of: thread?.id) { old, new in if old != nil && new == nil { navigate(nil) } }
     .onChange(of: store.selectedBucket) { applyVisibility() }
   }
 
@@ -217,6 +224,12 @@ struct ConversationScreen: View {
       breadcrumb
       HStack(alignment: .firstTextBaseline, spacing: 7) {
         Text(title)
+          .onTapGesture {
+            renamedTitle = title
+            renaming = true
+          }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityIdentifier("rename-conversation")
           .webFont(.conversationTitle)
           .foregroundStyle(WebColor.text.color)
           .lineLimit(1)
@@ -289,29 +302,46 @@ struct ConversationScreen: View {
 
   /// The web header's trailing conversation menu; no read-only details dead end.
   private func detailsMenu(glass: Bool) -> some View {
-    Button("Conversation actions", systemImage: "ellipsis") { actionsOpen = true }
-      .buttonStyle(WebTileButtonStyle(material: glass ? .glass : .flat))
-      .accessibilityIdentifier("conversation-actions")
-      .disabled(thread == nil)
-      .popover(isPresented: $actionsOpen, arrowEdge: .top) {
-        VStack(spacing: 0) {
-          if let thread {
-            OrganizeMenuRow("Rename conversation", systemImage: "pencil") {
-              actionsOpen = false
-              renamedTitle = thread.title
-              pendingRename = true
-            }
-            .accessibilityIdentifier("action-rename")
-            if agent?.supportsManualCompaction == true {
+    Button("Conversation actions", systemImage: "ellipsis") {
+      projectPicker = false
+      actionsOpen = true
+    }
+    .buttonStyle(WebTileButtonStyle(material: glass ? .glass : .flat))
+    .accessibilityIdentifier("conversation-actions")
+    .disabled(thread == nil)
+    .popover(isPresented: $actionsOpen, arrowEdge: .top) {
+      VStack(spacing: 0) {
+        if let thread {
+          if projectPicker {
+            OrganizeMenuRow("Projects", systemImage: "chevron.left") { projectPicker = false }
+            ForEach(
+              store.projects.filter { $0.sourceId == thread.sourceId && $0.archivedAt == nil },
+              id: \.id
+            ) { project in
               OrganizeMenuRow(
-                "Compact context", systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
+                project.name, systemImage: thread.projectId == project.id ? "checkmark" : "folder"
               ) {
+                store.setConversationProject(threadID: thread.id, projectID: project.id)
                 actionsOpen = false
-                pendingAction = .compact
-              }
-              .disabled(!store.canCompactConversation(thread))
-              .accessibilityIdentifier("action-compact")
+              }.accessibilityIdentifier("assign-project-\(project.id)")
             }
+          } else {
+            OrganizeMenuRow(
+              thread.projectId == nil ? "Add to project" : "Move to project", systemImage: "folder",
+              detail: thread.projectId.flatMap { id in store.projects.first { $0.id == id }?.name }
+            ) { projectPicker = true }
+            .accessibilityIdentifier("action-project")
+            OrganizeMenuRow("New project from this chat", systemImage: "plus") {
+              pendingProjectEditor = .init(sourceID: thread.sourceId, threadID: thread.id)
+              actionsOpen = false
+            }.accessibilityIdentifier("action-new-project")
+            if thread.projectId != nil {
+              OrganizeMenuRow("Remove from project", systemImage: "xmark") {
+                store.setConversationProject(threadID: thread.id, projectID: nil)
+                actionsOpen = false
+              }.accessibilityIdentifier("action-remove-project")
+            }
+
             OrganizeMenuRow(
               thread.archivedAt == nil ? "Archive conversation" : "Restore conversation",
               systemImage: thread.archivedAt == nil ? "archivebox" : "arrow.uturn.backward"
@@ -333,25 +363,26 @@ struct ConversationScreen: View {
             }
           }
         }
-        .disabled(
-          !store.canOrganize || threadID.flatMap { store.pendingConversationActions[$0] } != nil
-        )
-        .padding(4)
-        .frame(idealWidth: 280)
-        .background(WebColor.surfaceRaised.color)
-        .presentationCompactAdaptation(.popover)
-        .onDisappear {
-          // Present only after the toolbar popover releases its presentation owner (iPad).
-          if pendingRename {
-            pendingRename = false
-            renaming = true
-          }
-          if let pendingAction, let threadID {
-            self.pendingAction = nil
-            store.requestConversationAction(pendingAction, threadID: threadID)
-          }
+      }
+      .disabled(
+        !store.canOrganize || threadID.flatMap { store.pendingConversationActions[$0] } != nil
+      )
+      .padding(4)
+      .frame(idealWidth: 280)
+      .background(WebColor.surfaceRaised.color)
+      .presentationCompactAdaptation(.popover)
+      .onDisappear {
+        // Present only after the toolbar popover releases its presentation owner (iPad).
+        if let pendingProjectEditor {
+          self.pendingProjectEditor = nil
+          projectEditor = pendingProjectEditor
+        }
+        if let pendingAction, let threadID {
+          self.pendingAction = nil
+          store.requestConversationAction(pendingAction, threadID: threadID)
         }
       }
+    }
   }
 
   /// The web empty chat: no card and no second title (the header already names it), only a
@@ -427,49 +458,5 @@ private struct InteractivePopRestorer: UIViewControllerRepresentable {
     func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
       (navigationController?.viewControllers.count ?? 0) > 1
     }
-  }
-}
-
-/// A project row's destination until the project page exists (organize feature).
-struct ProjectPlaceholder: View {
-  let store: ConsoleStore
-  let sourceID: String
-  let projectID: String
-  @Environment(\.consoleTheme) private var theme
-
-  private var project: WebProject? {
-    store.projects.first { $0.id == projectID && $0.sourceId == sourceID }
-  }
-
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: DesignSpacing.lg) {
-        VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-          ProjectChip(
-            project?.name ?? "Project", color: LabelColor(serverValue: project?.color))
-          Text(
-            project.map {
-              "\($0.conversationCount) conversation\($0.conversationCount == 1 ? "" : "s")"
-            } ?? ""
-          )
-          .designFont(.supporting).foregroundStyle(.secondary)
-        }
-        .contentSurface()
-        EmptyStateView(
-          "Project page coming soon", systemImage: "folder",
-          message:
-            "Placeholder: the project's conversations, context and settings arrive in a later update."
-        )
-        .contentSurface()
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("project-placeholder")
-      }
-      .padding(DesignSpacing.lg)
-      .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
-      .frame(maxWidth: .infinity)
-    }
-    .background(theme.palette.canvas.color)
-    .navigationTitle(project?.name ?? "Project")
-    .navigationBarTitleDisplayMode(.inline)
   }
 }

@@ -12,7 +12,7 @@ final class ScenarioTests: XCTestCase {
       expect: ["conversation-actions"]
     ) { app in
       app.buttons["conversation-actions"].tap()
-      for id in ["action-rename", "action-archive", "action-compact"] {
+      for id in ["action-archive"] {
         XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5))
       }
     }
@@ -25,8 +25,7 @@ final class ScenarioTests: XCTestCase {
       XCTAssertTrue(button.waitForExistence(timeout: 5))
       button.tap()
     }
-    open()
-    app.buttons["action-rename"].tap()
+    element(app, "rename-conversation").tap()
     let title = app.alerts.textFields["Title"]
     XCTAssertTrue(title.waitForExistence(timeout: 5))
     title.tap()
@@ -37,11 +36,13 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(
       app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Research")).firstMatch
         .waitForExistence(timeout: 5))
-    open()
-    app.buttons["action-compact"].tap()
-    XCTAssertTrue(app.alerts["Compact context"].waitForExistence(timeout: 5))
-    app.alerts.buttons["Compact context"].tap()
-    XCTAssertTrue(app.staticTexts["Compacted."].waitForExistence(timeout: 5))
+    app.buttons["context-display"].tap()
+    XCTAssertTrue(app.buttons["compact-context"].waitForExistence(timeout: 5))
+    app.buttons["compact-context"].tap()
+    XCTAssertTrue(
+      app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Compacted")).firstMatch
+        .waitForExistence(timeout: 5))
+    app.buttons["sheet-close"].tap()
     open()
     app.buttons["action-archive"].tap()
     XCTAssertTrue(app.alerts["Archive conversation"].waitForExistence(timeout: 5))
@@ -49,6 +50,10 @@ final class ScenarioTests: XCTestCase {
     open()
     app.buttons["action-archive"].tap()
     app.alerts.buttons["Archive conversation"].tap()
+    XCTAssertTrue(app.buttons["archive-toggle"].waitForExistence(timeout: 5))
+    app.buttons["archive-toggle"].tap()
+    XCTAssertTrue(app.buttons["recent-row-t-atlas-launch"].waitForExistence(timeout: 5))
+    app.buttons["recent-row-t-atlas-launch"].tap()
     open()
     let delete = app.buttons["action-delete"]
     XCTAssertTrue(delete.waitForExistence(timeout: 5))
@@ -62,11 +67,67 @@ final class ScenarioTests: XCTestCase {
     open()
     app.buttons["action-delete"].tap()
     app.alerts.buttons["Permanently delete"].tap()
+    XCTAssertTrue(app.buttons["archive-toggle"].waitForExistence(timeout: 5))
+  }
+
+  func testProjectPageLight() { captureProject("light") }
+  func testProjectPageDark() { captureProject("dark") }
+  func testProjectSettingsLight() { captureProject("light", settings: true) }
+  func testProjectSettingsDark() { captureProject("dark", settings: true) }
+  func testProjectCreateLight() { captureProject("light", create: true) }
+  func testProjectCreateDark() { captureProject("dark", create: true) }
+  private func captureProject(_ appearance: String, settings: Bool = false, create: Bool = false) {
+    capture(
+      create || settings ? "project-settings" : "project-page", appearance,
+      expect: ["new-project"], variant: create ? "create" : settings ? "edit" : nil
+    ) { app in
+      if create {
+        app.buttons["new-project"].tap()
+      } else {
+        XCTAssertTrue(self.scrollTo(app, "project-row-garden"))
+        app.buttons["project-row-garden"].tap()
+        XCTAssertTrue(self.element(app, "project-page").waitForExistence(timeout: 5))
+        if settings { app.buttons["project-settings-button"].tap() }
+      }
+      if settings || create {
+        XCTAssertTrue(app.textFields["project-name"].waitForExistence(timeout: 5))
+      }
+    }
+  }
+
+  func testProjectCreateEditAndDeleteCancelConfirm() {
+    let app = launch("project-settings")
+    app.buttons["new-project"].tap()
+    let name = app.textFields["project-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText("Research notes")
+    app.buttons["Blue project color"].tap()
+    let context = app.textFields["project-context"]
+    if context.exists {
+      context.tap()
+      context.typeText("Fictional shared briefing")
+    }
+    app.buttons["organize-save"].tap()
+    XCTAssertTrue(element(app, "project-page").waitForExistence(timeout: 5))
+    app.buttons["project-settings-button"].tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText(" updated")
+    app.buttons["organize-save"].tap()
+    XCTAssertTrue(app.staticTexts["Research notes updated"].waitForExistence(timeout: 5))
+    app.buttons["project-settings-button"].tap()
+    XCTAssertTrue(app.buttons["delete-project"].waitForExistence(timeout: 5))
+    app.buttons["delete-project"].tap()
     XCTAssertTrue(
-      app.staticTexts[
-        "Write the first message below. The conversation is created when you send it."
-      ].waitForExistence(timeout: 5)
-        || !app.buttons["conversation-actions"].isEnabled)
+      app.alerts.staticTexts[
+        "Delete this project? Its conversations move back to the agent. This cannot be undone."
+      ].exists)
+    app.alerts.buttons["Cancel"].tap()
+    XCTAssertTrue(name.exists)
+    app.buttons["delete-project"].tap()
+    app.alerts.buttons["Delete project"].tap()
+    XCTAssertTrue(app.buttons["new-project"].waitForExistence(timeout: 5))
   }
 
   func testFidelityChatLight() {

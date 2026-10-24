@@ -12,6 +12,8 @@
     case uncertain = "store-uncertain"
     case fidelityChat = "fidelity-chat"
     case conversationActions = "conversation-actions"
+    case projectPage = "project-page"
+    case projectSettings = "project-settings"
     case fidelityDashboard = "fidelity-dashboard"
     case dashboardPopulated = "dashboard-populated"
     case dashboardEmpty = "dashboard-empty"
@@ -58,8 +60,9 @@
     var isTranscript: Bool {
       rawValue.hasPrefix("conversation-") || self == .fidelityChat || self == .conversationActions
     }
+    var isOrganize: Bool { [.conversationActions, .projectPage, .projectSettings].contains(self) }
     var isFidelity: Bool {
-      self == .fidelityChat || self == .fidelityDashboard || self == .conversationActions
+      self == .fidelityChat || self == .fidelityDashboard || isOrganize
     }
 
     /// Composer scenarios are served by a stateful per-instance `ComposerScript`.
@@ -157,7 +160,7 @@
       self.theme = theme
       self.script = script
       self.mcp = mcp
-      organize = scenario == .conversationActions ? OrganizeScript() : nil
+      organize = scenario?.isOrganize == true ? OrganizeScript() : nil
     }
     func upload(
       _ request: URLRequest, file: URL, progress: @escaping @Sendable (Double) -> Void

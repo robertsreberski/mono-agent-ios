@@ -22,6 +22,7 @@ extension ConsoleStore {
   public func createConversation(
     _ input: ApiCreateThread, retainingAttachments attachmentIDs: [String] = []
   ) async throws -> String {
+    try requireOrganize()
     let generation = epoch
     let selected = selection
     let claim = UUID()
@@ -29,7 +30,7 @@ extension ConsoleStore {
     defer { attachmentClaims[claim] = nil }
     let value = try await api.createThread(body: input)
     let now = await clock.wallNow()
-    guard epoch == generation, selection == selected, !backgrounded else {
+    guard epoch == generation, selection == selected, canOrganize else {
       throw CancellationError()
     }
     hold(.init(thread: value.thread, messages: [], savedAt: now))

@@ -87,6 +87,12 @@
           catalogSection("Banners") { BannerSpecimens() }
           catalogSection("Agent tiles") { AgentTileSpecimens() }
           catalogSection("Tags and projects") { ChipSpecimens() }
+          catalogSection("Organize forms") {
+            OrganizeSheetHeader("New project", saving: false, canSave: true, cancel: {}, save: {})
+            LabelPalette(
+              selection: .constant(.blue), colors: [.standard, .blue, .purple, .amber, .rose],
+              kind: "project")
+          }
           catalogSection("Organize menus") {
             OrganizeMenuRow("Move to project", systemImage: "folder", detail: "Garden planner") {}
             OrganizeMenuRow("Permanently delete", systemImage: "trash", destructive: true) {}

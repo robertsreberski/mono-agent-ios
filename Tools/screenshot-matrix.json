@@ -1096,6 +1096,52 @@
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "project-page",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "project-page",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "project-settings",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "edit"
+    },
+    {
+      "scenario": "project-settings",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "edit"
+    },
+    {
+      "scenario": "project-settings",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "create"
+    },
+    {
+      "scenario": "project-settings",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "create"
     }
   ]
 }
