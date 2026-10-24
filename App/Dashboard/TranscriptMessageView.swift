@@ -7,7 +7,6 @@ import SwiftUI
 struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
-  let startsTurn: Bool
   @State private var gallery = ReplyMessageGallery()
   private var hasMcp: Bool {
     row.message.parts.contains { if case .mcpApp = $0 { true } else { false } }
@@ -71,7 +70,9 @@ struct TranscriptMessageView: View {
           MessageQuote(quote.text)
 
         }
-        ForEach(TranscriptPresentation.activityBands(message.parts)) { band in
+        ForEach(
+          TranscriptPresentation.activityBands(message.parts.filter(TranscriptTelemetry.visible))
+        ) { band in
           if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
             TranscriptActivityBand(parts: band.parts, message: message, store: store)
           } else if band.parts.allSatisfy(TranscriptPresentation.isReplyImage) {
@@ -224,19 +225,19 @@ struct TranscriptPartView: View {
         }
       }
     case .telemetry(let value):
-      if let marker = TranscriptPresentation.compaction(value, running: message.status == "running")
-      {
-        TranscriptMarkerRow(marker, systemImage: "arrow.triangle.2.circlepath")
-      } else if value.event == "context_usage"
-        || UsagePresentation.layers(value.data).contains(where: {
-          $0["kind"] == .string("context_usage")
-        })
-      {
-        Label("Context measurement recorded", systemImage: "chart.pie").designFont(.caption)
-          .foregroundStyle(.secondary)
-      } else {
-        DeferredTranscriptPart(
-          title: value.kind ?? value.event, kind: "Telemetry", feature: "Context viewer")
+      switch TranscriptTelemetry.presentation(value) {
+      case .hidden: EmptyView()
+      case .note(let text):
+        Text(text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
+          .textSelection(.enabled).accessibilityIdentifier("runtime-warning-note")
+      case .compaction:
+        if let marker = TranscriptPresentation.compaction(
+          value, running: message.status == "running")
+        {
+          TranscriptMarkerRow(marker, systemImage: "arrow.triangle.2.circlepath")
+        }
+      case .cron(let run):
+        CronRunTranscriptView(run: run)
       }
     case .unknown:
       Label(
@@ -502,5 +503,29 @@ struct RunAttributionView: View {
       return .unknown(knownSpend: nil)
     }
     return activity.cost
+  }
+}
+
+/// Read-only web CronRunPart presentation; activity reads/reply import belong to automations.
+private struct CronRunTranscriptView: View {
+  let run: TranscriptTelemetry.CronRun
+  @State private var expanded = false
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      TranscriptMarkerRow(run.title + " · " + run.status, systemImage: "clock.arrow.circlepath")
+      if let at = run.orderedAt {
+        Text(TranscriptPresentation.date(at)?.formatted() ?? at).webFont(.messageAction)
+      }
+      if !run.details.isEmpty {
+        ContentDisclosure("cron-run-details-" + run.runID, expanded: $expanded) {
+          ForEach(run.details, id: \.self) { Text($0).webFont(.system).textSelection(.enabled) }
+        } label: {
+          Text("Details").webFont(.messageAction)
+        }
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Cron run " + run.runID + ", " + run.status)
+    .accessibilityIdentifier("cron-run-" + run.runID)
   }
 }

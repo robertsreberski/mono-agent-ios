@@ -20,6 +20,7 @@ public final class ConversationState {
   public internal(set) var truncated: Bool
   /// Stable row identity; a token write invalidates only its own observed row.
   public private(set) var orderedMessageIDs: [String] = []
+  public private(set) var transcriptMessageIDs: [String] = []
   public private(set) var messageStates: [String: TranscriptMessageState] = [:]
   public var turns: [ConversationTurn] {
     var order: [String] = []
@@ -51,6 +52,8 @@ public final class ConversationState {
   }
   private func publishRows() {
     let ids = record.messages.map(\.id)
+    let visible = record.messages.filter(TranscriptTelemetry.visible).map(\.id)
+    if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
     if orderedMessageIDs != ids {
       orderedMessageIDs = ids
       let retained = Set(ids)

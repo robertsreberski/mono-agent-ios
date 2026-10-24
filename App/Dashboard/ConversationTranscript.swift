@@ -65,9 +65,9 @@ struct ConversationTranscript<Header: View>: View {
             )
             .padding(.horizontal, inset(regular: regular))
           }
-          ForEach(Array(state.orderedMessageIDs.enumerated()), id: \.element) { index, id in
+          ForEach(state.transcriptMessageIDs, id: \.self) { id in
             if let row = state.messageStates[id] {
-              TranscriptMessageView(row: row, store: store, startsTurn: startsTurn(index, id: id))
+              TranscriptMessageView(row: row, store: store)
                 .padding(.horizontal, inset(regular: regular))
                 .id(id)
             }
@@ -212,11 +212,6 @@ struct ConversationTranscript<Header: View>: View {
     if let error = store.errorMessage {
       ConnectionBanner(.problem, title: "Conversation update failed", message: error)
     }
-  }
-  private func startsTurn(_ index: Int, id: String) -> Bool {
-    guard index > 0 else { return false }
-    let previous = state.orderedMessageIDs[index - 1]
-    return state.messageStates[id]?.turnID != state.messageStates[previous]?.turnID
   }
   private func hasCompactionResult(since at: String) -> Bool {
     // Only consult bodies while a manual hint exists. Automatic/older results never clear it.
