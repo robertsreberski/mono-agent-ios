@@ -246,13 +246,15 @@ extension ConsoleStore {
     observation &+= 1
     if global && (!bootstrap || !pendingDiscontinuity) {
       bootstrapClock &+= 1
-      freshness = .stale
+      if freshness != .stale { freshness = .stale }
     }
     for id in conversations.keys {
       observations[id] = observation
-      conversations[id]?.freshness = .stale
+      if conversations[id]?.freshness != .stale { conversations[id]?.freshness = .stale }
     }
-    for key in buckets.keys { buckets[key]?.freshness = .stale }
+    for key in buckets.keys where buckets[key]?.freshness != .stale {
+      buckets[key]?.freshness = .stale
+    }
     if bootstrap && !pendingDiscontinuity {
       needsBootstrap = true
       pendingDiscontinuity = true
@@ -324,6 +326,7 @@ extension ConsoleStore {
     stopped = true
     backgrounded = true
     await stopEffects()
+    publishAll()
     // Finish the last authored checkpoint before this lifetime becomes disabled.
     await flushAuthored()
     enabled = false

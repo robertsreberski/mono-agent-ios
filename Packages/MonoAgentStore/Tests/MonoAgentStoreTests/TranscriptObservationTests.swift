@@ -36,7 +36,7 @@ import os
     #expect(state.messageStates["first"] == nil)
     #expect(state.orderedMessageIDs == ["second"])
   }
-  @Test func textDeltasDoNotPublishDerivedChromeAndTerminalIsExact() async throws {
+  @Test func textDeltasHaveNoSpuriousChromeInvalidationAndTerminalIsExact() async throws {
     let h = Harness()
     try h.seed(messages: [sampleMessage()])
     let state = try #require(h.store.conversations["thread-example"])
@@ -59,6 +59,30 @@ import os
     await h.store.apply(try deltaEvent(base: 2, seq: 3, status: "complete"))
     #expect(state.messages[0].seq == 3)
     #expect(state.messages[0].status == "complete")
+  }
+  @Test func stopFlushesPendingPublicationBeforeDisablingStore() async throws {
+    let h = Harness()
+    try h.seed(messages: [sampleMessage()])
+    let state = try #require(h.store.conversations["thread-example"])
+    await h.store.apply(try deltaEvent())
+    #expect(state.messages[0].seq == 1)
+    await h.store.stop()
+    #expect(state.messages[0].seq == 2)
+    #expect(h.store.publicationTask == nil)
+  }
+  @Test func repeatedGapDoesNotInvalidateAlreadyStaleDetail() throws {
+    let h = Harness()
+    try h.seed(messages: [sampleMessage()])
+    let state = try #require(h.store.conversations["thread-example"])
+    h.store.markGap(bootstrap: false)
+    let changed = OSAllocatedUnfairLock(initialState: false)
+    withObservationTracking {
+      _ = state.freshness
+    } onChange: {
+      changed.withLock { $0 = true }
+    }
+    h.store.markGap(bootstrap: false)
+    #expect(!changed.withLock { $0 })
   }
   @Test func relevantTelemetryAndJobWritesUpdateProjections() throws {
     var message = try sampleMessage()
