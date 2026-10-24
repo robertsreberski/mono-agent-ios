@@ -57,7 +57,7 @@ public struct AttachmentChip: View {
           .labelStyle(.iconOnly)
           .font(.system(size: 10, weight: .semibold))
           .buttonStyle(.borderless)
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(material.textMuted.color)
           .frame(minWidth: 24, minHeight: DesignMetrics.minimumHitTarget)
           .contentShape(Rectangle())
       }
@@ -107,10 +107,10 @@ public struct AttachmentChip: View {
     switch phase {
     case .uploading(let fraction):
       Text("Uploading \(Int((min(1, max(0, fraction)) * 100).rounded()))%")
-        .font(.system(size: 9)).foregroundStyle(WebColor.textMuted.color)
+        .font(.system(size: 9)).foregroundStyle(material.textMuted.color)
     case .ready:
       if !detail.isEmpty {
-        Text(detail).font(.system(size: 9)).foregroundStyle(WebColor.textMuted.color)
+        Text(detail).font(.system(size: 9)).foregroundStyle(material.textMuted.color)
       }
     case .failed:
       Label("Upload failed", systemImage: "exclamationmark.triangle.fill")

@@ -8,7 +8,7 @@ import UIKit
 
 /// The floating composer (web Composer.tsx): a Liquid Glass bar with attach, the multiline
 /// field, model/effort and skills, and Send / Queue / Stop. Suggestions and submission status
-/// sit above it on an opaque surface, because they are content, not controls.
+/// sit above it on their own glass surface with a frosted reading veil.
 struct ComposerBar: View {
   @Bindable var controller: ComposerController
   @Environment(\.composerSampleAttachments) private var sampleAttachments
@@ -169,7 +169,7 @@ struct ComposerBar: View {
       toolbar
       if regular {
         Text("⌘↩ to send · / commands · $ skills")
-          .webFont(.composerHint).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.composerHint).foregroundStyle(WebGlass.textMuted.color)
           .lineLimit(1)
           .padding(.horizontal, 2)
           .accessibilityHidden(true)
@@ -192,7 +192,7 @@ struct ComposerBar: View {
   private var field: some View {
     TextField(
       "Message", text: $controller.text, selection: $controller.selection,
-      prompt: Text(affordances.placeholder).foregroundStyle(WebColor.textMuted.color),
+      prompt: Text(affordances.placeholder).foregroundStyle(WebGlass.textMuted.color),
       axis: .vertical
     )
     .lineLimit(1...8)

@@ -31,14 +31,14 @@ struct ModelSelectorMenu: View {
           if parts.count > 1 {
             Text(parts.dropFirst().joined(separator: " · "))
               .webFont(.effortBadge)
-              .foregroundStyle(theme.palette.accent.color)
+              .foregroundStyle(WebColor.text.color)
               .lineLimit(1)
               .padding(.horizontal, 6).padding(.vertical, 3)
-              .background(theme.palette.accentSoft.color, in: RoundedRectangle(cornerRadius: 5))
+              .background(theme.palette.accentInk, in: RoundedRectangle(cornerRadius: 5))
               .fixedSize()
           }
           if controller.hasRunOverride && sizeClass == .regular {
-            Text("custom").webFont(.composerHint).foregroundStyle(WebColor.textMuted.color)
+            Text("custom").webFont(.composerHint).foregroundStyle(WebGlass.textMuted.color)
               .fixedSize()
           }
         } else {
@@ -48,7 +48,7 @@ struct ModelSelectorMenu: View {
         Spacer(minLength: 0)
         Image(systemName: "chevron.down")
           .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(WebGlass.textMuted.color)
       }
       .padding(.leading, 7).padding(.trailing, 5)
       .frame(minHeight: WebMetrics.quietControl)
