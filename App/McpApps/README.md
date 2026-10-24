@@ -75,7 +75,9 @@ connected Store session. `McpStoreGateway` is the sole production forwarding ada
 App → ConsoleStore → CapabilityService → ConsoleAPI. No App API client, credentials or
 capability URL enter WK. PR2 owns native consent presentation, visibility and the live-host
 cap; it must call `teardown()` (or immediate `close()`) when abandoning a bridge.
-The injected presenter must settle pending confirmation when `cancel()` is called.
+PR2 implements the `McpConsentPresenting` protocol; no concrete presentation UI exists here.
+Each `confirm(_:requestID:)` / `cancel(requestID:)` pair is scoped by a fresh UUID so a shared
+presenter cannot cancel a different bridge's prompt. Cancellation must settle only that request.
 
 - Raw JSON-RPC supports initialize, initialized, size, app/host teardown; host tool-input,
   tool-result and host-context notifications; ping (`{}`); and the SDK default display-mode
@@ -88,7 +90,7 @@ The injected presenter must settle pending confirmation when `cancel()` is calle
   sandbox.csp and updateModelContext text/resource/resourceLink/structuredContent set.
   No clipboard-write, camera, microphone or other permissions are advertised. Context has
   theme, inline/available modes, dimensions (width 240–1400, height 160–1600), locale/timeZone,
-  native userAgent, mobile platform and injected touch/hover capabilities. Environment/height
+  BCP 47 locale (as with navigator.language), native userAgent, mobile platform and injected touch/hover capabilities. Environment/height
   changes send context notifications without rebuilding the host. Size bursts coalesce 16 ms.
 - Only resources/read, tools/call, ui/open-link and ui/update-model-context forward. Native
   alone supplies confirmed; app-supplied confirmed is discarded. One consent at a time;
@@ -126,3 +128,15 @@ beside it. Both are test-bundle-only; no SDK code/dependency is installed. DEBUG
 transcript/catalog route. Release checks reject its symbols/strings and test resources.
 The tests inject consent and URL opening; they are not physical gesture, UIKit dialog or
 actual external-browser launch proof. Those UI integrations remain PR2 work.
+
+
+Protocol errors follow ext-apps' delegated SDK Protocol: unknown method **-32601**, invalid
+parameters **-32602**, and a plain handler failure or declined tool/context request **-32603**.
+The web throws plain Error for those declines; open-link decline instead returns isError:true.
+Native messages remain bounded/safe rather than exposing transport/server error prose.
+The native-only handshake/in-flight policy errors deliberately use **-32000**; rate/duplicate
+violations close instead of replying. Access revision changes suppress only stale capability
+adoption, never a completed same-session result or a confirmed effect's response.
+All operations have independent UUID ownership, including repeated initialized notifications
+and a slid-out request ID reused while earlier consent is pending. Teardown cancels every
+operation, and only its own resource-teardown request may send while tearing down.

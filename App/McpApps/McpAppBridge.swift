@@ -15,6 +15,9 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
   private(set) var host: McpAppHost?
   #if DEBUG
     var debugEnvelopeObserver: ((Data) -> Void)?
+    var debugBeforeSend: (@MainActor (JSONValue) async -> Void)?
+    private(set) var debugCompletedOperations = 0
+    var debugOperationCount: Int { operations.count }
   #endif
   private(set) var inFlight = 0
   private let gateway: any McpAppRequestGateway
@@ -23,9 +26,9 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
   private var resource: ApiMcpAppResource?
   private var environment: McpHostEnvironment
   @ObservationIgnored private let now: @MainActor () -> TimeInterval
-  @ObservationIgnored private var operations: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var operations: [UUID: Task<Void, Never>] = [:]
   @ObservationIgnored private var recentIDs: [McpRpcID] = []
-  @ObservationIgnored private var pendingConsent = false
+  @ObservationIgnored private var pendingConsent: UUID?
   @ObservationIgnored private var starting = false
   @ObservationIgnored private var tokens: Double = 40
   @ObservationIgnored private var lastTick: TimeInterval
@@ -132,14 +135,14 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
     if recentIDs.count > 256 { recentIDs.removeFirst() }
     guard state != .tearingDown else { return }
     guard inFlight < 4 else {
-      launch("busy:" + id.key) { [weak self] in
+      launch { [weak self] in
         await self?.reply(
           id, failure: .init(code: -32000, message: "The app has too many pending requests."))
       }
       return
     }
     inFlight += 1
-    launch(id.key) { [weak self] in
+    launch { [weak self] in
       guard let self else { return }
       defer { self.inFlight = max(0, self.inFlight - 1) }
       do {
@@ -161,17 +164,21 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
           id,
           failure: (error as? McpBridgeFailure)
             ?? .init(
-              code: -32000,
+              code: -32603,
               message: self.retryRequiresConsent
                 ? "App access expired; explicit retry is required." : "The MCP App request failed.")
         )
       }
     }
   }
-  private func launch(_ key: String, _ operation: @escaping @MainActor () async -> Void) {
+  private func launch(_ operation: @escaping @MainActor () async -> Void) {
+    let key = UUID()
     operations[key] = Task { [weak self] in
       await operation()
       self?.operations[key] = nil
+      #if DEBUG
+        self?.debugCompletedOperations += 1
+      #endif
     }
   }
   private func assertActive() throws {
@@ -213,7 +220,7 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
         result[mcp: "isError"] == nil || result[mcp: "isError"] == .bool(true)
           || result[mcp: "isError"] == .bool(false)
       else {
-        throw McpBridgeFailure(code: -32000, message: "The tool returned an invalid result.")
+        throw McpBridgeFailure(code: -32603, message: "The tool returned an invalid result.")
       }
       return result
     case "resources/read":
@@ -223,7 +230,7 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
             && (item[mcp: "text"]?.mcpString != nil || item[mcp: "blob"]?.mcpString != nil)
         })
       else {
-        throw McpBridgeFailure(code: -32000, message: "The resource returned an invalid result.")
+        throw McpBridgeFailure(code: -32603, message: "The resource returned an invalid result.")
       }
       return result
     case "ui/open-link":
@@ -239,7 +246,7 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
     case "ui/update-model-context":
       guard result[mcp: "accepted"] == .bool(true) else {
         throw McpBridgeFailure(
-          code: -32000,
+          code: -32603,
           message: McpAppWire.boundedText(result[mcp: "reason"]?.mcpString, limit: 500)
             ?? "The host did not apply the context update.")
       }
@@ -248,9 +255,10 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
     }
   }
   private func requestConfirmation(_ method: String, params: JSONValue) async -> Bool {
-    guard !pendingConsent else { return false }
-    pendingConsent = true
-    defer { pendingConsent = false }
+    guard pendingConsent == nil else { return false }
+    let requestID = UUID()
+    pendingConsent = requestID
+    defer { if pendingConsent == requestID { pendingConsent = nil } }
     let prompt: McpConsentPrompt
     if method == "tools/call" {
       let name =
@@ -271,7 +279,7 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
         method: method, title: "Allow app context update?",
         detail: "The app wants to prepare context for a future model turn.", argumentPreview: nil)
     }
-    return await consent.confirm(prompt)
+    return await consent.confirm(prompt, requestID: requestID)
   }
   private func notification(_ method: String, params: JSONValue?) {
     guard params == nil || params?.mcpObject != nil else { return }
@@ -286,7 +294,7 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
         resource?.toolInput?.mcpObject.map { JSONValue.object(["arguments": .object($0)]) }
         ?? .object([:])
       let result = McpAppWire.initialToolResult(resource?.toolResult)
-      launch("initialized") { [weak self] in
+      launch { [weak self] in
         await self?.sendNotification("ui/notifications/tool-input", params: input)
         await self?.sendNotification("ui/notifications/tool-result", params: result)
       }
@@ -340,7 +348,13 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
     await send(.object(["jsonrpc": .string("2.0"), "method": .string(method), "params": params]))
   }
   private func send(_ value: JSONValue) async {
-    guard state != .closed, let host else { return }
+    #if DEBUG
+      await debugBeforeSend?(value)
+    #endif
+    guard !Task.isCancelled, state != .closed,
+      state != .tearingDown || value[mcp: "method"] == .string("ui/resource-teardown"),
+      let host
+    else { return }
     do {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.withoutEscapingSlashes]
@@ -360,7 +374,7 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
         guard !Task.isCancelled else { return }
         self?.close(reason: "The interactive app closed. Reopen to load it again.")
       }
-      launch("teardown") { [weak self] in
+      launch { [weak self] in
         await self?.send(
           .object([
             "jsonrpc": .string("2.0"), "id": id.value, "method": .string("ui/resource-teardown"),
@@ -376,9 +390,9 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
     sizeTask?.cancel()
     sizeTask = nil
     requestedHeight = nil
-    if pendingConsent {
-      pendingConsent = false
-      consent.cancel()
+    if let requestID = pendingConsent {
+      pendingConsent = nil
+      consent.cancel(requestID: requestID)
     }
   }
   func close(reason: String = "The interactive app closed. Reopen to load it again.") {
@@ -401,7 +415,7 @@ final class McpAppBridge: McpAppEnvelopeDelegate {
     for operation in operations.values { operation.cancel() }
     sizeTask?.cancel()
     teardownTask?.cancel()
-    consent.cancel()
+    if let requestID = pendingConsent { consent.cancel(requestID: requestID) }
     gateway.onInvalidation = nil
     gateway.close()
     host?.close()

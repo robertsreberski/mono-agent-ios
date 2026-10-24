@@ -12,9 +12,9 @@ struct McpConsentPrompt: Equatable {
 }
 
 @MainActor protocol McpConsentPresenting: AnyObject {
-  func confirm(_ prompt: McpConsentPrompt) async -> Bool
-  /// Must dismiss/settle any pending native presentation, including on scene/selection change.
-  func cancel()
+  func confirm(_ prompt: McpConsentPrompt, requestID: UUID) async -> Bool
+  /// Dismiss/settle only this request, never a different bridge's presentation.
+  func cancel(requestID: UUID)
 }
 @MainActor protocol McpLinkOpening: AnyObject {
   func open(_ url: URL) async -> Bool
@@ -61,7 +61,7 @@ struct McpConsentPrompt: Equatable {
 struct McpHostEnvironment {
   var theme = "light"
   var width: Double = 880
-  var locale = Locale.current.identifier
+  var locale = Locale.current.identifier(.bcp47)
   var timeZone = TimeZone.current.identifier
   var userAgent = "mono-agent iOS"
   var touch = true

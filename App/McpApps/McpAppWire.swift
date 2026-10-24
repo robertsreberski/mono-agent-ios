@@ -41,7 +41,7 @@ struct McpBridgeFailure: Error {
   let code: Int
   let message: String
   static let invalidParams = Self(code: -32602, message: "Invalid MCP App parameters.")
-  static let declined = Self(code: -32000, message: "The user declined the MCP App request.")
+  static let declined = Self(code: -32603, message: "The user declined the MCP App request.")
 }
 
 /// Native validation, not a general JSON Schema interpreter. Unknown methods never forward.

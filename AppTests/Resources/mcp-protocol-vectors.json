@@ -358,5 +358,12 @@
       "resourceLink": {},
       "structuredContent": {}
     }
-  }
+  },
+  "errorCodes": {
+    "declined": -32603,
+    "handlerFailure": -32603,
+    "unknownMethod": -32601,
+    "invalidParams": -32602
+  },
+  "errorCodeSource": "ext-apps 1.7.5 delegates to SDK Protocol; peer SDK 1.29.0 shared/protocol.ts maps plain Error to InternalError and missing handler to MethodNotFound. Web tool/context declines throw plain Error; open-link declines return isError:true."
 }

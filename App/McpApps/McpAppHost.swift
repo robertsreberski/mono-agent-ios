@@ -12,6 +12,7 @@ final class McpAppHost: NSObject {
   private(set) var retirementReason: String?
   private(set) var innerLoaded = false
   #if DEBUG
+    private(set) var debugSendAttempts: [Data] = []
     var navigationDecisions: [String] { webView.policy.navigationDecisions }
     var responseDecisions: [String] { webView.policy.responseDecisions }
   #endif
@@ -96,6 +97,9 @@ final class McpAppHost: NSObject {
 
   /// Mirrors the web proxy's raw JSON-RPC relay. Session secrets stay in the isolated world.
   func sendEnvelope(_ envelope: Data) async throws {
+    #if DEBUG
+      debugSendAttempts.append(envelope)
+    #endif
     guard !isRetired, innerLoaded,
       envelope.count <= McpAppBridgeListener.maximumEnvelopeBytes,
       let payload = try JSONSerialization.jsonObject(with: envelope) as? [String: Any],
