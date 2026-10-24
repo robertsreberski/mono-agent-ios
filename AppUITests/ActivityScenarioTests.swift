@@ -119,7 +119,10 @@ import XCTest
       element(app, "conversation-header").descendants(matching: .any)["context-display"].exists,
       "Activity is no longer in the conversation header")
     XCTAssertTrue(element(app, "conversation-header").exists)
-    XCTAssertTrue(app.staticTexts["Native transcript sample"].firstMatch.exists)
+    let title = element(app, "rename-conversation")
+    XCTAssertTrue(title.exists)
+    XCTAssertEqual(title.label, "Native transcript sample")
+    XCTAssertEqual(title.elementType, .button)
     if scenario != "conversation-context" {
       XCTAssertTrue(element(app, "composer-dock-scroll").exists)
       XCTAssertTrue(element(app, "job-stack").exists)

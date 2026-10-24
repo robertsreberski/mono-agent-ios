@@ -241,17 +241,24 @@ struct ConversationScreen: View {
     VStack(alignment: .leading, spacing: 3) {
       breadcrumb
       HStack(alignment: .firstTextBaseline, spacing: 7) {
-        Text(title)
-          .onTapGesture {
-            renamedTitle = title
-            renaming = true
-          }
-          .accessibilityAddTraits(.isButton)
-          .accessibilityIdentifier("rename-conversation")
-          .webFont(.conversationTitle)
-          .foregroundStyle(WebColor.text.color)
-          .lineLimit(1)
-          .accessibilityAddTraits(.isHeader)
+        Button {
+          renamedTitle = title
+          renaming = true
+        } label: {
+          Text(title)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint("Rename conversation")
+        .disabled(
+          !store.canOrganize || thread == nil
+            || threadID.flatMap { store.pendingConversationActions[$0] } != nil
+        )
+        .accessibilityIdentifier("rename-conversation")
+        .webFont(.conversationTitle)
+        .foregroundStyle(WebColor.text.color)
+        .lineLimit(1)
+        .accessibilityAddTraits(.isHeader)
         if let runStatus { runStateBadge(runStatus) }
       }
     }
