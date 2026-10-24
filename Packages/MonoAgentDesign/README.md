@@ -74,7 +74,8 @@ The app mirrors the web console's `styles.css`, not generic iOS metrics:
 
 Glass stays limited to floating chrome: header tiles and back button, the composer root and
 job shelf, footer/jump pills and system sheets. Their Reduce Transparency fallback is the
-opaque web fill (`floatingGlass(in:tint:opaqueFill:)`).
+opaque web fill (`floatingGlass(in:tint:opaqueFill:opaqueStroke:)`). Inside glass, web
+surfaces become `WebGlass` inks (see GLASS-RULES.md).
 
 ## Tokens
 
@@ -112,11 +113,18 @@ opaque web fill (`floatingGlass(in:tint:opaqueFill:)`).
 | Rich replies | `ReplyFileCard`, `ReplyFailureCard`, `ReplyImageTile`, `ReplyLightbox`, `RestartProposalCard` | Value-driven opaque web surfaces; local-image lightbox has swipe, bounded zoom, share and floating chrome; restart requires explicit confirmation actions |
 | Context/cost | `ContextDisplay(_:expanded:)`, `ContextDisplayContent` | Value-only disclosure; header or composer placement, explicit unknown/partial labels, AX-stacked rows |
 | Route | `RouteBadge(model:effort:detail:)` | Read-only route label with full accessible provenance, not evidence of a run |
+| Sheets on glass | `WebSheetHeader(_:subtitle:closeLabel:closeIdentifier:divider:onClose:)`, `WebSheetSection(_:detail:divider:grouped:content:)`, `WebHairline(leading:trailing:)`, `.webGlassGroup(cornerRadius:outlined:)`, `.webGlassLegibilityVeil()`, `WebGlass`, `GlassInk` | Content drawn directly on a system sheet/popover material or the job shelf glass: hairline sections, translucent inks, AA-adjusted text roles (GLASS-RULES.md) |
 
 Every component file has `#Preview`s across the four themes, dark mode, accessibility sizes
 and/or the opaque fallback. Previews and their `DesignPreviewMatrix` helper are DEBUG-only.
 
 ## Glass rules
+
+**Read [GLASS-RULES.md](GLASS-RULES.md) first.** Content is web: solid web tokens. Floating
+chrome (header controls, composer, job shelf, menus, popovers, sheets) is one Liquid Glass
+material per surface, with no solid web fill on or inside it. Its glass tokens are
+`WebGlass`, `GlassInk`, `WebHairline`, `WebSheetHeader`, `WebSheetSection` and
+`.webGlassGroup()`. The summary below predates it and still applies.
 
 - System navigation bars, toolbars, tab bars and sheets adopt Liquid Glass automatically.
   Prefer them.
