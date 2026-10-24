@@ -79,15 +79,16 @@ The medium-detent glass lets strong content show through. Measured on the iOS 27
 
 No text colour fixes this, and vibrancy measured worse in the common case (see below). So
 every text-carrying sheet lays the web raised surface over the material. Its opacity is the
-lowest that keeps `WebGlass.textMuted` ≥ 4.5:1 over those two bleeds:
+lowest that keeps `WebGlass.textMuted` ≥ 4.5:1 over those two bleeds, including the
+quiet group and selected-row inks (not just the bare veil):
 
 | Veil | Light | Dark | Guarantee | Test |
 |---|---|---|---|---|
-| `WebGlass.sheetVeil` | 55% | 55% | Muted, soft and primary text AA (4.52:1 light, 4.51:1 dark). A 1% lower veil drops muted text to 4.48:1 / 4.45:1. | `GlassSheetTests.sheetVeilsKeepAAOverBleed`, `sheetVeilIsTheMinimum` |
+| `WebGlass.sheetVeil` | 69% | 80% | Muted, soft and primary text AA, including selected ink (4.52:1 light, 4.53:1 dark). A 1% lower veil fails AA on selected ink. | `GlassSheetTests.sheetVeilsKeepAAOverBleed`, `sheetVeilIsTheMinimum` |
 | `WebGlass.consentVeil` | 75% | 75% | Accent text AA as well | same |
 
 The Markdown dark capture alone needs no veil (6.16:1). The dark value is bound by the
-brighter MCP-frame bleed. Accent text on a 55% dark sheet can still drop below AA over a
+brighter MCP-frame bleed. Accent text on a standard dark sheet can still drop below AA over a
 very bright frame. Consent, where the accent names the tool method, uses the stronger veil.
 This mirrors the web: its sheets are opaque raised surfaces, and its MCP confirmation is
 `--surface-raised` at 96% over a blurred frame.
@@ -103,7 +104,7 @@ This mirrors the web: its sheets are opaque raised surfaces, and its MCP confirm
 | `WebGlass.textSoft` | web `--text-soft` | Passes AA everywhere (≥ 4.98:1) |
 | `WebGlass.textMuted` | light `--text-soft`; dark muted lifted 60% toward soft | The web muted is **4.34:1** on light glass (`#e3e3e0`) and 3.9:1 on the dark group ink. Both are adjusted. |
 | `WebGlass.accentText` | light `--accent-strong`; dark `--accent` | The light `--accent` is 4.48:1 on light glass |
-| `WebGlass.sheetVeil` | `--surface-raised` 55% | Every text-carrying sheet and popover |
+| `WebGlass.sheetVeil` | `--surface-raised` 69% light / 80% dark | Every text-carrying sheet and popover |
 | `WebGlass.consentVeil` | `--surface-raised` 75% | Consent prompts |
 | `palette.accentInk` | `--accent` 12% / 20% | `--accent-soft` icon tiles and selections as ink |
 
@@ -119,7 +120,7 @@ when a dark code block bleeds through the glass: 4.4:1, against 2.5:1 for the we
 the plain material and at the opaque large detent, though, it renders as a pale grey:
 3.2:1 (`#7e7e7b` on `#e4e4e1`) and 3.44:1 (`#8a8a8e` on white). In dark mode it measured 3.3:1. The web-derived colours above are therefore the
 default. Over very strong bleed (a dark code block directly behind the light medium sheet),
-secondary text can still drop below AA. This is listed as an open design question.
+these colours alone are insufficient; the approved frosted veil now resolves that case.
 
 ## Apple guidance this relies on
 

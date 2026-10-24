@@ -343,7 +343,9 @@ struct PeerQuestionAnswerSheet: View {
           Text(question.message).textSelection(.enabled)
         } footer: {
           Text("Untrusted peer text; not owner approval. The agent answers through PeerAgent.")
+            .foregroundStyle(WebGlass.textMuted.color)
         }
+        .listRowBackground(WebGlass.groupFill.color)
         ForEach(fields) { field in
           Section {
             if let description = field.description {
@@ -374,19 +376,28 @@ struct PeerQuestionAnswerSheet: View {
           } header: {
             Text(
               field.label + (field.required ? " · required" : "")
-                + (field.multiple ? " · choose any" : ""))
+                + (field.multiple ? " · choose any" : "")
+            )
+            .foregroundStyle(WebGlass.textMuted.color)
           }
+          .listRowBackground(WebGlass.groupFill.color)
         }
-        Section("Note to your agent") {
+        Section {
           TextField("Optional context", text: $note, axis: .vertical)
             .webInput()
             .disabled(!open)
             .accessibilityIdentifier("peer-note")
+        } header: {
+          Text("Note to your agent").foregroundStyle(WebGlass.textMuted.color)
         }
-        Section("Raw form") {
+        .listRowBackground(WebGlass.groupFill.color)
+        Section {
           Text("questionId " + question.questionId).webFont(.askDetail)
           CodeDocumentView(source: rawSchema, language: "JSON schema")
+        } header: {
+          Text("Raw form").foregroundStyle(WebGlass.textMuted.color)
         }
+        .listRowBackground(WebGlass.groupFill.color)
         if let error {
           StatusIndicator(.failed, label: error)
         }
@@ -394,7 +405,6 @@ struct PeerQuestionAnswerSheet: View {
       // On the sheet material: the frosted veil behind, rows as quiet ink (GLASS-RULES.md).
       .scrollContentBackground(.hidden)
       .webFont(.contextNote)
-      .listRowBackground(WebGlass.groupFill.color)
       .navigationTitle("Peer question")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

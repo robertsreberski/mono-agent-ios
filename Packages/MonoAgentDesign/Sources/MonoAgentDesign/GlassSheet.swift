@@ -54,8 +54,8 @@ public enum WebGlass {
   /// The frosted veil every text-carrying sheet and popover lays over the system material
   /// (`webSheetVeil()`): the web raised surface at the lowest opacity that keeps
   /// `textMuted` AA over the busiest sampled bleed — light glass over a dark code block
-  /// (`#9b9e9b`, ≥ 55%) and dark glass over a light app frame (`#6a706d`, ≥ 55%).
-  public static let sheetVeil = GlassInk(WebColor.surfaceRaised, light: 0.55, dark: 0.55)
+  /// (`#9b9e9b`) and dark glass over a light app frame (`#6a706d`), including selection ink.
+  public static let sheetVeil = GlassInk(WebColor.surfaceRaised, light: 0.69, dark: 0.80)
   /// The stronger consent veil (`webSheetVeil(.consent)`): every role, accent included,
   /// keeps AA over arbitrary third-party content.
   public static let consentVeil = GlassInk(WebColor.surfaceRaised, light: 0.75, dark: 0.75)
@@ -89,6 +89,9 @@ public enum WebGlass {
 public enum WebMaterial: Sendable {
   case content
   case glass
+
+  /// Muted reading text follows the layer without changing solid-web screens.
+  public var textMuted: AdaptiveColor { self == .glass ? WebGlass.textMuted : WebColor.textMuted }
 }
 
 /// The strength of a sheet veil (GLASS-RULES.md).

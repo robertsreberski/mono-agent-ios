@@ -217,6 +217,7 @@ struct MarkdownTableView: View {
 /// `.block` is the web markdown `pre`: rail fill, 1 px line, radius 10, padding 13×15 and a
 /// Copy action below. `.payload` is the quieter tool/job payload panel.
 public struct CodeDocumentView: View {
+  @Environment(\.webMaterial) private var material
   public enum Style: Sendable { case block, payload }
   private let source: String
   private let language: String
@@ -252,7 +253,7 @@ public struct CodeDocumentView: View {
       .accessibilityLabel("\(language) code").accessibilityIdentifier("code-content")
       if source.utf8.count > 16_384 {
         Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.")
-          .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.messageAction).foregroundStyle(material.textMuted.color)
       }
       MessageActionButton("Copy", systemImage: "doc.on.doc") {
         UIPasteboard.general.string = source
@@ -265,7 +266,7 @@ public struct CodeDocumentView: View {
     return VStack(alignment: .leading, spacing: 6) {
       HStack {
         Text(language.isEmpty ? "Code" : language)
-          .webFont(.activityLabel).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.activityLabel).foregroundStyle(material.textMuted.color)
         Spacer()
         MessageActionButton("Copy", systemImage: "doc.on.doc") {
           UIPasteboard.general.string = source
@@ -280,12 +281,13 @@ public struct CodeDocumentView: View {
       }.accessibilityLabel("\(language) code").accessibilityIdentifier("code-content")
       if source.utf8.count > 16_384 {
         Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.")
-          .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.messageAction).foregroundStyle(material.textMuted.color)
       }
     }
     .padding(.vertical, 6).padding(.horizontal, 10)
-    .background(theme.palette.canvas.mixed(55, with: WebColor.surface).color, in: shape)
-    .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+    .webLayeredSurface(
+      shape, fill: theme.palette.canvas.mixed(55, with: WebColor.surface).color,
+      stroke: WebColor.line.color)
   }
 }
 #if DEBUG

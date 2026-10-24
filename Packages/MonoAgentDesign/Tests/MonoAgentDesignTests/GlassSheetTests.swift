@@ -56,9 +56,15 @@ struct GlassSheetTests {
     for scheme in schemes {
       let bleed = WebGlass.sampledBleed(scheme)
       let sheet = WebGlass.sheetVeil.composited(over: bleed, scheme)
-      for role in [WebColor.text, WebGlass.textSoft, WebGlass.textMuted] {
-        let ratio = role.resolved(scheme).contrastRatio(with: sheet)
-        #expect(ratio >= 4.5, "\(scheme) \(role.resolved(scheme)) on \(sheet): \(ratio)")
+      let grounds = [
+        sheet, WebGlass.groupFill.composited(over: sheet, scheme),
+        WebGlass.selectedFill.composited(over: sheet, scheme),
+      ]
+      for ground in grounds {
+        for role in [WebColor.text, WebGlass.textSoft, WebGlass.textMuted] {
+          let ratio = role.resolved(scheme).contrastRatio(with: ground)
+          #expect(ratio >= 4.5, "\(scheme) \(role.resolved(scheme)) on \(ground): \(ratio)")
+        }
       }
       let consent = WebGlass.consentVeil.composited(over: bleed, scheme)
       for role in [
@@ -76,9 +82,15 @@ struct GlassSheetTests {
       let veil = WebGlass.sheetVeil
       let lower = GlassInk(
         veil.base, light: veil.lightOpacity - 0.01, dark: veil.darkOpacity - 0.01)
-      let ground = lower.composited(over: WebGlass.sampledBleed(scheme), scheme)
+      let sheet = lower.composited(over: WebGlass.sampledBleed(scheme), scheme)
+      let ground = WebGlass.selectedFill.composited(over: sheet, scheme)
       #expect(WebGlass.textMuted.resolved(scheme).contrastRatio(with: ground) < 4.5)
     }
+  }
+
+  @Test func mutedTextFollowsItsLayer() {
+    #expect(WebMaterial.content.textMuted == WebColor.textMuted)
+    #expect(WebMaterial.glass.textMuted == WebGlass.textMuted)
   }
 
   @Test func inksStayTranslucentAndQuiet() {

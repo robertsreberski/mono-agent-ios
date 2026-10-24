@@ -242,6 +242,7 @@ private struct ConsoleRow: View {
   let open: () -> Void
   let edit: () -> Void
   let remove: () -> Void
+  @Environment(\.webMaterial) private var material
 
   private var title: String {
     console.name.isEmpty
@@ -254,7 +255,7 @@ private struct ConsoleRow: View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
           Text(title).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
           // One line in the list; the detail screen shows the full, selectable address.
-          Text(console.endpoint.origin).webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+          Text(console.endpoint.origin).webFont(.notice).foregroundStyle(material.textMuted.color)
             .lineLimit(1).truncationMode(.middle)
           ViewThatFits(in: .horizontal) {
             HStack(spacing: DesignSpacing.md) { indicators }
@@ -289,6 +290,7 @@ private struct ConsoleDetail: View {
   let registry: ConnectionRegistry
   let ready: Bool
   let dashboardOpen: Bool
+  @Environment(\.webMaterial) private var material
   @Environment(\.consoleTheme) private var theme
 
   private var state: ConnectionState { registry.states[console.id] ?? .disconnected }
@@ -300,7 +302,7 @@ private struct ConsoleDetail: View {
           ConnectionBanner(.storage, title: "Storage warning", message: error)
         }
         VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-          Text("Address").webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+          Text("Address").webFont(.notice).foregroundStyle(material.textMuted.color)
           Text(console.endpoint.origin).webFont(.code).textSelection(.enabled)
         }
         .modifier(ConsoleSettingsSurface())
@@ -329,7 +331,7 @@ private struct ConsoleDetail: View {
       VStack(alignment: .leading, spacing: DesignSpacing.sm) {
         StatusIndicator(.disconnected)
         Text("A saved identity does not confirm connectivity.")
-          .webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.notice).foregroundStyle(material.textMuted.color)
       }
       .modifier(ConsoleSettingsSurface())
     case .connecting:
@@ -349,7 +351,7 @@ private struct ConsoleDetail: View {
             ? "Its agents and conversations are on the dashboard behind this sheet."
             : "Its dashboard opens as soon as this console is selected."
         )
-        .webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+        .webFont(.notice).foregroundStyle(material.textMuted.color)
       }
       .modifier(ConsoleSettingsSurface())
     }
