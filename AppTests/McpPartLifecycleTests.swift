@@ -174,6 +174,32 @@ import UIKit
     controller.hide()
     await store.stop()
   }
+  @Test func cancelBeforePresentationAllowsNextPromptAndStaleDismissIsScoped() async throws {
+    let presenter = McpNativeConsent()
+    let prompt = McpConsentPrompt(
+      method: "tools/call", title: "Allow?", detail: "Synthetic", argumentPreview: nil)
+    let first = UUID()
+    let second = UUID()
+    let cancelled = Task { await presenter.confirm(prompt, requestID: first) }
+    try await wait { presenter.request?.id == first }
+    // The bridge can close before SwiftUI ever renders the sheet: no dismissal will fire.
+    presenter.cancel(requestID: first)
+    #expect(await cancelled.value == false)
+    let next = Task { await presenter.confirm(prompt, requestID: second) }
+    try await wait { presenter.request?.id == second }
+    presenter.didPresent(requestID: second)
+    presenter.didDismiss(requestID: first)
+    #expect(presenter.request?.id == second)
+    presenter.settle(second, allowed: true)
+    #expect(await next.value)
+    #expect(await presenter.confirm(prompt, requestID: UUID()) == false)
+    presenter.didDismiss(requestID: second)
+    let final = UUID()
+    let resumed = Task { await presenter.confirm(prompt, requestID: final) }
+    try await wait { presenter.request?.id == final }
+    presenter.cancel(requestID: final)
+    #expect(await resumed.value == false)
+  }
   @Test func identityIgnoresAccessUrlsButNotPublicationAndNativeConsentIsScoped() async throws {
     let (app, store, message, part) = try await setup()
     _ = app
@@ -196,15 +222,17 @@ import UIKit
     #expect(await presenter.confirm(prompt, requestID: UUID()) == false)
     presenter.cancel(requestID: UUID())
     #expect(presenter.request?.id == id)
+    presenter.didPresent(requestID: id)
     presenter.settle(id, allowed: true)
     #expect(await pending.value)
     #expect(await presenter.confirm(prompt, requestID: UUID()) == false)
-    presenter.didDismiss()
+    presenter.didDismiss(requestID: id)
     let cancelled = Task { await presenter.confirm(prompt, requestID: id) }
     try await wait { presenter.request != nil }
+    presenter.didPresent(requestID: id)
     presenter.dismiss()
     #expect(await cancelled.value == false)
-    presenter.didDismiss()
+    presenter.didDismiss(requestID: id)
     await store.stop()
   }
 }

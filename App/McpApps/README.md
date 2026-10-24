@@ -194,3 +194,8 @@ Consent's primary action uses onAccent, not hard-coded white on the light dark-m
 Visual review also restored the outlined spark glyph and exact dangerSoft token and uses
 wide-column gutter bleed. The existing transcript follow/read policy remains unmodified;
 short/long transcript regression tests and the actual resize interaction cover its integration.
+
+Consent presentation callbacks are request-token scoped. Cancellation before the sheet ever
+appears releases immediately (there may be no UIKit dismissal callback); once visible, new
+requests remain denied until that sheet's actual dismissal finishes. Stale token callbacks
+cannot cancel a newer request. A dedicated native lifecycle test covers both paths.

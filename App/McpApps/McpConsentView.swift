@@ -12,6 +12,7 @@ import UIKit
   private(set) var request: Request?
   @ObservationIgnored private var continuation: CheckedContinuation<Bool, Never>?
   @ObservationIgnored private var dismissing = false
+  @ObservationIgnored private var presentedID: UUID?
   @ObservationIgnored private var returnFocus: Any?
   func confirm(_ prompt: McpConsentPrompt, requestID: UUID) async -> Bool {
     guard request == nil, !dismissing else { return false }
@@ -22,15 +23,26 @@ import UIKit
   func settle(_ id: UUID, allowed: Bool) {
     guard request?.id == id else { return }
     request = nil
-    dismissing = true
+    dismissing = presentedID == id
+    if !dismissing { returnFocus = nil }
     let saved = continuation
     continuation = nil
     saved?.resume(returning: allowed)
   }
   func cancel(requestID: UUID) { settle(requestID, allowed: false) }
   func dismiss() { if let request { settle(request.id, allowed: false) } }
+  func didPresent(requestID: UUID) {
+    guard request?.id == requestID else { return }
+    presentedID = requestID
+  }
   func didDismiss() {
-    dismiss()
+    guard dismissing, let presentedID else { return }
+    didDismiss(requestID: presentedID)
+  }
+  func didDismiss(requestID: UUID) {
+    guard presentedID == requestID else { return }
+    cancel(requestID: requestID)
+    presentedID = nil
     dismissing = false
     if let returnFocus { UIAccessibility.post(notification: .layoutChanged, argument: returnFocus) }
     returnFocus = nil
@@ -79,6 +91,7 @@ struct McpConsentView: View {
     .presentationBackground(WebColor.surfaceRaised.color)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("mcp-consent")
+    .onAppear { presenter.didPresent(requestID: request.id) }
     .task { titleFocused = true }
   }
 }
