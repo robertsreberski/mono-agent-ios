@@ -50,7 +50,7 @@ import Testing
       sleeper = continuation
       let ready = observers
       observers.removeAll()
-      ready.forEach { $0.resume() }
+      for observer in ready { observer.resume() }
     }
   }
   func waitForSleep() async {
