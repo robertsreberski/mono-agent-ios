@@ -76,3 +76,20 @@ class ReleaseFixtureTests(unittest.TestCase):
                            ("strings", b"--fixture-theme")):
             with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
                 self.check(tool, leak)
+
+    def test_mcp_fixture_symbols_and_content_are_rejected(self):
+        for tool, leak in (("nm", b"McpGardenFixture"), ("strings", b"Garden planner (synthetic)"),
+                           ("strings", b"garden-invocation"), ("strings", b"mcpCompleteInitialLoad"),
+                           ("strings", b"mcpBufferState"), ("nm", b"debugSendAttempts")):
+            with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
+                self.check(tool, leak)
+
+    def test_mcp_test_resources_are_rejected_even_without_binary_markers(self):
+        (ROOT / ".build").mkdir(exist_ok=True)
+        for name in ("mcp-protocol-vectors.json", "ext-apps-LICENSE.txt"):
+            with tempfile.TemporaryDirectory(dir=ROOT / ".build") as directory:
+                app = pathlib.Path(directory)
+                (app / "MonoAgent").write_bytes(b"synthetic executable stub")
+                (app / name).write_text("test-only material")
+                with patch.object(sys, "argv", ["check-release-fixtures", "--app", str(app)]), self.assertRaises(SystemExit):
+                    runpy.run_path(str(ROOT / "Tools/check-release-fixtures"), run_name="__main__")

@@ -1,0 +1,369 @@
+{
+  "source": "@modelcontextprotocol/ext-apps@1.7.5",
+  "integrity": "sha512-TjPH2S2y5UEGKhmI6+XGFuqfqOV4ppe1x6DA3txnUaEWkgtA4G5vo14jGKFZmegdkZ1H4QMLyujLvoU1BEdnAg==",
+  "modified": "Selected schema definitions only; examples authored for native tests. Legacy revision negotiation follows shipped web, not SDK latest-only list.",
+  "schemas": {
+    "McpUiInitializeRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "ui/initialize"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "appInfo": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "icons": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "src": {
+                        "type": "string"
+                      },
+                      "mimeType": {
+                        "type": "string"
+                      },
+                      "sizes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "theme": {
+                        "type": "string",
+                        "enum": [
+                          "light",
+                          "dark"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "src"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "version": {
+                  "type": "string"
+                },
+                "websiteUrl": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "version"
+              ],
+              "additionalProperties": false,
+              "description": "App identification (name and version)."
+            },
+            "appCapabilities": {
+              "type": "object",
+              "properties": {
+                "experimental": {
+                  "description": "Experimental features keyed by identifier.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {},
+                    "description": "Experimental features keyed by identifier."
+                  }
+                },
+                "tools": {
+                  "description": "App exposes MCP-style tools that the host can call.",
+                  "type": "object",
+                  "properties": {
+                    "listChanged": {
+                      "description": "App supports tools/list_changed notifications.",
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "availableDisplayModes": {
+                  "description": "Display modes the app supports.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "inline"
+                      },
+                      {
+                        "type": "string",
+                        "const": "fullscreen"
+                      },
+                      {
+                        "type": "string",
+                        "const": "pip"
+                      }
+                    ],
+                    "description": "Display mode for UI presentation."
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "description": "Features and capabilities this app provides."
+            },
+            "protocolVersion": {
+              "type": "string",
+              "description": "Protocol version this app supports."
+            }
+          },
+          "required": [
+            "appInfo",
+            "appCapabilities",
+            "protocolVersion"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "McpUiSizeChangedNotification": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "ui/notifications/size-changed"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "description": "New width in pixels.",
+              "type": "number"
+            },
+            "height": {
+              "description": "New height in pixels.",
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "McpUiResourceTeardownRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "ui/resource-teardown"
+        },
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    },
+    "McpUiRequestTeardownNotification": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "ui/notifications/request-teardown"
+        },
+        "params": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
+    },
+    "McpUiRequestDisplayModeRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "ui/request-display-mode"
+        },
+        "params": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "inline"
+                },
+                {
+                  "type": "string",
+                  "const": "fullscreen"
+                },
+                {
+                  "type": "string",
+                  "const": "pip"
+                }
+              ],
+              "description": "The display mode being requested."
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "defaults": [
+    {
+      "method": "ui/initialize",
+      "params": {
+        "appInfo": {
+          "name": "Garden planner",
+          "version": "1.0"
+        },
+        "appCapabilities": {},
+        "protocolVersion": "2026-01-26"
+      },
+      "revision": "2026-01-26"
+    },
+    {
+      "method": "ui/initialize",
+      "params": {
+        "appInfo": {
+          "name": "Garden planner",
+          "version": "1.0"
+        },
+        "appCapabilities": {},
+        "protocolVersion": "2025-11-21"
+      },
+      "revision": "2025-11-21"
+    },
+    {
+      "method": "ui/initialize",
+      "params": {
+        "appInfo": {
+          "name": "Garden planner",
+          "version": "1.0"
+        },
+        "appCapabilities": {},
+        "protocolVersion": "unknown"
+      },
+      "revision": "2026-01-26"
+    },
+    {
+      "method": "ping",
+      "params": {},
+      "result": {}
+    },
+    {
+      "method": "ui/request-display-mode",
+      "params": {
+        "mode": "fullscreen"
+      },
+      "result": {
+        "mode": "inline"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "method": "ui/initialize",
+      "params": {}
+    },
+    {
+      "method": "ui/initialize",
+      "params": {
+        "appInfo": {
+          "name": "Garden"
+        },
+        "appCapabilities": {},
+        "protocolVersion": "2026-01-26"
+      }
+    },
+    {
+      "method": "ui/request-display-mode",
+      "params": {
+        "mode": "arbitrary"
+      }
+    },
+    {
+      "method": "ui/update-model-context",
+      "params": {
+        "content": [
+          {
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "method": "tools/call",
+      "params": {
+        "name": "plan",
+        "arguments": []
+      }
+    }
+  ],
+  "hostCapabilities": {
+    "openLinks": {},
+    "serverTools": {},
+    "serverResources": {},
+    "sandbox": {
+      "csp": {}
+    },
+    "updateModelContext": {
+      "text": {},
+      "resource": {},
+      "resourceLink": {},
+      "structuredContent": {}
+    }
+  },
+  "errorCodes": {
+    "declined": -32603,
+    "handlerFailure": -32603,
+    "unknownMethod": -32601,
+    "invalidParams": -32602
+  },
+  "errorCodeSource": "ext-apps 1.7.5 delegates to SDK Protocol; peer SDK 1.29.0 shared/protocol.ts maps plain Error to InternalError and missing handler to MethodNotFound. Web tool/context declines throw plain Error; open-link declines return isError:true."
+}

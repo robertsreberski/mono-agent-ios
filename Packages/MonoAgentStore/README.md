@@ -240,3 +240,16 @@ They never contact a console. DEBUG app scenarios `store-offline`, `store-stream
 `store-unread`, `store-uncertain` use the pinned-golden-derived TestSupport bootstrap and
 scripted fail-closed transports. They prepare state for feature UI; they do not add screens.
 Release fixture gates reject their symbols and scenario strings.
+
+## Ephemeral MCP sessions
+
+`ConsoleStore` composes one `CapabilityService` from its profile endpoint and injected API.
+`loadMcpApp` returns a generation-bound `McpAppAccess`; App sees only a URL-stripped resource.
+`requestMcpApp`, `renewMcpApp` and `closeMcpApp` require that exact profile/part/session,
+selection, Store lifetime, held conversation and authoritative (not delayed UI) part identity.
+Offline, background and stopped calls are refused. Selection/background/stop clears sessions,
+HTML and current access and cancels their operations. Explicit renewal invalidates older
+in-flight access adoption; no late response can roll capabilities back. Matching-session
+results still return, including completed confirmed effects overlapped by a renewal. Expired confirmed requests
+set retryRequiresConsent and never renew/replay automatically. The bridge must obtain fresh
+native consent for an explicit retry. None of this state participates in persistence.

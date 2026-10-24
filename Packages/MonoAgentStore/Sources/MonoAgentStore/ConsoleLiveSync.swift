@@ -322,6 +322,7 @@ extension ConsoleStore {
     await discardStagedUploads()
   }
   func stopEffects() async {
+    invalidateMcpApps()
     epoch &+= 1
     streamTask?.cancel()
     streamTask = nil

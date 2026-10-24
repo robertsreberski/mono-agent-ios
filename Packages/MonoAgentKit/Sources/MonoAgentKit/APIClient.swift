@@ -121,10 +121,20 @@ public actor APIClient: ConsoleAPI {
     }
     return request
   }
-  private func perform(_ request: URLRequest) async throws -> HTTPResponse {
-    do { return try await transport.send(request) } catch is CancellationError {
+  private func perform(_ request: URLRequest, route: APIRoute? = nil) async throws -> HTTPResponse {
+    do {
+      switch route {
+      case .mcpAppResource: return try await transport.send(request, maximumBytes: 4 * 1024 * 1024)
+      case .mcpAppRequest: return try await transport.send(request, maximumBytes: 1024 * 1024)
+      default: return try await transport.send(request)
+      }
+    } catch is CancellationError {
       throw CancellationError()
-    } catch let error as URLError { throw URLError(error.code) } catch {
+    } catch let error as URLError { throw URLError(error.code) } catch let error
+      as ReplyContentError
+    {
+      throw error
+    } catch {
       throw APIError(status: 0, code: "transport_failed")
     }
   }
@@ -134,7 +144,7 @@ public actor APIClient: ConsoleAPI {
   ) async throws -> ReadResult<T> {
     var request = try request(route, parameters: parameters, query: query, body: nil)
     if let etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
-    let response = try await perform(request)
+    let response = try await perform(request, route: route)
     if response.status == 304 {
       guard etag != nil else { throw APIError(status: 304, code: "unexpected_not_modified") }
       return .notModified
@@ -146,7 +156,7 @@ public actor APIClient: ConsoleAPI {
     body: (any Encodable & Sendable)? = nil
   ) async throws -> T {
     let response = try await perform(
-      request(route, parameters: parameters, query: query, body: body))
+      request(route, parameters: parameters, query: query, body: body), route: route)
     return try decode(response, route: route)
   }
   func noContent(
@@ -154,7 +164,7 @@ public actor APIClient: ConsoleAPI {
     body: (any Encodable & Sendable)? = nil
   ) async throws {
     let response = try await perform(
-      request(route, parameters: parameters, query: query, body: body))
+      request(route, parameters: parameters, query: query, body: body), route: route)
     guard route.descriptor.successStatus.contains(response.status), response.data.isEmpty else {
       throw APIError.response(response)
     }

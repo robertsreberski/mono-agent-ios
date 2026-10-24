@@ -12,6 +12,7 @@ final class McpAppHost: NSObject {
   private(set) var retirementReason: String?
   private(set) var innerLoaded = false
   #if DEBUG
+    private(set) var debugSendAttempts: [Data] = []
     var navigationDecisions: [String] { webView.policy.navigationDecisions }
     var responseDecisions: [String] { webView.policy.responseDecisions }
   #endif
@@ -19,6 +20,25 @@ final class McpAppHost: NSObject {
   static func make(html: String, delegate: (any McpAppEnvelopeDelegate)? = nil) async throws
     -> McpAppHost
   {
+    try await makeHost(
+      html: html, delegate: delegate,
+      listener: McpAppBridgeListener(nonce: UUID().uuidString, generation: UUID().uuidString))
+  }
+
+  #if DEBUG
+    /// Deterministically exercise authentic pre-load messages in real WK tests. Never shipped.
+    static func makeDeferringInitialLoad(
+      html: String, delegate: (any McpAppEnvelopeDelegate)? = nil
+    ) async throws -> McpAppHost {
+      let listener = McpAppBridgeListener(nonce: UUID().uuidString, generation: UUID().uuidString)
+      listener.debugDefersInitialLoad = true
+      return try await makeHost(html: html, delegate: delegate, listener: listener)
+    }
+  #endif
+
+  private static func makeHost(
+    html: String, delegate: (any McpAppEnvelopeDelegate)?, listener: McpAppBridgeListener
+  ) async throws -> McpAppHost {
     let document = try McpSecureDocument(html: html)
     let rules = try await WKContentRuleListStore.default().compileContentRuleList(
       forIdentifier: "mono-mcp-allow-local-documents-v2",
@@ -31,7 +51,7 @@ final class McpAppHost: NSObject {
          {"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}}]
         """)
     guard let rules else { throw URLError(.cannotLoadFromNetwork) }
-    let host = try McpAppHost(document: document, rules: rules)
+    let host = try McpAppHost(document: document, rules: rules, listener: listener)
     host.delegate = delegate
     host.webView.load(URLRequest(url: McpAppShellSchemeHandler.url))
     return host
@@ -55,8 +75,10 @@ final class McpAppHost: NSObject {
     })();
     """
 
-  private init(document: McpSecureDocument, rules: WKContentRuleList) throws {
-    listener = McpAppBridgeListener(nonce: UUID().uuidString, generation: UUID().uuidString)
+  private init(
+    document: McpSecureDocument, rules: WKContentRuleList, listener: McpAppBridgeListener
+  ) throws {
+    self.listener = listener
     let controller = WKUserContentController()
     controller.add(rules)
     controller.addUserScript(
@@ -96,6 +118,9 @@ final class McpAppHost: NSObject {
 
   /// Mirrors the web proxy's raw JSON-RPC relay. Session secrets stay in the isolated world.
   func sendEnvelope(_ envelope: Data) async throws {
+    #if DEBUG
+      debugSendAttempts.append(envelope)
+    #endif
     guard !isRetired, innerLoaded,
       envelope.count <= McpAppBridgeListener.maximumEnvelopeBytes,
       let payload = try JSONSerialization.jsonObject(with: envelope) as? [String: Any],
@@ -119,6 +144,7 @@ final class McpAppHost: NSObject {
     isRetired = true
     webView.policy.isClosed = true
     retirementReason = reason
+    delegate?.mcpAppHostDidRetire(self)
     webView.stopLoading()
     webView.evaluateJavaScript(
       "window.mcpRetire?.()", in: nil, in: McpAppBridgeListener.world,

@@ -471,6 +471,119 @@ struct McpAppIsolationTests {
     }
   }
 
+  private func bufferState(_ host: McpAppHost, until condition: ([String: Any]) -> Bool)
+    async throws -> [String: Any]
+  {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while ContinuousClock.now < deadline {
+      if let state = try? await host.webView.callAsyncJavaScript(
+        "return window.mcpBufferState?.() ?? null", arguments: [:], in: nil,
+        contentWorld: McpAppBridgeListener.world) as? [String: Any], condition(state)
+      {
+        return state
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    try #require(Bool(false), "Buffer condition timed out")
+    return [:]
+  }
+  private func attachBuffered(_ host: McpAppHost) {
+    host.webView.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+    UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.windows.first?
+      .addSubview(host.webView)
+  }
+  private func completeInitialLoad(_ host: McpAppHost) async throws {
+    _ = try await host.webView.callAsyncJavaScript(
+      "window.mcpCompleteInitialLoad(); return null", arguments: [:], in: nil,
+      contentWorld: McpAppBridgeListener.world)
+  }
+  @Test func trustedEarlyMessagesBufferInOrderAndForgeriesNeverEnter() async throws {
+    let recorder = McpEnvelopeRecorder()
+    let host = try await McpAppHost.makeDeferringInitialLoad(
+      html: appHtml(
+        probe:
+          "window.earlyIndex=(window.earlyIndex||0)+1; deliver({marker:'valid-buffered',index:window.earlyIndex});"
+      ), delegate: recorder)
+    attachBuffered(host)
+    defer { host.close() }
+    _ = try await bufferState(host) { $0["loads"] as? Int == 0 }
+    _ = try await host.webView.callAsyncJavaScript(
+      """
+      const frame=document.querySelector('iframe');
+      const data={jsonrpc:'2.0',method:'test/probe',params:{marker:'forged-before-load'}};
+      window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,origin:'null',data}));
+      window.dispatchEvent(new MessageEvent('message',{source:frame.contentWindow,origin:'https://wrong.example',data}));
+      window.postMessage(data,'*');
+      """, arguments: [:], in: nil, contentWorld: .page)
+    _ = try await bufferState(host) { ($0["earlyRejected"] as? Int ?? 0) >= 2 }
+    let identity = host.debugTransportIdentity
+    for key in ["nonce", "generation"] {
+      var stale: [String: Any] = [
+        "nonce": identity["nonce"]!, "generation": identity["generation"]!, "kind": "loaded",
+      ]
+      stale[key] = "previous-session"
+      #expect(try await postNativeTransport(host, body: stale) == "rejected")
+    }
+    #expect(
+      try await host.webView.evaluateJavaScript(
+        "typeof window.webkit?.messageHandlers?.mcpEnvelope") as? String == "undefined")
+    for _ in 0..<2 { try await probe(host) }
+    let pending = try await bufferState(host) { $0["count"] as? Int == 2 }
+    #expect(recorder.deliveries.isEmpty && !host.innerLoaded && pending["loads"] as? Int == 0)
+    try await completeInitialLoad(host)
+    try await waitUntil { recorder.deliveries.count == 2 }
+    #expect(
+      recorder.deliveries.map { $0["marker"] as? String } == ["valid-buffered", "valid-buffered"])
+    #expect(recorder.deliveries.compactMap { $0["index"] as? Int } == [1, 2])
+    let loaded = try await bufferState(host) { $0["loads"] as? Int == 1 }
+    #expect(
+      loaded["count"] as? Int == 0 && loaded["bytes"] as? Int == 0 && loaded["flushed"] as? Int == 2
+    )
+  }
+  @Test func earlyBufferCountAndTotalByteCapsRemainBounded() async throws {
+    for large in [false, true] {
+      let recorder = McpEnvelopeRecorder()
+      let count = large ? 2 : 18
+      let html = """
+        <script>for(let index=0;index<\(count);index++)parent.postMessage({jsonrpc:'2.0',method:'test/probe',
+          params:{index,padding:'x'.repeat(\(large ? 600 * 1024 : 1))}},'*');</script>
+        """
+      let host = try await McpAppHost.makeDeferringInitialLoad(html: html, delegate: recorder)
+      attachBuffered(host)
+      defer { host.close() }
+      let state = try await bufferState(host) { ($0["overflow"] as? Int ?? 0) == (large ? 1 : 2) }
+      #expect(state["peakCount"] as? Int == (large ? 1 : 16))
+      #expect((state["peakBytes"] as? Int ?? Int.max) <= McpAppBridgeListener.maximumEnvelopeBytes)
+      #expect(recorder.deliveries.isEmpty && !host.innerLoaded)
+      try await completeInitialLoad(host)
+      try await waitUntil { recorder.deliveries.count == (large ? 1 : 16) }
+      #expect(recorder.deliveries.compactMap { $0["index"] as? Int } == Array(0..<(large ? 1 : 16)))
+    }
+  }
+  @Test func retirementAndSecondLoadDiscardEarlyBuffer() async throws {
+    for secondLoad in [false, true] {
+      let recorder = McpEnvelopeRecorder()
+      let host = try await McpAppHost.makeDeferringInitialLoad(
+        html:
+          "<script>parent.postMessage({jsonrpc:'2.0',method:'test/probe',params:{marker:'must-not-flush'}},'*')</script>",
+        delegate: recorder)
+      attachBuffered(host)
+      defer { host.close() }
+      _ = try await bufferState(host) { $0["count"] as? Int == 1 }
+      if secondLoad {
+        _ = try await host.webView.evaluateJavaScript(
+          "document.querySelector('iframe').dispatchEvent(new Event('load'))")
+      } else {
+        host.retire(reason: "Synthetic pre-load retirement")
+      }
+      let retired = try await bufferState(host) { $0["retired"] as? Bool == true }
+      try await waitUntil { host.isRetired }
+      try await completeInitialLoad(host)
+      #expect(retired["count"] as? Int == 0 && retired["bytes"] as? Int == 0)
+      #expect(recorder.deliveries.isEmpty && !host.innerLoaded)
+    }
+  }
+
   @Test func forgedEventsAndStaleSessionsNeverDeliver() async throws {
     let recorder = McpEnvelopeRecorder()
     let host = try await McpAppHost.make(

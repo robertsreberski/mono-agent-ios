@@ -250,3 +250,10 @@ Focused capture: `./Tools/screenshots --transcript-only` runs app/Design unit te
 12 transcript XCUI captures on both device families, without removing existing matrix entries;
 `--composer-only` runs the 23 composer XCUI captures. The default screenshot command still
 captures the complete matrix (82 images per device).
+
+### MCP protocol core (not yet connected to the transcript)
+
+The isolated host and native Store-backed method layer are documented in
+[App/McpApps/README.md](App/McpApps/README.md). PR2 supplies the native UI through
+`McpConsentPresenting`, with request-scoped UUID confirmation/cancellation. There is no
+concrete consent presenter or transcript integration in PR1; the placeholder remains.
