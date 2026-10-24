@@ -33,10 +33,14 @@ struct ComposerJobDock: View {
       .frame(height: min(max(contentHeight, 1), verticalSizeClass == .compact ? 150 : 300))
       .accessibilityIdentifier("composer-dock-scroll")
       // Web `.process-job-stack` geometry (radius 13 on phones). It floats above the
-      // transcript: one untinted glass surface; glass draws its own edge and depth. Reduce
+      // transcript: one veiled glass surface keeps shelf text legible over code. Reduce
       // Transparency keeps the web stack-bg fill with its 1 px line-strong edge.
       .padding(.horizontal, 10)
       .webGlassContent()
+      .background(
+        WebGlass.sheetVeil.color,
+        in: RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous)
+      )
       .floatingGlass(
         in: RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous),
         opaqueFill: theme.palette.jobStackBackground.color,

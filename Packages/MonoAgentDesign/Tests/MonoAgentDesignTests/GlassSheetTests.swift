@@ -88,6 +88,21 @@ struct GlassSheetTests {
     }
   }
 
+  /// Floating controls over the tall synthetic code fixture, sampled on iPhone in both schemes.
+  @Test func floatingTextKeepsAAOverCode() {
+    for scheme in schemes {
+      let shelfBleed = RGBColor(scheme == .dark ? 0x383b39 : 0xa0a3a1)
+      let shelf = WebGlass.sheetVeil.composited(over: shelfBleed, scheme)
+      let composer = RGBColor(scheme == .dark ? 0x313532 : 0xf4f4f1)
+      for ground in [shelf, WebGlass.groupFill.composited(over: shelf, scheme), composer] {
+        #expect(WebGlass.textMuted.resolved(scheme).contrastRatio(with: ground) >= 4.5)
+      }
+      if scheme == .light {
+        #expect(WebGlass.textMuted.light.contrastRatio(with: shelfBleed) < 4.5)
+      }
+    }
+  }
+
   @Test func mutedTextFollowsItsLayer() {
     #expect(WebMaterial.content.textMuted == WebColor.textMuted)
     #expect(WebMaterial.glass.textMuted == WebGlass.textMuted)

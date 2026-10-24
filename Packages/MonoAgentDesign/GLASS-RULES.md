@@ -19,9 +19,9 @@ There are two kinds of floating surface:
 - **Text-carrying sheets and popovers** use the system material plus the frosted web veil.
   This covers the context sheet and iPad popover, run settings, the skill browser, the
   peer-question sheet, quote selection, console management and the connection editor, MCP
-  consent, and the composer's suggestion popover and status line.
+  consent, and the composer's job shelf, suggestion popover and status line.
 - **Compact floating controls** stay pure glass with no veil. This covers the composer root,
-  the job shelf, header tiles, jump-to-latest, footer pills, toolbars and menus.
+  header tiles, jump-to-latest, footer pills, toolbars and menus.
 
 1. **One material per surface.** Never put a solid web panel or surface fill on or inside
    glass. Bands, bodies, cards and footers inside a sheet have no fill of their own.
@@ -33,7 +33,7 @@ There are two kinds of floating surface:
    tinted material, never a band. Its opacity is the minimum that keeps muted text AA over
    the busiest bleed we sampled (see *The frosted veil* below). Consent prompts use the
    stronger `.webSheetVeil(.consent)`. Custom popovers drawn with `floatingGlass` (the
-   composer suggestions and status line) put the same veil inside their glass shape.
+   composer job shelf, suggestions and status line) put the same veil inside their glass shape.
 4. **Compact floating controls are pure glass.** No veil, no web fill tint. Where the web
    draws a 1 px `--line-strong` edge (the composer, the job shelf, the suggestion popover),
    light mode keeps it as a stroke only. Dark glass already separates from the dark
@@ -113,6 +113,12 @@ Reference backdrops (`WebGlass.referenceBackdrops`) were sampled from simulator 
 Large detent: `#ffffff` / `#1c1c1e`. Medium detent over plain and busy Markdown transcripts:
 light `#e3e3e0`–`#dddddb`, dark `#292c2a`–`#353736`. `GlassSheetTests` holds every text role
 to AA on all of them, bare and on the group ink.
+
+The expanded job shelf over the tall synthetic code fixture samples `#a0a3a1` in light
+mode: glass muted text is only 2.7:1 there. It therefore carries the same veil inside its
+rounded glass shape. The composer root stays pure glass: its sampled worst open-area
+backdrops (`#f4f4f1` / `#313532`) keep muted text above AA. See
+`GlassSheetTests.floatingTextKeepsAAOverCode` and the `bleed` job-stack captures.
 
 ### Why not hierarchical `.secondary`?
 

@@ -12,6 +12,8 @@ import XCTest
   func testJobsPlum() { capture("conversation-jobs", "dark", variant: "plum") }
   func testJobsAccessibility() { capture("conversation-jobs", "light", variant: "ax3") }
   func testStackLight() { capture("conversation-job-stack", "light") }
+  func testStackOverCodeLight() { capture("conversation-job-stack", "light", variant: "bleed") }
+  func testStackOverCodeDark() { capture("conversation-job-stack", "dark", variant: "bleed") }
   func testStackDark() { capture("conversation-job-stack", "dark") }
   func testStackPlum() { capture("conversation-job-stack", "dark", variant: "plum") }
   func testStackAccessibility() { capture("conversation-job-stack", "light", variant: "ax3") }
