@@ -59,7 +59,7 @@ struct ConversationJobStack: View {
             .frame(maxWidth: .infinity, alignment: .leading)
           Image(systemName: "chevron.down")
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(WebColor.textMuted.color)
+            .foregroundStyle(WebGlass.textMuted.color)
             .rotationEffect(.degrees(expanded ? 180 : 0))
             .accessibilityHidden(true)
         }
@@ -95,7 +95,7 @@ struct ConversationJobStack: View {
               rows(finished, now: now)
               if state.nextCursor != nil {
                 Text("Older jobs are in earlier messages.")
-                  .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+                  .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
                   .padding(.top, 4).padding(.horizontal, 10).padding(.bottom, 6)
               }
             }
@@ -177,7 +177,7 @@ struct JobShelfSummary: View {
     HStack(spacing: 5) {
       ForEach(Array(current.prefix(shown).enumerated()), id: \.element.id) { index, item in
         if index > 0 {
-          Text("·").font(.system(size: 12, weight: .bold)).foregroundStyle(WebColor.textMuted.color)
+          Text("·").font(.system(size: 12, weight: .bold)).foregroundStyle(WebGlass.textMuted.color)
             .padding(.leading, 2)
         }
         let face = JobFace(item.lead(now: now), now: now)
@@ -194,7 +194,7 @@ struct JobShelfSummary: View {
       }
       if current.count > shown {
         Text("· +\(current.count - shown)").webFont(.jobEntry)
-          .foregroundStyle(WebColor.textMuted.color).fixedSize()
+          .foregroundStyle(WebGlass.textMuted.color).fixedSize()
       }
     }
     .fixedSize()
@@ -349,7 +349,7 @@ struct JobMetaLine: View {
             .accessibilityHidden(true)
           Text(turns ?? job.tool)
         }
-        .foregroundStyle(agent ? WebColor.delegation.color : WebColor.textMuted.color)
+        .foregroundStyle(agent ? WebColor.delegation.color : WebGlass.textMuted.color)
       }
       ForEach(face.details, id: \.self) { detail in
         JobMetaToken { Text(detail).webFont(.jobMono) }
@@ -372,7 +372,7 @@ struct JobMetaLine: View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
           Text("·").opacity(0.6).accessibilityHidden(true)
           if !preview.label.isEmpty {
-            Text(preview.label).foregroundStyle(WebColor.textMuted.color).layoutPriority(1)
+            Text(preview.label).foregroundStyle(WebGlass.textMuted.color).layoutPriority(1)
           }
           Text(preview.text)
             .modifier(MonoIf(preview.mono))
@@ -407,7 +407,7 @@ struct JobCallOutcomes: View {
           case "running":
             Circle().strokeBorder(WebColor.jobProgress.color, lineWidth: 1.5)
           default:
-            Circle().fill(WebColor.textMuted.color).padding(2)
+            Circle().fill(WebGlass.textMuted.color).padding(2)
           }
         }
         .frame(width: 8, height: 8)
@@ -499,7 +499,7 @@ struct ProcessJobCardView: View {
     if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
     if bytes > 0 {
       Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .binary) + " total")
-        .webFont(.jobMono).foregroundStyle(WebColor.textMuted.color)
+        .webFont(.jobMono).foregroundStyle(WebGlass.textMuted.color)
     }
   }
   private func spoken(_ face: JobFace) -> String {
@@ -537,7 +537,7 @@ struct ProcessJobCardView: View {
       let bytes = job.output.stdoutBytes + job.output.stderrBytes
       if empty {
         Text(JobPresentation.terminal(job) ? "No output." : "No output yet.")
-          .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
       } else {
         // The output stays behind its own head so a long log never pushes the card's other
         // controls out of the bounded shelf.
@@ -557,7 +557,7 @@ struct ProcessJobCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "chevron.down")
               .font(.system(size: 10, weight: .semibold))
-              .foregroundStyle(WebColor.textMuted.color)
+              .foregroundStyle(WebGlass.textMuted.color)
               .rotationEffect(.degrees(open.wrappedValue ? 180 : 0))
           }
           .frame(minHeight: 28)
@@ -572,19 +572,19 @@ struct ProcessJobCardView: View {
           JobOutputBox(preview.text)
           if preview.bounded {
             Text("Display bounded to 65,536 characters.")
-              .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+              .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
           }
           if job.output.truncated {
             Text(
               "The server supplied a truncated preview. Full logs are not available through this API."
             )
-            .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+            .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
           }
         }
       }
     } else if job.subagentProgress == nil {
       Text("Progress is unavailable for this retained job.")
-        .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+        .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
     }
     HStack(spacing: 8) {
       Button("Refresh job", systemImage: "arrow.clockwise") {
@@ -648,7 +648,7 @@ struct JobProgressMeta: View {
       }
     }
     .webFont(.jobMeta)
-    .foregroundStyle(WebColor.textMuted.color)
+    .foregroundStyle(WebGlass.textMuted.color)
     .accessibilityElement(children: .combine)
   }
 }
@@ -701,7 +701,7 @@ private struct ProcessJobGroupView: View {
           } label: {
             HStack(spacing: 7) {
               Image(systemName: "ellipsis").font(.system(size: 10, weight: .bold))
-                .foregroundStyle(WebColor.textMuted.color)
+                .foregroundStyle(WebGlass.textMuted.color)
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(WebColor.text.color.opacity(0.07)))
               Text("Show earlier turns and parent messages (\(folded))")
@@ -767,7 +767,7 @@ private struct JobRail: View {
   let x: CGFloat
   var body: some View {
     GeometryReader { proxy in
-      let color = WebColor.textMuted.color.opacity(0.4)
+      let color = WebGlass.textMuted.color.opacity(0.4)
       if showAbove {
         Rectangle().fill(color).frame(width: 1.5, height: max(0, top - 2))
           .offset(x: x - 0.75)
@@ -811,7 +811,7 @@ private struct JobParentCallRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
               Text(call.call.toolName ?? "Agent").webFont(.jobOutputHead)
                 .foregroundStyle(WebColor.text.color)
-              Text(call.action).webFont(.attachment).foregroundStyle(WebColor.textMuted.color)
+              Text(call.action).webFont(.attachment).foregroundStyle(WebGlass.textMuted.color)
               Text(call.call.status).webFont(.attachment).fontWeight(.semibold)
                 .foregroundStyle(
                   TranscriptPresentation.failed(call.call)
@@ -822,7 +822,7 @@ private struct JobParentCallRow: View {
               if let at = JobPresentation.date(call.at) {
                 Text(at.formatted(date: .omitted, time: .shortened))
                   .font(.system(size: 10.5, design: .monospaced))
-                  .foregroundStyle(WebColor.textMuted.color)
+                  .foregroundStyle(WebGlass.textMuted.color)
               }
             }
             if let thread = call.peerThread {
@@ -840,7 +840,7 @@ private struct JobParentCallRow: View {
           if text != nil {
             Image(systemName: "chevron.down")
               .font(.system(size: 9, weight: .semibold))
-              .foregroundStyle(WebColor.textMuted.color)
+              .foregroundStyle(WebGlass.textMuted.color)
               .rotationEffect(.degrees(open.wrappedValue ? 180 : 0))
               .frame(width: 12, height: 18)
           }
@@ -866,10 +866,10 @@ private struct JobParentCallRow: View {
           if let text { Text(text).webFont(.jobDetail).textSelection(.enabled) }
           if call.closed {
             Text("Host confirmed closed").webFont(.jobMeta)
-              .foregroundStyle(WebColor.textMuted.color)
+              .foregroundStyle(WebGlass.textMuted.color)
           }
           if call.call.argsTruncated == true {
-            Text("Preview only").webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+            Text("Preview only").webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
             Button("Load full message") {
               Task {
                 _ = await store.repairToolOutput(
