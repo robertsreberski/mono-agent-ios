@@ -103,19 +103,18 @@ struct RunSettingsSheet: View {
             }
             if controller.threadID != nil {
               Text("Changing the model rebuilds context on the next reply. Effort changes don't.")
-                .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+                .webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color)
                 .padding(.vertical, 12).padding(.horizontal, 10)
             }
           }.padding(.vertical, 6).padding(.horizontal, 8)
         }
       }
       .scrollBounceBehavior(.basedOnSize)
-      .background(WebColor.surfaceRaised.color)
       if let agent = controller.agent {
         let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
         let efforts = (rows.first { $0.id == controller.runModel } ?? rows.first)?.efforts ?? []
         VStack(alignment: .leading, spacing: 6) {
-          Text("Thinking").webFont(.effortOption).foregroundStyle(WebColor.textMuted.color)
+          Text("Thinking").webFont(.effortOption).foregroundStyle(WebGlass.textMuted.color)
           if efforts.isEmpty {
             Text("This model has no reasoning effort setting").webFont(.contextNote)
           }
@@ -132,17 +131,17 @@ struct RunSettingsSheet: View {
           }
           if controller.hasRunOverride {
             Button("Reset to Agent Default") { controller.resetRunSettings() }
-              .buttonStyle(WebSmallButtonStyle()).accessibilityIdentifier("model-reset")
+              .designButtonStyle(.secondary, placement: .floating)
+              .accessibilityIdentifier("model-reset")
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10).padding(.horizontal, 12)
-        .background(WebColor.surfaceSubtle.color)
-        .overlay(alignment: .top) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
+        // On the sheet material: a hairline above, no band of its own (GLASS-RULES.md).
+        .overlay(alignment: .top) { WebHairline() }
       }
     }
     .presentationDetents([.medium, .large])
-    .presentationCornerRadius(20)
   }
 }
 

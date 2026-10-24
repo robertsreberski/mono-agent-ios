@@ -467,7 +467,7 @@ struct ProcessJobCardView: View {
     let expanded = disclosures.binding(threadID + ":card:" + job.jobId)
     JobRowDisclosure(
       "job-card-" + job.jobId, accessibilityLabel: spoken(face), expanded: expanded,
-      openFill: nested ? WebColor.surface.color.opacity(0.7) : nil
+      openFill: nested ? WebGlass.selectedFill.color : nil
     ) {
       JobGlyph(face.mark, tone: face.tone)
     } title: {
@@ -883,7 +883,7 @@ private struct JobParentCallRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8).padding(.horizontal, 11)
         .background(
-          WebColor.surface.color,
+          WebGlass.groupFill.color,
           in: UnevenRoundedRectangle(
             topLeadingRadius: 4, bottomLeadingRadius: 4, bottomTrailingRadius: 9,
             topTrailingRadius: 9)
@@ -892,7 +892,7 @@ private struct JobParentCallRow: View {
           UnevenRoundedRectangle(
             topLeadingRadius: 4, bottomLeadingRadius: 4, bottomTrailingRadius: 9,
             topTrailingRadius: 9
-          ).strokeBorder(WebColor.line.color, lineWidth: 1)
+          ).strokeBorder(WebGlass.hairline.color, lineWidth: 1)
         )
         .overlay(alignment: .leading) {
           Rectangle().fill(WebColor.delegation.color.mixedOpacity(0.45)).frame(width: 2)

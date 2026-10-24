@@ -101,7 +101,8 @@ struct McpConsentView: View {
       VStack(alignment: .leading, spacing: 12) {
         Text(request.prompt.title).webFont(.sheetTitle)
           .accessibilityAddTraits(.isHeader).accessibilityFocused($titleFocused)
-        Text(request.prompt.method).webFont(.optionID).foregroundStyle(theme.palette.accent.color)
+        Text(request.prompt.method).webFont(.optionID)
+          .foregroundStyle(WebGlass.accentText(theme.palette).color)
         if let linkHost {
           Text(linkHost).webFont(.sheetTitle).foregroundStyle(WebColor.text.color)
             .accessibilityLabel("Destination host: " + linkHost)
@@ -117,32 +118,33 @@ struct McpConsentView: View {
         if let preview = request.prompt.argumentPreview {
           Text(preview).webFont(.optionID).frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
-            .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(WebColor.line.color))
+            .webGlassGroup(cornerRadius: 7)
             .accessibilityIdentifier("mcp-consent-preview")
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading).padding(18)
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      HStack {
-        Spacer()
-        Button("Cancel") { presenter.settle(request.id, allowed: false) }
-          .accessibilityIdentifier("mcp-consent-cancel")
-        Button {
-          presenter.settle(request.id, allowed: true)
-        } label: {
-          Text("Allow once").foregroundStyle(theme.palette.onAccent.color)
+    // One material: the system sheet background, actions in a bottom bar with the system
+    // scroll-edge effect; secondary `.glass`, primary `.glassProminent` in the web accent.
+    .safeAreaBar(edge: .bottom) {
+      GlassEffectContainer(spacing: 8) {
+        HStack {
+          Spacer()
+          Button("Cancel") { presenter.settle(request.id, allowed: false) }
+            .designButtonStyle(.secondary, placement: .floating)
+            .accessibilityIdentifier("mcp-consent-cancel")
+          Button("Allow once") { presenter.settle(request.id, allowed: true) }
+            .designButtonStyle(.primary, placement: .floating)
+            .accessibilityIdentifier("mcp-consent-allow")
         }
-        .accessibilityIdentifier("mcp-consent-allow")
-        .buttonStyle(.borderedProminent).tint(theme.palette.accentStrong.color)
       }
-      .buttonStyle(.bordered).controlSize(.large).padding(18)
-      .background(WebColor.surfaceRaised.color)
+      .controlSize(.large).padding(18)
     }
     .foregroundStyle(WebColor.text.color)
+    // The one sheet exception (GLASS-RULES.md): a consent prompt over arbitrary app content
+    // keeps AA, so the whole material takes a uniform legibility veil (web: raised 96% + blur).
+    .webGlassLegibilityVeil()
     .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
-    .presentationBackground(WebColor.surfaceRaised.color)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("mcp-consent")
     .background {

@@ -89,11 +89,12 @@ struct JobPeerQuestionView: View {
     .padding(.vertical, 10).padding(.horizontal, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
-      WebColor.surface.color, in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+      WebGlass.groupFill.color,
+      in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
     )
     .overlay(
       RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
-        .strokeBorder(WebColor.line.color, lineWidth: 1))
+        .strokeBorder(WebGlass.hairline.color, lineWidth: 1))
   }
 }
 
@@ -129,11 +130,12 @@ struct JobSubagentQuestionView: View {
     .padding(.vertical, 10).padding(.horizontal, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
-      WebColor.surface.color, in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+      WebGlass.groupFill.color,
+      in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
     )
     .overlay(
       RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
-        .strokeBorder(WebColor.line.color, lineWidth: 1))
+        .strokeBorder(WebGlass.hairline.color, lineWidth: 1))
   }
 }
 
