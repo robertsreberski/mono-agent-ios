@@ -206,7 +206,7 @@ import XCTest
     XCTAssertTrue(selection.waitForExistence(timeout: 5))
     selection.tap()
     XCTAssertTrue(app.navigationBars["Select text to quote"].waitForExistence(timeout: 5))
-    self.capture(app, "quote-selection", appearance, variant: nil)
+    self.capture(app, "composer-quote-selection", appearance, variant: nil)
     app.buttons["Cancel"].firstMatch.tap()
     XCTAssertTrue(message.waitForExistence(timeout: 5))
     message.press(forDuration: 1.2)
