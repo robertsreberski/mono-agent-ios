@@ -32,6 +32,12 @@
     case conversationAttachments = "conversation-attachments"
     case conversationReplyFiles = "conversation-reply-files"
     case conversationContext = "conversation-context"
+    case conversationMcpApp = "conversation-mcp-app"
+    case conversationMcpUnavailable = "conversation-mcp-unavailable"
+    case conversationMcpLongTitle = "conversation-mcp-long-title"
+    var isMcp: Bool {
+      [.conversationMcpApp, .conversationMcpUnavailable, .conversationMcpLongTitle].contains(self)
+    }
     // Composer (C8): scripted send/upload/ask round trips through the synthetic Store.
     case composerEmpty = "composer-empty"
     case composerDraftAttachments = "composer-draft-attachments"
@@ -136,10 +142,15 @@
     let scenario: StoreScenario?
     let theme: String
     let script: ComposerScript?
-    init(_ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil) {
+    let mcp: McpUiScript?
+    init(
+      _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
+      mcp: McpUiScript? = nil
+    ) {
       self.scenario = scenario
       self.theme = theme
       self.script = script
+      self.mcp = mcp
     }
     func upload(
       _ request: URLRequest, file: URL, progress: @escaping @Sendable (Double) -> Void
@@ -150,6 +161,7 @@
     func send(_ request: URLRequest) async throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
+      if let response = try await mcp?.response(request) { return response }
       if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }
       if let scenario, let response = try RichReplyFixture.response(request, scenario: scenario) {
         return response

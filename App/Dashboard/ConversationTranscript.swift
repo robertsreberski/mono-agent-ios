@@ -16,6 +16,9 @@ struct ConversationTranscript<Header: View>: View {
   @Environment(\.consoleTheme) private var theme
   @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var viewportWidth: CGFloat = 0
+  @State private var viewportHeight: CGFloat = 0
+  @State private var mcpPool = McpHostPool()
+  @Environment(\.scenePhase) private var scenePhase
   /// Web `--column-padding` plus whatever centres the 880 pt column on wide screens.
   private func inset(regular: Bool) -> CGFloat {
     let gutter = regular ? WebSpace.transcriptGutterRegular : WebSpace.transcriptGutter
@@ -93,10 +96,25 @@ struct ConversationTranscript<Header: View>: View {
       // column sideways, which an inset target layout did.
       .frame(maxWidth: .infinity)
     }
-    .onGeometryChange(for: CGFloat.self) {
-      $0.size.width
+    .onGeometryChange(for: CGSize.self) {
+      $0.size
     } action: {
-      viewportWidth = $0
+      viewportWidth = $0.width
+      viewportHeight = $0.height
+    }
+    .environment(\.mcpHostPool, mcpPool)
+    .environment(\.mcpViewport, CGSize(width: viewportWidth, height: viewportHeight))
+    .modifier(McpConsentPresentation(presenter: mcpPool.consent))
+    .onChange(of: scenePhase) { _, phase in mcpPool.sceneChanged(phase) }
+    .onChange(of: state.orderedMessageIDs) { _, ids in mcpPool.retainMessages(ids) }
+    .onChange(of: store.selectedThreadID) { _, thread in mcpPool.selectionChanged(thread) }
+    .onDisappear { mcpPool.closeAll() }
+    .task {
+      for await _ in NotificationCenter.default.notifications(
+        named: UIApplication.didReceiveMemoryWarningNotification
+      ).map({ _ in true }) {
+        mcpPool.closeAll("The app was stopped to free memory. Reopen to load it again.")
+      }
     }
     .scrollDismissesKeyboard(.immediately)
     .scrollPosition($scrollPosition)

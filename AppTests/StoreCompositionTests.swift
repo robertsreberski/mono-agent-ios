@@ -53,7 +53,8 @@ import Testing
         .conversationMarkdown, .conversationJobs, .conversationJobStack, .conversationSubagents,
         .conversationContext, .conversationReplyFiles, .conversationImages,
         .conversationRestartCard, .conversationImagesSingle, .conversationImagesEmpty,
-        .conversationAttachments:
+        .conversationAttachments, .conversationMcpApp, .conversationMcpUnavailable,
+        .conversationMcpLongTitle:
         #expect(store.agents.count == 4)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.count == 8)
         #expect(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.nextCursor != nil)

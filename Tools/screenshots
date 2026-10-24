@@ -38,8 +38,9 @@ parser.add_argument("--family", choices=["iPhone", "iPad"], help="Run one CI mat
 parser.add_argument("--transcript-only", action="store_true", help="Focused transcript XCUI captures; preserves the full default matrix")
 parser.add_argument("--composer-only", action="store_true", help="Focused composer XCUI captures; preserves the full default matrix")
 parser.add_argument("--replies-only", action="store_true", help="Focused rich reply XCUI captures")
+parser.add_argument("--mcp-only", action="store_true", help="Focused MCP UI scenarios and captures")
 args = parser.parse_args()
-if sum((args.transcript_only, args.composer_only, args.replies_only)) > 1:
+if sum((args.transcript_only, args.composer_only, args.replies_only, args.mcp_only)) > 1:
     parser.error("Choose at most one focused capture")
 if args.transcript_only:
     EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in {
@@ -49,6 +50,8 @@ if args.composer_only:
 if args.replies_only:
     EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in {
         "conversation-reply-files", "conversation-images", "conversation-restart-card", "conversation-attachments"}}
+if args.mcp_only:
+    EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"].startswith("conversation-mcp-")}
 if bool(args.iphone) != bool(args.ipad):
     parser.error("Supply both --iphone and --ipad, or neither for dynamic selection")
 if args.iphone:
@@ -111,7 +114,8 @@ def capture(family, device):
             "CODE_SIGNING_ALLOWED=NO", "test",
             *(["-only-testing:MonoAgentUITests/TranscriptScenarioTests", "-only-testing:MonoAgentTests"] if args.transcript_only else []),
             *(["-only-testing:MonoAgentUITests/ComposerScenarioTests"] if args.composer_only else []),
-            *(["-only-testing:MonoAgentUITests/ReplyScenarioTests"] if args.replies_only else []))
+            *(["-only-testing:MonoAgentUITests/ReplyScenarioTests"] if args.replies_only else []),
+            *(["-only-testing:MonoAgentUITests/McpScenarioTests"] if args.mcp_only else []))
     except subprocess.CalledProcessError as error:
         test_failure = error
     finally:

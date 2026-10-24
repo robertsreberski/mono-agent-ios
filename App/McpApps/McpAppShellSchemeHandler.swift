@@ -20,6 +20,7 @@ final class McpAppShellSchemeHandler: NSObject, WKURLSchemeHandler {
     <html>
     <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="referrer" content="no-referrer">
     <meta name="color-scheme" content="light">
     <style>html,body,#root{width:100%;height:100%;margin:0;overflow:hidden}iframe{width:100%;height:100%;display:block;border:0}</style>

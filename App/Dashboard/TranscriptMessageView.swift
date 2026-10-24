@@ -9,6 +9,9 @@ struct TranscriptMessageView: View {
   let store: ConsoleStore
   let startsTurn: Bool
   @State private var gallery = ReplyMessageGallery()
+  private var hasMcp: Bool {
+    row.message.parts.contains { if case .mcpApp = $0 { true } else { false } }
+  }
   private var isUser: Bool { row.message.role == "user" }
   private var role: String {
     isUser ? "You" : row.message.role == "assistant" ? "Assistant" : "System"
@@ -32,12 +35,14 @@ struct TranscriptMessageView: View {
         messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
       }
       // Web: the action row belongs to a settled message, not one still being written.
-      if message.status != "running" && message.role != "system" { actions(message) }
+      if message.status != "running" && message.role != "system" {
+        actions(message).quotable(message, enabled: hasMcp)
+      }
     }
     .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
     // The whole row (not only its glyphs) opens the message menu, as hovering it does on the web.
     .contentShape(Rectangle())
-    .quotable(message)
+    .quotable(message, enabled: !hasMcp)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message-" + message.id)
     .fullScreenCover(
@@ -197,8 +202,7 @@ struct TranscriptPartView: View {
     case .attachment(let value):
       ReplyAttachmentView(part: value, message: message, store: store)
     case .mcpApp(let value):
-      DeferredTranscriptPart(
-        title: value.title ?? value.toolName, kind: "MCP app", feature: "App viewer")
+      McpAppPartView(part: value, message: message, store: store)
     case .restartProposal(let value):
       ReplyRestartView(part: value, message: message, store: store)
     case .replyOptions(let value):

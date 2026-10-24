@@ -48,6 +48,7 @@ final class AppModel {
     /// A DEBUG design-catalog scenario replaces the console shell; storage stays isolated.
     let catalog: DesignCatalogScenario?
     @ObservationIgnored private(set) var composerScript: ComposerScript?
+    private(set) var mcpScript: McpUiScript?
     /// Composer fixture scenarios add a synthetic attachment source to the attach menu.
     var offersSampleAttachments: Bool { storeScenario?.isComposer == true }
     var opaqueFixtureSurfaces: Bool {
@@ -223,9 +224,16 @@ final class AppModel {
       if scenario != nil {
         let script = storeScenario?.isComposer == true ? ComposerScript(storeScenario) : nil
         composerScript = script
+        let mcp = storeScenario.flatMap {
+          $0.isMcp
+            ? McpUiScript($0, diagnostics: McpUiDiagnostics(interactive: $0 == .conversationMcpApp))
+            : nil
+        }
+        mcpScript = mcp
         api = APIClient(
           endpoint: profile.endpoint,
-          transport: ScenarioConsoleTransport(storeScenario, theme: fixtureTheme, script: script))
+          transport: ScenarioConsoleTransport(
+            storeScenario, theme: fixtureTheme, script: script, mcp: mcp))
         events = ScenarioEventSource(storeScenario, script: script)
       } else {
         api = APIClient(endpoint: profile.endpoint)

@@ -37,17 +37,32 @@ import XCTest
     ]
     app.launch()
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    let scroll = transcriptScroll(app)
+    // Establish user reading intent before using the native scroll-to-top gesture. Hundreds
+    // of inertial swipes are slow and can expose an AX-hittable button behind the status bar.
+    scroll.swipeDown(velocity: .fast)
+    XCTAssertTrue(element(app, "jump-to-latest").waitForExistence(timeout: 5))
+    let header = element(app, "conversation-header")
+    let window = app.windows.firstMatch
+    // iOS does not expose the status bar in this app's AX tree. Tap the top system region,
+    // outside the Dynamic Island and over the detail column on a split-view tablet.
+    window.coordinate(withNormalizedOffset: .zero).withOffset(
+      CGVector(
+        dx: scroll.frame.maxX - window.frame.minX - 24,
+        dy: (header.frame.minY - window.frame.minY) / 4)
+    ).tap()
     let older = element(app, "transcript-load-older")
-    for _ in 0..<120 {
-      if older.exists && older.isHittable { break }
-      transcriptScroll(app).swipeDown(velocity: .fast)
-    }
-    XCTAssertTrue(older.exists && older.isHittable)
-    XCTAssertTrue(
-      element(app, "conversation-header").exists,
-      "The eager header must return to the accessibility hierarchy")
+    let reachable = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        guard older.exists, older.isHittable, older.isEnabled, header.exists else { return false }
+        let frame = older.frame
+        return frame.minY >= max(scroll.frame.minY, header.frame.maxY)
+          && app.windows.firstMatch.frame.contains(frame)
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [reachable], timeout: 20), .completed)
+    XCTAssertTrue(header.exists, "The eager header must return to the accessibility hierarchy")
     let anchor = element(app, "message-long-40")
-    XCTAssertTrue(anchor.exists)
+    XCTAssertTrue(anchor.exists && anchor.isHittable)
     older.tap()
     let paged = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in

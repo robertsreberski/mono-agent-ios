@@ -992,6 +992,96 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "unavailable"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "consent"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "hidden"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "consent"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "hidden"
+    },
+    {
+      "scenario": "conversation-mcp-unavailable",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-unavailable",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-long-title",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-long-title",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-long-title",
+      "appearance": "light",
+      "variant": "ax3",
+      "textSize": "accessibilityXL",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "light",
+      "variant": "linkax3",
+      "textSize": "accessibilityXL",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

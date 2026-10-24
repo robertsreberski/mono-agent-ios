@@ -1,8 +1,8 @@
 # MCP app isolation core
 
-This core is not connected to the transcript. The isolation layer delivers bounded raw
-JSON-RPC envelopes; the native bridge above it owns method semantics and consent-gated
-effects through Store. The transcript placeholder remains.
+MCP parts are connected to the transcript through the Store-only native presentation below.
+The isolation layer delivers bounded raw JSON-RPC envelopes; the native bridge above it
+owns method semantics and consent-gated effects through Store.
 
 Each host owns a nonpersistent website data store, content controller, fixed custom-scheme
 shell, and scripts-only sandboxed srcdoc. The shell's response-header envelope CSP and
@@ -70,16 +70,16 @@ do not rely on global removal alone or advertise a general network firewall.
 
 Public WKWebView APIs provide no hard per-host CPU or memory quota. The bridge below
 bounds requests and effects; native presentation and transcript lifecycle ownership remain
-separate PR2 work.
+owned by the transcript presentation below.
 
-## Native protocol / effect layer (no transcript integration yet)
+## Native protocol / effect layer
 
 `McpAppBridge.make(store:session:consent:opener:environment:)` consumes a loaded,
 connected Store session. `McpStoreGateway` is the sole production forwarding adapter:
 App → ConsoleStore → CapabilityService → ConsoleAPI. No App API client, credentials or
-capability URL enter WK. PR2 owns native consent presentation, visibility and the live-host
-cap; it must call `teardown()` (or immediate `close()`) when abandoning a bridge.
-PR2 implements the `McpConsentPresenting` protocol; no concrete presentation UI exists here.
+capability URL enter WK. McpAppPartView / McpHostPool own native consent presentation, visibility and the live-host
+cap, calling immediate `close()` when abandoning a bridge. McpNativeConsent implements
+`McpConsentPresenting` with the native sheet.
 Each `confirm(_:requestID:)` / `cancel(requestID:)` pair is scoped by a fresh UUID so a shared
 presenter cannot cancel a different bridge's prompt. Cancellation must settle only that request.
 
@@ -103,7 +103,8 @@ presenter cannot cancel a different bridge's prompt. Cancellation must settle on
   for deterministic output and does not split UTF-8 scalars at the byte ceiling.
 - Open-link requires confirmation, server allowed===true and opens the **returned** HTTP(S)
   URL in the system default browser, through an injected opener. A changed destination is
-  not refused. Native rejects file/custom schemes and URL credentials rather than handing
+  not refused: this is explicitly accepted web parity (D7), not a new destination-equality
+  or re-confirmation policy. Native rejects file/custom schemes and URL credentials rather than handing
   native app/file privileges to an HTML app. A refused open returns isError:true.
 - Model context succeeds only on accepted===true; refusal exposes a control-cleaned reason
   bounded to 500 UTF-16 units, like the web's bounded text. Tool/resource result structure is
@@ -128,10 +129,11 @@ retained for replay. Unlike web fetch retry, native cannot silently repeat a con
 `AppTests/Resources/mcp-protocol-vectors.json` contains minimal schema/default-handler
 vectors from integrity-verified ext-apps 1.7.5, with the full original transition LICENSE
 beside it. Both are test-bundle-only; no SDK code/dependency is installed. DEBUG-only
-`McpGardenFixture` supplies an inline synthetic planner for real-WK semantic tests, not a
-transcript/catalog route. Release checks reject its symbols/strings and test resources.
-The tests inject consent and URL opening; they are not physical gesture, UIKit dialog or
-actual external-browser launch proof. Those UI integrations remain PR2 work.
+`McpGardenFixture` supplies an inline synthetic planner for real-WK tests and DEBUG
+conversation-mcp-* transcript scenarios. Release checks reject its symbols/strings and test resources.
+The semantic tests inject consent/URL opening; the XCUI suite additionally taps actual app
+controls and the native sheet. Actual external-browser launch and physical-device proof
+remain unverified; open-link cancellation is exercised without contacting an external site.
 
 
 Protocol errors follow ext-apps' delegated SDK Protocol: unknown method **-32601**, invalid
@@ -156,3 +158,69 @@ consent/result tests independent of a closed bridge's incoming debug observer. I
 coverage also runs through the real Store gateway/APIClient and a per-instance scripted
 HTTPTransport, never a console: Cancel 0 / Allow 1 POST, overlapping expiry reads, and a completed
 confirmed tool overlapped by read renewal with exactly one tool POST and one native reply.
+
+
+## Transcript presentation and lifetime
+
+McpAppPartView now replaces the placeholder. A transcript-owned McpHostPool admits at most
+two loading/live hosts, oldest offscreen first (then oldest visible when all slots are visible).
+Visibility is measured on each part, not its message. Full mode opens only at the first
+viewport arrival; Lean requires Show. Arrival metadata survives lazy row recreation and is
+pruned with the held message list. Hide/offscreen/background/selection/identity change destroys
+the document; Show/Reopen refetches, with no retained HTML cache. Memory warning, process
+termination and a15s load/initialize deadline offer Reopen without automatic restart.
+The loaded resource must also match the visible publication's core binding, so a delayed
+UI projection cannot mount a different invocation under an old header.
+
+Native McpNativeConsent implements token-scoped McpConsentPresenting with a system modal
+sheet, redacted bounded preview, Cancel/Allow once and restored accessibility focus. The
+transcript below the sheet is hit-test/AX-hidden, and the system sheet isolates the rest of
+the scene. Parent message quote menus are removed from MCP-bearing rows; quoting stays on
+the native message action strip, not over WK controls. Card typography uses shared reply
+WebType roles,44pt actions, opaque WebColor surfaces and full accessible names. WK pageZoom
+follows Dynamic Type; theme/BCP47 locale/width updates do not recreate the bridge. Requested
+height keeps the160–1600 clamp and phones cap at70% of the measured transcript viewport.
+Existing transcript measured-height/follow policy remains the scroll owner.
+
+DEBUG conversation-mcp-app/unavailable/long-title scenarios use the Store/APIClient path
+with a per-instance scripted transport and the synthetic garden document. Native test POST
+counters are transport-derived, not app-supplied diagnostics. Release excludes those types,
+scenario names and content. Automated UI/screenshot evidence is added separately.
+
+The native fixed shell additionally declares a device-width viewport. Without it WK uses a
+980px layout viewport and scales44px app controls down to~18pt on phones; CSP/isolation are
+unchanged. Real-WK width and XCUI physical hit-target assertions guard the native adaptation.
+Consent's primary action uses onAccent, not hard-coded white on the light dark-mode accent.
+
+Visual review also restored the outlined spark glyph and exact dangerSoft token and uses
+wide-column gutter bleed. The existing transcript follow/read policy remains unmodified;
+short/long transcript regression tests and the actual resize interaction cover its integration.
+
+Consent presentation callbacks are request-token scoped. Cancellation before the sheet ever
+appears releases immediately (there may be no UIKit dismissal callback); once visible, new
+requests remain denied until that sheet's actual dismissal finishes. Stale token callbacks
+cannot cancel a newer request. A dedicated native lifecycle test covers both paths.
+
+## PR2 review corrections
+
+Access expiry degrades the whole part: Reopen replaces Hide, the app view is hidden,
+error styling is used, and the same status is displayed and spoken. Reopen stops the old
+bridge before fetching fresh access. A native action tap reasserts visibility after covers
+or navigation; inactive scene peeks retain hosts, while background closes them (D11).
+Controller construction is deferred into identity-scoped State, not repeated by streaming
+parent initialization; a real hosting/render test checks one construction across twelve updates.
+
+Native consent content scrolls independently of the pinned Cancel / Allow once row. Links
+show the destination host on its own, with a middle-truncated three-line URL and the full
+bounded URL available to VoiceOver. The DEBUG --mcp-long-link fixture focuses the garden
+on one link control with an approximately 8,000-character URL; AX3 XCUI verifies both actions
+remain hittable, the full URL label and zero link POSTs after cancellation.
+
+Only an actually attached native consent view makes the transcript inert / AX-hidden.
+SwiftUI onAppear alone is insufficient: it can run after UIKit refuses presentation. An
+occupied presentation anchor declines immediately without disturbing the other sheet;
+otherwise a one-second deadline auto-declines if native window attachment never occurs.
+The ordinary bridge decline response and zero tool POSTs are tested with another real UIKit
+sheet open. A separate native test covers the unpresented deadline. Visible prompts retain
+the dismissal fence and request-token guards. XCUI additionally swipes a tool prompt down,
+then rechecks both tool and link counters after the entire interaction/reopen sequence.
