@@ -25,6 +25,34 @@ import XCTest
   }
   func testLongTitleDark() { unavailable("conversation-mcp-long-title", "dark") }
 
+  func testLongLinkConsentAccessibility() {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-mcp-app", "--appearance", "light", "--reset-test-data",
+      "--mcp-long-link",
+      "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL",
+    ]
+    app.launch()
+    wait(element(app, "mcp-status-garden"), contains: "ready")
+    XCTAssertTrue(app.buttons["Open guide"].waitForExistence(timeout: 10))
+    app.buttons["Open guide"].tap()
+    let cancel = app.buttons["mcp-consent-cancel"]
+    let allow = app.buttons["mcp-consent-allow"]
+    XCTAssertTrue(cancel.waitForExistence(timeout: 10))
+    XCTAssertTrue(cancel.isHittable && allow.isHittable)
+    XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
+    XCTAssertGreaterThanOrEqual(allow.frame.height, 44)
+    XCTAssertLessThanOrEqual(allow.frame.maxY, app.frame.maxY)
+    XCTAssertEqual(element(app, "mcp-consent-host").label, "Destination host: garden.example")
+    XCTAssertGreaterThanOrEqual(element(app, "mcp-consent-url").label.count, 8000)
+    capture(app, "conversation-mcp-app", "light", variant: "linkax3")
+    cancel.tap()
+    wait(element(app, "mcp-native-counters"), contains: "Link POSTs: 0")
+    showHeader(app)
+    XCTAssertTrue(app.buttons["mcp-action-garden"].isEnabled)
+    wait(element(app, "mcp-native-counters"), contains: "Link POSTs: 0")
+  }
+
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
     app.descendants(matching: .any).matching(identifier: id).firstMatch
   }
@@ -88,6 +116,16 @@ import XCTest
     XCTAssertTrue(app.buttons["Plan beds"].waitForExistence(timeout: 10))
     wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 0")
     app.buttons["Plan beds"].tap()
+    XCTAssertTrue(app.buttons["mcp-consent-cancel"].waitForExistence(timeout: 10))
+    let sheet = element(app, "mcp-consent")
+    sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).press(
+      forDuration: 0.1,
+      thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+    let dismissed = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == false"), object: app.buttons["mcp-consent-cancel"])
+    XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed)
+    wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 0")
+    app.buttons["Plan beds"].tap()
     XCTAssertTrue(app.buttons["mcp-consent-allow"].waitForExistence(timeout: 10))
     app.buttons["mcp-consent-allow"].tap()
     wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 1")
@@ -115,5 +153,6 @@ import XCTest
     app.buttons["mcp-action-garden"].tap()
     wait(element(app, "mcp-status-garden"), contains: "ready")
     wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 1")
+    wait(element(app, "mcp-native-counters"), contains: "Link POSTs: 0")
   }
 }

@@ -104,15 +104,7 @@ struct ConversationTranscript<Header: View>: View {
     }
     .environment(\.mcpHostPool, mcpPool)
     .environment(\.mcpViewport, CGSize(width: viewportWidth, height: viewportHeight))
-    .allowsHitTesting(mcpPool.consent.request == nil)
-    .accessibilityHidden(mcpPool.consent.request != nil)
-    .sheet(
-      item: Binding(
-        get: { mcpPool.consent.request }, set: { if $0 == nil { mcpPool.consent.dismiss() } }),
-      onDismiss: { mcpPool.consent.didDismiss() }
-    ) { request in
-      McpConsentView(request: request, presenter: mcpPool.consent)
-    }
+    .modifier(McpConsentPresentation(presenter: mcpPool.consent))
     .onChange(of: scenePhase) { _, phase in mcpPool.sceneChanged(phase) }
     .onChange(of: state.orderedMessageIDs) { _, ids in mcpPool.retainMessages(ids) }
     .onChange(of: store.selectedThreadID) { _, thread in mcpPool.selectionChanged(thread) }

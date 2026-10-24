@@ -1074,6 +1074,14 @@
       "textSize": "accessibilityXL",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-mcp-app",
+      "appearance": "light",
+      "variant": "linkax3",
+      "textSize": "accessibilityXL",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

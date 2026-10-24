@@ -283,6 +283,72 @@ import UIKit
     presenter.cancel(requestID: final)
     #expect(await resumed.value == false)
   }
+  @Test func unpresentedConsentDeadlineDeclinesAndReleasesPendingRequest() async throws {
+    let presenter = McpNativeConsent(presentationTimeout: .milliseconds(30))
+    let prompt = McpConsentPrompt(
+      method: "tools/call", title: "Allow?", detail: "Synthetic", argumentPreview: nil)
+    let started = ContinuousClock.now
+    let result = await presenter.confirm(prompt, requestID: UUID())
+    #expect(!result && presenter.request == nil && !presenter.isPresented)
+    #expect(ContinuousClock.now - started >= .milliseconds(20))
+    let next = await presenter.confirm(prompt, requestID: UUID())
+    #expect(!next && presenter.request == nil)
+  }
+  @Test func anotherNativeSheetBoundsPendingConsentAndReturnsNormalDeclineWithoutPost() async throws
+  {
+    let (app, store, message, part) = try await setup()
+    let pool = McpHostPool()
+    let controller = McpPartController(part: part, message: message, store: store, pool: pool)
+    controller.visibility(true)
+    try await attach(controller)
+    let host = try #require(controller.bridge?.host)
+    let scene = try #require(
+      UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    let hosting = UIHostingController(
+      rootView: Color.clear.modifier(McpConsentPresentation(presenter: pool.consent)))
+    window.rootViewController = hosting
+    window.isHidden = false
+    defer {
+      window.isHidden = true
+      window.rootViewController = nil
+      controller.hide()
+    }
+    try await wait { hosting.view.window != nil }
+    let other = UIViewController()
+    other.view.backgroundColor = .systemBackground
+    other.modalPresentationStyle = .pageSheet
+    hosting.present(other, animated: false)
+    try await wait { hosting.presentedViewController === other }
+    try await host.sendEnvelope(
+      try JSONEncoder().encode(
+        JSONValue.object([
+          "jsonrpc": .string("2.0"), "method": .string("fixture/command"),
+          "params": .object([
+            "rpc": .object([
+              "jsonrpc": .string("2.0"), "id": .string("blocked-tool"),
+              "method": .string("tools/call"),
+              "params": .object(["name": .string("plan"), "arguments": .object([:])]),
+            ])
+          ]),
+        ])))
+    try await wait {
+      host.debugSendAttempts.contains { data in
+        let rpc = try? JSONDecoder().decode(JSONValue.self, from: data)
+        return rpc?[mcp: "id"] == .string("blocked-tool")
+      }
+    }
+    let reply = try #require(
+      host.debugSendAttempts.compactMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
+        .first { $0[mcp: "id"] == .string("blocked-tool") })
+    #expect(reply[mcp: "error"]?[mcp: "code"] == .number(-32603))
+    #expect(pool.consent.request == nil && !pool.consent.isPresented)
+    #expect(await app.mcpScript?.diagnostics.toolPosts == 0)
+    #expect(hosting.presentedViewController === other)
+    other.dismiss(animated: false)
+    controller.hide()
+    await store.stop()
+  }
   @Test func identityIgnoresAccessUrlsButNotPublicationAndNativeConsentIsScoped() async throws {
     let (app, store, message, part) = try await setup()
     _ = app

@@ -20,6 +20,7 @@
   actor McpUiScript {
     private var expireTool = false
     func expireNextTool() { expireTool = true }
+    private let longLink = ProcessInfo.processInfo.arguments.contains("--mcp-long-link")
     let scenario: StoreScenario
     let diagnostics: McpUiDiagnostics
     init(_ scenario: StoreScenario, diagnostics: McpUiDiagnostics) {
@@ -67,6 +68,16 @@
       if path == base {
         var resource = try McpGardenFixture.resource()
         resource.app = published
+        if longLink {
+          resource.html = resource.html.replacingOccurrences(
+            of: "https://garden.example/guide",
+            with: "https://garden.example/" + String(repeating: "a", count: 7980)
+          )
+          .replacingOccurrences(
+            of: "<style>",
+            with:
+              "<style>h1,#status,button{display:none}button:nth-of-type(3){display:inline-block}")
+        }
         return try encoded(resource)
       }
       if path == base + "/requests", let bytes = request.httpBody {
