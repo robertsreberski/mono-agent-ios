@@ -126,9 +126,74 @@ struct McpAppAccessTests {
     await h.transport.set(base + "/access", [.response(try access("renewed"))])
     try await h.store.renewMcpApp(session)
     await h.transport.release(try response(JSONValue.object(["result": .object([:])])))
-    await #expect(throws: CancellationError.self) { _ = try await read.value }
+    let result = try await read.value
+    #expect(result == .object([:]))
     #expect(session.current?.bridgeUrl?.contains("token=renewed") == true)
     #expect(!session.isClosed)
+    await h.store.stop()
+  }
+
+  @Test func parallelExpiredReadsReturnBothResultsWithoutRollingBackAccess() async throws {
+    let h = try await live()
+    defer { try? FileManager.default.removeItem(at: h.directory) }
+    let session = try await load(h)
+    let expired = HTTPResponse(
+      data: Data(#"{"error":{"code":"reply_access_expired","message":"Expired"}}"#.utf8),
+      status: 410)
+    await h.transport.set(
+      base + "/requests", [.response(expired), .paused, .response(expired), .paused])
+    await h.transport.set(
+      base + "/access", [.response(try access("renewed-a")), .response(try access("renewed-b"))])
+    let first = Task {
+      try await h.store.requestMcpApp(.init(method: "resources/read"), session: session)
+    }
+    await eventually { await h.transport.pauseCount() == 1 }
+    let second = Task {
+      try await h.store.requestMcpApp(.init(method: "resources/read"), session: session)
+    }
+    await eventually { await h.transport.pauseCount() == 2 }
+    await h.transport.release(
+      try response(JSONValue.object(["result": .object(["read": .number(1)])])))
+    #expect(try await first.value == .object(["read": .number(1)]))
+    await h.transport.release(
+      try response(JSONValue.object(["result": .object(["read": .number(2)])])))
+    #expect(try await second.value == .object(["read": .number(2)]))
+    #expect(!session.isClosed && session.current?.bridgeUrl?.contains("token=renewed-a") == true)
+    #expect(await h.transport.count(base + "/requests", method: "POST") == 4)
+    await h.store.stop()
+  }
+
+  @Test func confirmedToolResultSurvivesAnOverlappingReadRenewalWithoutReplay() async throws {
+    let h = try await live()
+    defer { try? FileManager.default.removeItem(at: h.directory) }
+    let session = try await load(h)
+    let expired = HTTPResponse(
+      data: Data(#"{"error":{"code":"reply_access_expired","message":"Expired"}}"#.utf8),
+      status: 410)
+    await h.transport.set(
+      base + "/requests",
+      [
+        .paused, .response(expired),
+        .response(try response(JSONValue.object(["result": .object(["contents": .array([])])]))),
+      ])
+    await h.transport.set(base + "/access", [.response(try access("renewed"))])
+    let tool = Task {
+      try await h.store.requestMcpApp(
+        .init(method: "tools/call", confirmed: true), session: session)
+    }
+    await eventually { await h.transport.pauseCount() == 1 }
+    _ = try await h.store.requestMcpApp(.init(method: "resources/read"), session: session)
+    let result: JSONValue = .object([
+      "content": .array([.object(["type": .string("text"), "text": .string("Beds planned")])])
+    ])
+    await h.transport.release(try response(JSONValue.object(["result": result])))
+    #expect(try await tool.value == result)
+    let requests = await h.transport.requests.filter { $0.url?.path == base + "/requests" }
+    let bodies = try requests.map {
+      try JSONDecoder().decode(ApiMcpAppRequest.self, from: $0.httpBody!)
+    }
+    #expect(bodies.filter { $0.method == "tools/call" }.count == 1)
+    #expect(!session.isClosed && session.current?.bridgeUrl?.contains("token=renewed") == true)
     await h.store.stop()
   }
 

@@ -112,9 +112,10 @@ extension ConsoleStore {
       try await capabilities.renewMcpAppAccess(session.published, reference: session.reference)
     }
     try checkMcpSession(session)
-    guard session.revision == revision else { throw CancellationError() }
-    session.current = access
-    session.retryRequiresConsent = false
+    if session.revision == revision {
+      session.current = access
+      session.retryRequiresConsent = false
+    }
   }
 
   public func requestMcpApp(_ body: ApiMcpAppRequest, session: McpAppAccess) async throws
@@ -130,8 +131,8 @@ extension ConsoleStore {
           access: access, reference: session.reference)
       }
       try checkMcpSession(session)
-      guard session.revision == revision else { throw CancellationError() }
-      if reply.access != session.current {
+      // Renewal changes capability freshness, not the identity of a completed result.
+      if session.revision == revision, reply.access != session.current {
         session.current = reply.access
         session.revision &+= 1
       }
@@ -139,7 +140,6 @@ extension ConsoleStore {
       return reply.result.result
     } catch {
       try checkMcpSession(session)
-      guard session.revision == revision else { throw CancellationError() }
       if let apiError = error as? APIError, apiError.code == "reply_access_expired",
         body.method != "resources/read"
       {

@@ -6,7 +6,16 @@ public enum McpAppAccessError: Error, Sendable, Equatable {
 }
 
 extension McpAppPart {
-  /// Publication identity excludes only the renewable capability URLs.
+  /// Resource binding combines the shipped web fields and route/server identity.
+  /// Presentation/retention metadata may differ on the agent's resource copy.
+  public func hasSameMcpResourceIdentity(as other: McpAppPart) -> Bool {
+    type == other.type && id == other.id && serverName == other.serverName
+      && toolName == other.toolName && invocationId == other.invocationId
+      && connectionId == other.connectionId && resourceUri == other.resourceUri
+      && mediaType == other.mediaType && protocolVersion == other.protocolVersion
+  }
+
+  /// Access-renewal publication identity excludes only renewable capability URLs.
   public func hasSameMcpIdentity(as other: McpAppPart) -> Bool {
     var left = self
     var right = other
@@ -70,7 +79,7 @@ extension CapabilityService {
       ).valueRequired()
     }
     try Task.checkCancellation()
-    guard resource.app.hasSameMcpIdentity(as: published) else {
+    guard resource.app.hasSameMcpResourceIdentity(as: published) else {
       throw McpAppAccessError.identityMismatch
     }
     return McpAppLoad(resource: resource, access: access)

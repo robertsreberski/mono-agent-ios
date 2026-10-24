@@ -249,6 +249,7 @@ Release fixture gates reject their symbols and scenario strings.
 selection, Store lifetime, held conversation and authoritative (not delayed UI) part identity.
 Offline, background and stopped calls are refused. Selection/background/stop clears sessions,
 HTML and current access and cancels their operations. Explicit renewal invalidates older
-in-flight adoption; no late response can roll capabilities back. Expired confirmed requests
+in-flight access adoption; no late response can roll capabilities back. Matching-session
+results still return, including completed confirmed effects overlapped by a renewal. Expired confirmed requests
 set retryRequiresConsent and never renew/replay automatically. The bridge must obtain fresh
 native consent for an explicit retry. None of this state participates in persistence.

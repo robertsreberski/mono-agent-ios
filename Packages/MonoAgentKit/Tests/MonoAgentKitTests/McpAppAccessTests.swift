@@ -91,6 +91,31 @@ struct McpAppAccessTests {
     }
   }
 
+  @Test func resourceMetadataMayDifferButBindingCannotChange() async throws {
+    for key in [
+      "title", "description", "expiresAt", "id", "serverName", "toolName", "invocationId",
+      "connectionId", "resourceUri", "mediaType", "protocolVersion", "type",
+    ] {
+      var object = try JSONDecoder().decode(
+        [String: JSONValue].self, from: JSONEncoder().encode(part()))
+      object[key] = .string("different")
+      let changed = try JSONDecoder().decode(McpAppPart.self, from: JSONEncoder().encode(object))
+      let transport = ScriptedTransport([.response(try response(resource(changed)))])
+      let service = CapabilityService(
+        endpoint: Scenario.endpoint,
+        api: APIClient(endpoint: Scenario.endpoint, transport: transport))
+      if ["title", "description", "expiresAt"].contains(key) {
+        let loaded = try await service.loadMcpApp(part(), reference: reference)
+        #expect(loaded.resource.app == changed)
+        #expect(loaded.access == part())
+      } else {
+        await #expect(throws: McpAppAccessError.identityMismatch) {
+          try await service.loadMcpApp(part(), reference: reference)
+        }
+      }
+    }
+  }
+
   @Test func onlyResourceReadRenewsAndRetriesAndOnlyOnce() async throws {
     for method in ["resources/read", "tools/call", "ui/open-link", "ui/update-model-context"] {
       let transport = ScriptedTransport([
