@@ -146,6 +146,35 @@ import UIKit
     #expect(pool.debugCreatedControllers == 1)
     await store.stop()
   }
+  @Test func ordinaryTranscriptRowRendersNeverConstructMcpControllersOrAcquireHosts() async throws {
+    let app = AppModel(scenario: .consoleOnline, storeScenario: .conversationLong)
+    await app.start()
+    let store = try #require(app.store)
+    await store.reconciliationTask?.value
+    let conversation = try #require(store.conversations[DashboardFixture.openThreadID])
+    let row = try #require(conversation.messageStates["long-40"])
+    let pool = McpHostPool()
+    let probe = McpPlainRenderProbe()
+    let scene = try #require(
+      UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    window.rootViewController = UIHostingController(
+      rootView: McpPlainRenderFixture(row: row, store: store, pool: pool, probe: probe))
+    window.isHidden = false
+    defer {
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+    try await wait { !probe.text.isEmpty }
+    for index in 1...12 {
+      let text = "Synthetic field note \(index)"
+      row.message.parts = [.text(.init(text: text))]
+      try await wait { probe.text == text }
+      #expect(pool.debugCreatedControllers == 0 && pool.activeCount == 0)
+      #expect(pool.consent.request == nil)
+    }
+    await store.stop()
+  }
   @Test func leanRequiresShowAndBackgroundMemoryAndCrashRequireReopen() async throws {
     let (app, store, message, part) = try await setup(lean: true)
     _ = app
@@ -399,5 +428,25 @@ private struct McpStreamingRenderFixture: View {
   var body: some View {
     ScrollView { McpAppPartView(part: part, message: state.message, store: store) }
       .environment(\.mcpHostPool, pool)
+  }
+}
+
+@MainActor @Observable private final class McpPlainRenderProbe {
+  var text = ""
+}
+private struct McpPlainRenderFixture: View {
+  let row: TranscriptMessageState
+  let store: ConsoleStore
+  let pool: McpHostPool
+  let probe: McpPlainRenderProbe
+  var body: some View {
+    ScrollView {
+      TranscriptMessageView(row: row, store: store, startsTurn: false)
+    }
+    .environment(\.mcpHostPool, pool)
+    .onAppear { probe.text = QuoteFormatting.text(of: row.message) }
+    .onChange(of: row.message.parts) { _, _ in
+      probe.text = QuoteFormatting.text(of: row.message)
+    }
   }
 }
