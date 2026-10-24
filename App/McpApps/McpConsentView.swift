@@ -141,9 +141,9 @@ struct McpConsentView: View {
       .controlSize(.large).padding(18)
     }
     .foregroundStyle(WebColor.text.color)
-    // The one sheet exception (GLASS-RULES.md): a consent prompt over arbitrary app content
-    // keeps AA, so the whole material takes a uniform legibility veil (web: raised 96% + blur).
-    .webGlassLegibilityVeil()
+    // Consent over arbitrary app content takes the stronger veil (GLASS-RULES.md; the web
+    // confirmation is raised 96% over a blurred frame), so accent text keeps AA too.
+    .webSheetVeil(.consent)
     .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("mcp-consent")

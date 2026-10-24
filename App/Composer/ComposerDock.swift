@@ -36,10 +36,17 @@ struct ComposerJobDock: View {
       // transcript: one untinted glass surface; glass draws its own edge and depth. Reduce
       // Transparency keeps the web stack-bg fill with its 1 px line-strong edge.
       .padding(.horizontal, 10)
+      .webGlassContent()
       .floatingGlass(
         in: RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous),
         opaqueFill: theme.palette.jobStackBackground.color,
         opaqueStroke: WebColor.lineStrong.color
+      )
+      // Light mode keeps the web 1 px line-strong edge as a stroke only (no fill); dark glass
+      // already reads against the dark transcript.
+      .overlay(
+        RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous)
+          .strokeBorder(WebColor.lineStrong.color(lightOpacity: 1, darkOpacity: 0), lineWidth: 1)
       )
     }
   }
@@ -97,6 +104,7 @@ struct ComposerContextControl: View {
       }
       .scrollBounceBehavior(.basedOnSize)
     }
+    .webSheetVeil()
   }
 }
 

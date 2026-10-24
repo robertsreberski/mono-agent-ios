@@ -141,6 +141,7 @@ struct RunSettingsSheet: View {
         .overlay(alignment: .top) { WebHairline() }
       }
     }
+    .webSheetVeil()
     .presentationDetents([.medium, .large])
   }
 }
@@ -166,10 +167,10 @@ struct SkillBrowserSheet: View {
       .accessibilityIdentifier("skills-header")
       WebSearchField("Search names and descriptions", text: $query)
       if let notice {
-        Text(notice).webFont(.sheetSubtitle).foregroundStyle(WebColor.textMuted.color)
+        Text(notice).webFont(.sheetSubtitle).foregroundStyle(WebGlass.textMuted.color)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.vertical, 9).padding(.horizontal, 15)
-          .background(WebColor.surfaceSubtle.color)
+          .overlay(alignment: .bottom) { WebHairline() }
       }
       ScrollView {
         let visible = SkillDiscovery.rank(
@@ -191,15 +192,14 @@ struct SkillBrowserSheet: View {
           }
           if case .ready(let items, _, _, _)? = registry, visible.isEmpty {
             Text(items.isEmpty ? "No skills are installed for this agent." : "No matching skills.")
-              .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color).padding(16)
+              .webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color).padding(16)
           }
         }.padding(7)
       }
       .refreshable { await onRefresh() }
-      .background(WebColor.surfaceRaised.color)
     }
+    .webSheetVeil()
     .presentationDetents([.medium, .large])
-    .presentationCornerRadius(16)
     .accessibilityIdentifier("skill-browser")
   }
 
