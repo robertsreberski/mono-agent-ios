@@ -131,17 +131,15 @@ struct TranscriptMessageView: View {
   private func actions(_ message: WebMessage) -> some View {
     HStack(spacing: 4) {
       if isUser { Spacer(minLength: 0) }
-      TimelineView(.periodic(from: .now, by: 60)) { context in
-        Text(
-          DashboardModel.relativeTime(
-            message.createdAt, now: context.date.addingTimeInterval(store.serverClockOffset))
-        )
-        .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
-        // The role is spoken with the time, as the old visible "You"/"Assistant" header was.
-        .accessibilityLabel(
-          role + ", "
-            + (TranscriptPresentation.date(message.createdAt)?.formatted() ?? "time unavailable"))
-      }
+      Text(
+        DashboardModel.relativeTime(
+          message.createdAt, now: Date().addingTimeInterval(store.serverClockOffset))
+      )
+      .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
+      .accessibilityLabel(
+        role + ", "
+          + (TranscriptPresentation.date(message.createdAt)?.formatted() ?? "time unavailable")
+      )
       .padding(.horizontal, isUser ? 0 : 7)
       .opacity(message.parts.isEmpty ? 0 : 1)
       if !QuoteFormatting.text(of: message).isEmpty {
@@ -275,14 +273,17 @@ struct TranscriptActivityBand: View {
   let store: ConsoleStore
   @State private var expanded = true
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 1)) { context in
+    RunningTimeline(running: TranscriptPresentation.needsElapsedTimeline(status: message.status)) {
+      date in
       #if DEBUG
         let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
       #endif
       ActivityBand(
         meta: "\(parts.count) \(parts.count == 1 ? "step" : "steps")"
           + (TranscriptPresentation.elapsed(
-            message, now: context.date.addingTimeInterval(store.serverClockOffset)
+            message,
+            now: message.status == "running"
+              ? date.addingTimeInterval(store.serverClockOffset) : date
           )
           .map { " · " + $0 } ?? ""),
         running: message.status == "running", expanded: $expanded
@@ -310,7 +311,8 @@ struct ReasoningDisclosure: View {
   @State private var userOpen: Bool?
   private var running: Bool { message.status == "running" }
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 1)) { context in
+    RunningTimeline(running: TranscriptPresentation.needsElapsedTimeline(status: message.status)) {
+      date in
       #if DEBUG
         let _ = PerformanceProbe.body("ReasoningDisclosure.clock")
       #endif
@@ -318,7 +320,9 @@ struct ReasoningDisclosure: View {
         running ? "Thinking…" : "Reasoning",
         status: running ? .connecting : .disconnected,
         detail: TranscriptPresentation.elapsed(
-          message, now: context.date.addingTimeInterval(store.serverClockOffset)),
+          message,
+          now: message.status == "running" ? date.addingTimeInterval(store.serverClockOffset) : date
+        ),
         glyph: .reasoning, identifier: "reasoning-disclosure",
         expanded: Binding(
           get: { userOpen ?? running },
@@ -475,7 +479,8 @@ struct RunAttributionView: View {
           }
         }
       }
-      TimelineView(.periodic(from: .now, by: 1)) { context in
+      RunningTimeline(running: TranscriptPresentation.needsElapsedTimeline(status: message.status))
+      { date in
         #if DEBUG
           let _ = PerformanceProbe.body("RunAttributionView.clock")
         #endif
@@ -483,7 +488,9 @@ struct RunAttributionView: View {
           [
             TranscriptPresentation.cost(cost),
             TranscriptPresentation.elapsed(
-              message, now: context.date.addingTimeInterval(store.serverClockOffset)),
+              message,
+              now: message.status == "running"
+                ? date.addingTimeInterval(store.serverClockOffset) : date),
           ].compactMap { $0 }.joined(separator: " · "))
       }
     }

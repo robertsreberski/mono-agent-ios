@@ -312,12 +312,12 @@ enum DashboardModel {
     return counts
   }
 
+  private static let gregorianCalendar = Calendar(identifier: .gregorian)
+
   // MARK: Time
 
   static func parseDate(_ text: String) -> Date? {
-    let precise = ISO8601DateFormatter()
-    precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return precise.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    ServerTimestamp.date(text)
   }
 
   /// A row's age: minutes/hours/days within a week, then the short date.
@@ -333,7 +333,7 @@ enum DashboardModel {
     let days = hours / 24
     if days < 7 { return "\(days)d" }
     var style = Date.FormatStyle(locale: locale, timeZone: timeZone).month(.abbreviated).day()
-    style.calendar = Calendar(identifier: .gregorian)
+    style.calendar = gregorianCalendar
     return date.formatted(style)
   }
 
@@ -351,7 +351,7 @@ enum DashboardModel {
     if minutes < 24 * 60 { return plural(minutes / 60, "hour") }
     if minutes < 7 * 24 * 60 { return plural(minutes / (24 * 60), "day") }
     var style = Date.FormatStyle(locale: locale, timeZone: timeZone).month(.wide).day()
-    style.calendar = Calendar(identifier: .gregorian)
+    style.calendar = gregorianCalendar
     return date.formatted(style)
   }
 

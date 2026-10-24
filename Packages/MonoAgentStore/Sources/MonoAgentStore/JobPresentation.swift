@@ -18,9 +18,7 @@ public enum JobPresentation {
     ["Exec", "Bash"].contains(job.tool)
   }
   public static func date(_ stamp: String?) -> Date? {
-    guard let stamp else { return nil }
-    return ISO8601DateFormatter().date(from: stamp)
-      ?? ISO8601DateFormatter.fractional.date(from: stamp)
+    ServerTimestamp.date(stamp)
   }
   public static func pending(_ job: ProcessJobProjection, now: Date) -> Bool {
     guard let question = job.peerQuestion, question.state == "awaiting_answer",
@@ -158,14 +156,6 @@ public enum JobPresentation {
       result.subagentProgress = old
     }
     return result
-  }
-}
-
-extension ISO8601DateFormatter {
-  fileprivate static var fractional: ISO8601DateFormatter {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
   }
 }
 
