@@ -1356,6 +1356,38 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "sheet"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "light",
+      "variant": "bleed",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "dark",
+      "variant": "bleed",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "light",
+      "variant": "footerlast",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "dark",
+      "variant": "footerlast",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }
