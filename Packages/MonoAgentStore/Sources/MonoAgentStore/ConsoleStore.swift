@@ -25,13 +25,19 @@ public final class ConsoleStore {
   public let namespace: ConsoleNamespace
   public internal(set) var bootstrap: ApiBootstrap?
   public var agents: [WebAgentSummary] { bootstrap?.agents ?? [] }
-  public internal(set) var buckets: [BucketKey: ThreadBucket] = [:]
-  public internal(set) var activeFleet: WebActiveThreads?
+  public internal(set) var buckets: [BucketKey: ThreadBucket] = [:] {
+    didSet { refreshUnreadCounts() }
+  }
+  public internal(set) var activeFleet: WebActiveThreads? { didSet { refreshUnreadCounts() } }
   public internal(set) var tags: [WebTag] = []
   public internal(set) var projects: [WebProject] = []
   public internal(set) var selectedBucket: BucketKey?
   public internal(set) var selectedThreadID: String?
-  public internal(set) var conversations: [String: ConversationState] = [:]
+  public private(set) var unreadCounts: [String: Int] = [:]
+  public private(set) var cachedThreads: [WebThread] = []
+  public internal(set) var conversations: [String: ConversationState] = [:] {
+    didSet { refreshCachedThreads() }
+  }
   public var selectedConversation: ConversationState? {
     selectedThreadID.flatMap { conversations[$0] }
   }
@@ -201,7 +207,7 @@ public final class ConsoleStore {
       guard epoch == generation else { return }
       cacheRevision = cache.revision
       tombstones = cache.tombstones
-      bootstrap = try cache.bootstrap.map(CacheSanitizer.sanitize)
+      bootstrap = cache.bootstrap
       if let bootstrap {
         tags = bootstrap.tags
         projects = bootstrap.projects
@@ -209,7 +215,7 @@ public final class ConsoleStore {
       }
       for bucket in cache.buckets { buckets[bucket.key] = bucket }
       for entry in cache.conversations.sorted(by: { $0.savedAt < $1.savedAt }) {
-        hold(try CacheSanitizer.conversation(entry), fromDevice: true)
+        hold(entry, fromDevice: true)
       }
     } catch {
       storage = .memoryOnly
@@ -221,6 +227,7 @@ public final class ConsoleStore {
       authored = record
       authoredBaseline = record
       authoredRevision &+= 1
+      refreshUnreadCounts()
       dataMode = record.dataMode
     } catch {
       authoredStorage = .memoryOnly
@@ -262,7 +269,7 @@ public final class ConsoleStore {
         let cache = try await repository.loadCache(namespace)
         guard epoch == generation, selection == selected else { return }
         if let entry = cache.conversations.first(where: { $0.thread.id == threadID }) {
-          hold(try CacheSanitizer.conversation(entry), fromDevice: true)
+          hold(entry, fromDevice: true)
         }
       } catch { errorMessage = "This conversation's offline cache could not be restored." }
     }
@@ -321,7 +328,7 @@ public final class ConsoleStore {
     observedOrder.removeAll { $0 == id }
     observedOrder.append(id)
     while observedOrder.count > 256 { observations[observedOrder.removeFirst()] = nil }
-    conversations[id]?.freshness = .stale
+    if conversations[id]?.freshness != .stale { conversations[id]?.freshness = .stale }
   }
   func noteSummary(_ thread: WebThread) {
     confirmedSummaryIDs.insert(thread.id)
@@ -343,6 +350,7 @@ public final class ConsoleStore {
   func authoredChanged() {
     // Assigning the value is required because the I/O record itself is observation-ignored.
     authoredRevision &+= 1
+    refreshUnreadCounts()
     draftTask?.cancel()
     let generation = epoch
     draftTask = Task { [weak self, clock] in
@@ -360,8 +368,30 @@ public final class ConsoleStore {
     state.record = entry
     state.runningConfirmed = !fromDevice
     state.publish()
-    conversations[entry.thread.id] = state
+    if conversations[entry.thread.id] == nil {
+      state.onThreadChange = { [weak self] in self?.refreshCachedThreads() }
+      conversations[entry.thread.id] = state
+    }
+    refreshCachedThreads()
     touch(entry.thread.id)
+  }
+  func refreshCachedThreads() {
+    let threads = conversations.values.map(\.thread).sorted { $0.id < $1.id }
+    if cachedThreads != threads { cachedThreads = threads }
+  }
+  func refreshUnreadCounts() {
+    let markers = Dictionary(authored.seen.map { ($0.id, $0.revision) }, uniquingKeysWith: max)
+    let listed = buckets.filter { !$0.key.archived }.values.flatMap(\.threads).filter {
+      $0.trigger?.kind != "cron"
+    }
+    var seen: Set<String> = []
+    var counts: [String: Int] = [:]
+    for thread in listed + (activeFleet?.threads ?? []) where seen.insert(thread.id).inserted {
+      if let marker = markers[thread.id], thread.revision > marker {
+        counts[thread.sourceId, default: 0] += 1
+      }
+    }
+    if unreadCounts != counts { unreadCounts = counts }
   }
   func touch(_ id: String) {
     lru.removeAll { $0 == id }
@@ -375,17 +405,20 @@ public final class ConsoleStore {
   func publishAll() {
     publicationTask?.cancel()
     publicationTask = nil
-    for state in conversations.values { state.publish() }
+    for state in conversations.values { state.publishPending() }
   }
-  func publish(_ state: ConversationState, terminal: Bool = false) {
-    if effectiveDataMode == .full || terminal {
-      state.publish()
+  func publish(_ state: ConversationState, terminal: Bool = false, delta: Bool = false) {
+    if !delta { state.needsFullPublication = true }
+    if terminal || (!delta && effectiveDataMode == .full) {
+      state.publishPending()
       return
     }
     guard publicationTask == nil else { return }
     let generation = epoch
     publicationTask = Task { [weak self, clock] in
-      do { try await clock.sleep(seconds: 1) } catch { return }
+      do { try await clock.sleep(seconds: self?.effectiveDataMode == .lean ? 1 : 1.0 / 12) } catch {
+        return
+      }
       guard let self, self.epoch == generation, !Task.isCancelled else { return }
       self.publishAll()
     }
@@ -424,6 +457,7 @@ public final class ConsoleStore {
         authored = record
         dataMode = record.dataMode
         authoredRevision &+= 1
+        refreshUnreadCounts()
         changed = authoredRevision
         savingRevision = record.revision
         result = try await repository.saveAuthored(record, namespace: namespace)

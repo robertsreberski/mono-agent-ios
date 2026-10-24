@@ -17,7 +17,7 @@ struct ComposerJobDock: View {
   @State private var contentHeight: CGFloat = 0
 
   var body: some View {
-    if !JobShelf.items(messages: state.messages).isEmpty {
+    if !state.jobItems.isEmpty {
       // One scroll view sized to its content up to a cap, so expanding never swaps the
       // shelf's view identity (and its disclosure state).
       ScrollView {

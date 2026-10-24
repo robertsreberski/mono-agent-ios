@@ -12,14 +12,46 @@ public struct ConversationTurn: Identifiable, Sendable {
 /// The UI observes one conversation, not the entire fleet on every token.
 @MainActor @Observable
 public final class ConversationState {
-  public internal(set) var thread: WebThread
-  public internal(set) var messages: [WebMessage]
+  public internal(set) var thread: WebThread {
+    didSet { if oldValue != thread { onThreadChange?() } }
+  }
+  @ObservationIgnored var onThreadChange: (() -> Void)?
+  /// Compatibility snapshot, assembled only on demand. Never shares the mutable cache buffer.
+  public var messages: [WebMessage] { orderedMessageIDs.compactMap { messageStates[$0]?.message } }
+  public private(set) var jobItems: [JobShelfItem] = []
+  public private(set) var jobParentMessages: [WebMessage] = []
+  public private(set) var context = ContextProjection()
+  public private(set) var latestReportedAttribution: WebRunAttribution?
+  @ObservationIgnored private(set) var messageIndices: [String: Int] = [:]
+  @ObservationIgnored var pendingMessageIndices: Set<Int> = []
+  @ObservationIgnored var needsFullPublication = false
+  @ObservationIgnored private var inputs: [String: PresentationInput] = [:]
+  private struct PresentationInput: Equatable {
+    var status: String
+    var role: String
+    var jobParts: [WebMessagePart]
+    var contextParts: [WebMessagePart]
+    var attribution: WebRunAttribution?
+    init(_ message: WebMessage) {
+      status = message.status
+      role = message.role
+      jobParts = message.parts.filter {
+        switch $0 {
+        case .processJob, .toolCall, .subagent: true
+        default: false
+        }
+      }
+      contextParts = message.parts.filter { if case .telemetry = $0 { true } else { false } }
+      attribution = message.attribution
+    }
+  }
   public internal(set) var freshness: Freshness = .stale
   public internal(set) var runningConfirmed = false
   public internal(set) var nextCursor: String?
   public internal(set) var truncated: Bool
   /// Stable row identity; a token write invalidates only its own observed row.
   public private(set) var orderedMessageIDs: [String] = []
+  public private(set) var transcriptMessageIDs: [String] = []
   public private(set) var messageStates: [String: TranscriptMessageState] = [:]
   public var turns: [ConversationTurn] {
     var order: [String] = []
@@ -44,19 +76,26 @@ public final class ConversationState {
   init(_ record: CachedConversation) {
     self.record = record
     thread = record.thread
-    messages = record.messages
     nextCursor = record.nextCursor
     truncated = record.truncated
     publishRows()
+    publishDerived(jobs: true, context: true, route: true)
   }
   private func publishRows() {
     let ids = record.messages.map(\.id)
+    let visible = record.messages.filter(TranscriptTelemetry.visible).map(\.id)
+    if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
     if orderedMessageIDs != ids {
       orderedMessageIDs = ids
       let retained = Set(ids)
       messageStates = messageStates.filter { retained.contains($0.key) }
     }
+    inputs = [:]
+    messageIndices = Dictionary(
+      record.messages.enumerated().map { ($0.element.id, $0.offset) },
+      uniquingKeysWith: { first, _ in first })
     for message in record.messages {
+      inputs[message.id] = PresentationInput(message)
       if let row = messageStates[message.id] {
         if row.message != message { row.message = message }
         if row.turnID != message.turnId { row.turnID = message.turnId }
@@ -65,12 +104,94 @@ public final class ConversationState {
       }
     }
   }
+  func messageIndex(_ id: String) -> Int? {
+    if let index = messageIndices[id], record.messages.indices.contains(index),
+      record.messages[index].id == id
+    {
+      return index
+    }
+    return record.messages.firstIndex { $0.id == id }
+  }
   func publish() {
     if thread != record.thread { thread = record.thread }
-    messages = record.messages
     if nextCursor != record.nextCursor { nextCursor = record.nextCursor }
     if truncated != record.truncated { truncated = record.truncated }
     publishRows()
+    publishDerived(jobs: true, context: true, route: true)
+    pendingMessageIndices.removeAll()
+    needsFullPublication = false
+  }
+  func publishPending() {
+    if needsFullPublication {
+      publish()
+      return
+    }
+    var jobsChanged = false
+    var contextChanged = thread != record.thread
+    var routeChanged = false
+    var visibilityChanged = false
+    if thread != record.thread { thread = record.thread }
+    for index in pendingMessageIndices where record.messages.indices.contains(index) {
+      let message = record.messages[index]
+      guard let row = messageStates[message.id] else {
+        publish()
+        return
+      }
+      visibilityChanged =
+        visibilityChanged
+        || TranscriptTelemetry.visible(row.message) != TranscriptTelemetry.visible(message)
+      let next = PresentationInput(message)
+      let previous = inputs[message.id]
+      jobsChanged =
+        jobsChanged || previous?.jobParts != next.jobParts || previous?.role != next.role
+      contextChanged =
+        contextChanged || previous?.contextParts != next.contextParts
+        || previous?.status != next.status || previous?.role != next.role
+      routeChanged = routeChanged || previous?.attribution != next.attribution
+      inputs[message.id] = next
+      if row.message != message { row.message = message }
+      if row.turnID != message.turnId { row.turnID = message.turnId }
+    }
+    pendingMessageIndices.removeAll()
+    if visibilityChanged {
+      let visible = record.messages.filter(TranscriptTelemetry.visible).map(\.id)
+      if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
+    }
+    publishDerived(jobs: jobsChanged, context: contextChanged, route: routeChanged)
+  }
+  private func publishDerived(jobs: Bool, context contextChanged: Bool, route: Bool) {
+    if jobs {
+      let items = JobShelf.items(messages: record.messages)
+      if jobItems != items { jobItems = items }
+      let parents = record.messages.compactMap { message -> WebMessage? in
+        let parts = message.parts.filter {
+          switch $0 {
+          case .toolCall, .subagent: true
+          default: false
+          }
+        }
+        guard !parts.isEmpty else { return nil }
+        var value = message
+        value.parts = parts
+        // JobTimeline reads only identity, role, createdAt and parent calls.
+        value.updatedAt = value.createdAt
+        value.seq = nil
+        value.status = ""
+        value.attribution = nil
+        return value
+      }
+      if jobParentMessages != parents { jobParentMessages = parents }
+    }
+    if contextChanged {
+      let projection = UsagePresentation.context(messages: record.messages, thread: record.thread)
+      if context != projection { context = projection }
+    }
+    if route {
+      let latest = record.messages.reversed().compactMap(\.attribution).first {
+        [$0.executed?.model, $0.attempted?.model].contains { $0?.isEmpty == false }
+      }
+      if latestReportedAttribution != latest { latestReportedAttribution = latest }
+    }
   }
 }
 

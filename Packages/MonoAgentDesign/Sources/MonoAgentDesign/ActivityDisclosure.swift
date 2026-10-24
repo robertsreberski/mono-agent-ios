@@ -185,18 +185,18 @@ public struct ActivityBand<Content: View>: View {
   private let running: Bool
   private let identifier: String
   @Binding private var expanded: Bool
-  private let content: Content
+  private let content: () -> Content
   @Environment(\.consoleTheme) private var theme
 
   public init(
     meta: String, running: Bool, identifier: String = "activity-band", expanded: Binding<Bool>,
-    @ViewBuilder content: () -> Content
+    @ViewBuilder content: @escaping () -> Content
   ) {
     self.meta = meta
     self.running = running
     self.identifier = identifier
     _expanded = expanded
-    self.content = content()
+    self.content = content
   }
 
   public var body: some View {
@@ -230,7 +230,7 @@ public struct ActivityBand<Content: View>: View {
       .accessibilityValue(expanded ? "Expanded" : "Collapsed")
       .accessibilityIdentifier(identifier)
       if expanded {
-        VStack(alignment: .leading, spacing: 0) { content }
+        VStack(alignment: .leading, spacing: 0) { content() }
           .padding(.horizontal, 12).padding(.bottom, 12)
       }
     }

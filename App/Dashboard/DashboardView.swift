@@ -59,14 +59,11 @@ struct DashboardView: View {
     let listed = selectedAgentID.flatMap { store.buckets[BucketKey(sourceID: $0)]?.threads } ?? []
     return DashboardModel.running(
       fleet: store.activeFleet, authoritative: authoritativeFleet,
-      cached: store.conversations.values.map(\.thread), listed: listed, agents: agents)
+      cached: store.cachedThreads, listed: listed, agents: agents)
   }
 
   private var unreadCounts: [String: Int] {
-    let listed = store.buckets.filter { !$0.key.archived }.values.flatMap(\.threads)
-    return DashboardModel.unreadCounts(
-      listed.filter(DashboardModel.isRecent) + (store.activeFleet?.threads ?? []),
-      isUnread: store.isUnread)
+    store.unreadCounts
   }
 
   private var projects: [WebProject] {
@@ -101,6 +98,9 @@ struct DashboardView: View {
   @FocusState private var searchFocused: Bool
 
   var body: some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("DashboardView")
+    #endif
     TimelineView(.everyMinute) { context in
       content(now: model.referenceDate ?? context.date)
     }
@@ -136,6 +136,9 @@ struct DashboardView: View {
   /// Web dashboard column: fixed header, agent strip and search, then the scrolling sections
   /// and the quiet footer. At accessibility sizes the strip and search scroll with the list.
   @ViewBuilder private func content(now: Date) -> some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("DashboardView.content")
+    #endif
     VStack(spacing: 0) {
       header
       if !typeSize.isAccessibilitySize {
@@ -397,80 +400,68 @@ struct DashboardView: View {
   }
 
   /// Rows bleed 8 pt into the gutter (web `margin: 0 -8px`) and are divided by an inset line.
-  private func rowList<Item, Row: View>(
-    _ items: [Item], @ViewBuilder row: @escaping (Item) -> Row
+  private func rowList<Item, ID: Hashable, Row: View>(
+    _ items: [Item], id: KeyPath<Item, ID>, scope: String, @ViewBuilder row: @escaping (Item) -> Row
   ) -> some View {
-    VStack(spacing: 0) {
-      ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-        if index > 0 {
-          Rectangle().fill(WebColor.line.color).frame(height: 1)
-            .padding(.horizontal, WebSpace.rowPaddingHorizontal)
-            .accessibilityHidden(true)
+    ForEach(
+      DashboardListProjection.rows(items, id: id, scope: scope)
+    ) { entry in
+      let item = entry.value
+      let divided = items.first.map { $0[keyPath: id] != item[keyPath: id] } ?? false
+      row(item)
+        .padding(.top, divided ? 1 : 0)
+        .overlay(alignment: .top) {
+          if divided {
+            Rectangle().fill(WebColor.line.color).frame(height: 1)
+              .padding(.horizontal, WebSpace.rowPaddingHorizontal).accessibilityHidden(true)
+          }
         }
-        row(item)
-      }
+        .padding(.horizontal, -WebSpace.rowPaddingHorizontal)
     }
-    .padding(.horizontal, -WebSpace.rowPaddingHorizontal)
   }
 
-  /// A selectable dashboard row. Selection (iPad split) draws raised + shadow-sm + inset line.
   private func rowButton(_ target: AppRoute, identifier: String, content: ConversationRowContent)
     -> some View
   {
-    let selected = selectable && route == target
-    let shape = RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
-    return Button {
-      route = target
-    } label: {
-      VStack(alignment: .leading, spacing: 0) {
-        ConversationRow(content)
-        if let id = target.threadID,
-          let summary =
-            (store.conversations[id]?.thread
-            ?? store.buckets.values.flatMap(\.threads).first { $0.id == id })?.wakeSchedule
+    let thread = target.threadID.flatMap { id in
+      store.cachedThreads.first { $0.id == id }
+        ?? store.buckets.values.flatMap(\.threads).first { $0.id == id }
+    }
+    return DashboardRow(
+      value: .init(
+        target: target, identifier: identifier, content: content,
+        selected: selectable && route == target,
+        wakeStatus: thread?.wakeSchedule.map { WakeScheduleModel.status($0) }),
+      select: { route = $0 }
+    ).equatable()
+      .contextMenu {
+        if case .conversation(_, _, let id, _) = target,
+          let thread = store.cachedThreads.first(where: { $0.id == id })
+            ?? store.buckets.values.flatMap(\.threads).first(where: { $0.id == id })
         {
-          WakeScheduleStatus(WakeScheduleModel.status(summary)).padding(.leading, 38).padding(
-            .bottom, 6)
-        }
-      }
-      .background {
-        if selected {
-          shape.fill(WebColor.surfaceRaised.color).webShadow(.small)
-            .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
-        }
-      }
-    }
-    .buttonStyle(WebRowButtonStyle())
-    .accessibilityAddTraits(selected ? .isSelected : [])
-    .accessibilityIdentifier(identifier)
-    .contextMenu {
-      if case .conversation(_, _, let id, _) = target,
-        let thread = store.conversations[id]?.thread
-          ?? store.buckets.values.flatMap(\.threads).first(where: { $0.id == id })
-      {
-        Menu("Conversation tags", systemImage: "tag") {
-          ForEach(store.tags.filter { $0.sourceId == thread.sourceId }, id: \.id) { tag in
-            Button(
-              "\(thread.tagIds.contains(tag.id) ? "Remove" : "Add") \(tag.name)",
-              systemImage: thread.tagIds.contains(tag.id) ? "checkmark" : "tag"
-            ) {
-              let ids =
-                thread.tagIds.contains(tag.id)
-                ? thread.tagIds.filter { $0 != tag.id } : thread.tagIds + [tag.id]
-              Task { try? await store.setConversationTags(threadID: id, tagIDs: ids) }
-            }
-          }
-          Button("New tag…", systemImage: "plus") {
-            tagEditor = .init(sourceID: thread.sourceId, threadID: id)
-          }
-          Menu("Edit tags") {
+          Menu("Conversation tags", systemImage: "tag") {
             ForEach(store.tags.filter { $0.sourceId == thread.sourceId }, id: \.id) { tag in
-              Button(tag.name) { tagEditor = .init(sourceID: thread.sourceId, tagID: tag.id) }
+              Button(
+                "\(thread.tagIds.contains(tag.id) ? "Remove" : "Add") \(tag.name)",
+                systemImage: thread.tagIds.contains(tag.id) ? "checkmark" : "tag"
+              ) {
+                let ids =
+                  thread.tagIds.contains(tag.id)
+                  ? thread.tagIds.filter { $0 != tag.id } : thread.tagIds + [tag.id]
+                Task { try? await store.setConversationTags(threadID: id, tagIDs: ids) }
+              }
             }
-          }
-        }.disabled(!store.canOrganize)
+            Button("New tag…", systemImage: "plus") {
+              tagEditor = .init(sourceID: thread.sourceId, threadID: id)
+            }
+            Menu("Edit tags") {
+              ForEach(store.tags.filter { $0.sourceId == thread.sourceId }, id: \.id) { tag in
+                Button(tag.name) { tagEditor = .init(sourceID: thread.sourceId, tagID: tag.id) }
+              }
+            }
+          }.disabled(!store.canOrganize)
+        }
       }
-    }
   }
 
   // MARK: Running
@@ -478,85 +469,76 @@ struct DashboardView: View {
   @ViewBuilder private func runningSection(now: Date) -> some View {
     let projection = running
     if !projection.groups.isEmpty {
-      VStack(alignment: .leading, spacing: 0) {
-        sectionHead(
-          "Running", count: projection.total, symbol: "waveform.path.ecg", accent: true,
-          note: projection.authoritative ? nil : "Last known, not confirmed just now"
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-          "Running, \(projection.total)\(projection.authoritative ? "" : ", last known")"
-        )
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("running-section")
-        VStack(alignment: .leading, spacing: 7) {
-          ForEach(projection.groups, id: \.agent.sourceId) { group in
-            let expanded = expandedAgents.contains(group.agent.sourceId)
-            let cards =
-              expanded
-              ? group.threads : Array(group.threads.prefix(DashboardModel.runningCardsPerAgent))
-            ForEach(cards, id: \.id) { thread in
-              runningCard(thread, agent: group.agent, now: now)
-            }
-            if group.threads.count > DashboardModel.runningCardsPerAgent {
-              let hidden = group.threads.count - cards.count
-              Button(
-                expanded
-                  ? "Show fewer · \(group.agent.label)" : "+\(hidden) more · \(group.agent.label)"
-              ) {
-                if expanded {
-                  expandedAgents.remove(group.agent.sourceId)
-                } else {
-                  expandedAgents.insert(group.agent.sourceId)
-                }
-              }
-              .webFont(.rowSubtitle)
-              .foregroundStyle(WebColor.textMuted.color)
-              .padding(.horizontal, 7)
-              .frame(minHeight: 27)
-              .frame(minHeight: DesignMetrics.minimumHitTarget)
-              .contentShape(Rectangle())
-              .buttonStyle(.plain)
-              .accessibilityIdentifier("running-more-\(group.agent.sourceId)")
+      sectionHead(
+        "Running", count: projection.total, symbol: "waveform.path.ecg", accent: true,
+        note: projection.authoritative ? nil : "Last known, not confirmed just now"
+      )
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(
+        "Running, \(projection.total)\(projection.authoritative ? "" : ", last known")"
+      )
+      .accessibilityAddTraits(.isHeader)
+      .accessibilityIdentifier("running-section")
+      ForEach(projection.groups, id: \.agent.sourceId) { group in
+        let expanded = expandedAgents.contains(group.agent.sourceId)
+        let cards =
+          expanded
+          ? group.threads : Array(group.threads.prefix(DashboardModel.runningCardsPerAgent))
+        ForEach(
+          DashboardListProjection.rows(cards, id: \.id, scope: "running")
+        ) { entry in
+          let thread = entry.value
+          runningCard(thread, agent: group.agent, now: now)
+            .padding(
+              .top,
+              group.agent.sourceId == projection.groups.first?.agent.sourceId
+                && thread.id == cards.first?.id ? 0 : 7)
+        }
+        if group.threads.count > DashboardModel.runningCardsPerAgent {
+          let hidden = group.threads.count - cards.count
+          Button(
+            expanded
+              ? "Show fewer · \(group.agent.label)" : "+\(hidden) more · \(group.agent.label)"
+          ) {
+            if expanded {
+              expandedAgents.remove(group.agent.sourceId)
+            } else {
+              expandedAgents.insert(group.agent.sourceId)
             }
           }
-          if projection.truncated {
-            Text(
-              "Showing \(DashboardModel.runningCount(projection.groups)) of \(projection.total)"
-            )
-            .webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
-          }
+          .webFont(.rowSubtitle)
+          .foregroundStyle(WebColor.textMuted.color)
+          .padding(.horizontal, 7)
+          .frame(minHeight: 27)
+          .frame(minHeight: DesignMetrics.minimumHitTarget)
+          .contentShape(Rectangle())
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("running-more-\(group.agent.sourceId)")
+          .padding(.top, 7)
         }
       }
-      .padding(.bottom, WebSpace.sectionGap)
+      if projection.truncated {
+        Text(
+          "Showing \(DashboardModel.runningCount(projection.groups)) of \(projection.total)"
+        )
+        .webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color).padding(.top, 7)
+      }
+      Color.clear.frame(height: WebSpace.sectionGap).accessibilityHidden(true)
     }
   }
 
   /// Web `.running-card`: accent 7% into raised, accent 26% into line, radius 12, −8 bleed.
   private func runningCard(_ thread: WebThread, agent: WebAgentSummary, now: Date) -> some View {
-    let palette = theme.palette
     let target = conversationRoute(thread)
-    let selected = selectable && route == target
-    let shape = RoundedRectangle(cornerRadius: WebRadius.medium, style: .continuous)
-    return Button {
-      route = target
-    } label: {
-      ConversationRow(
-        DashboardRows.running(
+    return DashboardRow(
+      value: .init(
+        target: target, identifier: "running-row-\(thread.id)",
+        content: DashboardRows.running(
           thread, agent: agent, confirmed: store.isRunningConfirmed(threadID: thread.id),
-          projects: store.projects, now: now)
-      )
-      .padding(.horizontal, -1)
-      .background(palette.accent.mixed(7, with: WebColor.surfaceRaised).color, in: shape)
-      .overlay {
-        shape.strokeBorder(
-          palette.accent.mixed(selected ? 45 : 26, with: WebColor.line).color, lineWidth: 1)
-      }
-    }
-    .buttonStyle(WebRowButtonStyle())
-    .padding(.horizontal, -WebSpace.rowPaddingHorizontal)
-    .accessibilityAddTraits(selected ? .isSelected : [])
-    .accessibilityIdentifier("running-row-\(thread.id)")
+          projects: store.projects, now: now),
+        selected: selectable && route == target, running: true), select: { route = $0 }
+    ).equatable()
+      .padding(.horizontal, -WebSpace.rowPaddingHorizontal)
   }
 
   // MARK: Projects
@@ -564,42 +546,40 @@ struct DashboardView: View {
   @ViewBuilder private func projectsSection(now: Date) -> some View {
     let projects = projects
     if let agent = selectedAgentID {
-      VStack(alignment: .leading, spacing: 0) {
-        HStack {
-          Button {
-            projectsCollapsed.toggle()
-          } label: {
-            HStack(spacing: 6) {
-              Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .rotationEffect(.degrees(projectsCollapsed ? -90 : 0))
-                .foregroundStyle(WebColor.textMuted.color)
-                .accessibilityHidden(true)
-              sectionHead("Projects", note: projectsCollapsed ? "\(projects.count) hidden" : nil)
-            }
-            .contentShape(Rectangle())
+      HStack {
+        Button {
+          projectsCollapsed.toggle()
+        } label: {
+          HStack(spacing: 6) {
+            Image(systemName: "chevron.down")
+              .font(.system(size: 10, weight: .semibold))
+              .rotationEffect(.degrees(projectsCollapsed ? -90 : 0))
+              .foregroundStyle(WebColor.textMuted.color)
+              .accessibilityHidden(true)
+            sectionHead("Projects", note: projectsCollapsed ? "\(projects.count) hidden" : nil)
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel("Projects, \(projects.count)")
-          .accessibilityValue(projectsCollapsed ? "Collapsed" : "Expanded")
-          .accessibilityHint(projectsCollapsed ? "Shows the projects" : "Hides the projects")
-          .accessibilityAddTraits(.isHeader)
-          .accessibilityIdentifier("projects-section")
-          Button("New", systemImage: "plus") { projectEditor = .init(sourceID: agent) }
-            .buttonStyle(.plain).webFont(.footer).foregroundStyle(WebColor.textMuted.color)
-            .frame(minHeight: 44).disabled(!store.canOrganize).accessibilityIdentifier(
-              "new-project")
+          .contentShape(Rectangle())
         }
-        if !projectsCollapsed {
-          rowList(projects) { project in
-            rowButton(
-              AppRoute.project(profile: store.profile.id, sourceID: agent, projectID: project.id),
-              identifier: "project-row-\(project.id)",
-              content: DashboardRows.project(project, now: now))
-          }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Projects, \(projects.count)")
+        .accessibilityValue(projectsCollapsed ? "Collapsed" : "Expanded")
+        .accessibilityHint(projectsCollapsed ? "Shows the projects" : "Hides the projects")
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("projects-section")
+        Button("New", systemImage: "plus") { projectEditor = .init(sourceID: agent) }
+          .buttonStyle(.plain).webFont(.footer).foregroundStyle(WebColor.textMuted.color)
+          .frame(minHeight: 44).disabled(!store.canOrganize).accessibilityIdentifier(
+            "new-project")
+      }
+      if !projectsCollapsed {
+        rowList(projects, id: \.id, scope: "projects") { project in
+          rowButton(
+            AppRoute.project(profile: store.profile.id, sourceID: agent, projectID: project.id),
+            identifier: "project-row-\(project.id)",
+            content: DashboardRows.project(project, now: now))
         }
       }
-      .padding(.bottom, WebSpace.sectionGap)
+      Color.clear.frame(height: WebSpace.sectionGap).accessibilityHidden(true)
     }
   }
 
@@ -607,48 +587,46 @@ struct DashboardView: View {
 
   @ViewBuilder private func recentSection(now: Date) -> some View {
     let threads = recentThreads
-    VStack(alignment: .leading, spacing: 0) {
-      sectionHead(archived ? "Archived" : "Recent")
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("recent-section")
-      if threads.isEmpty {
-        recentEmpty
-      }
-      rowList(threads) { thread in
-        rowButton(
-          conversationRoute(thread), identifier: "recent-row-\(thread.id)",
-          content: DashboardRows.recent(
-            thread, unread: store.isUnread(thread),
-            confirmed: store.isRunningConfirmed(threadID: thread.id), projects: store.projects,
-            tags: store.tags, now: now))
-      }
-      if let key = bucketKey, bucket?.nextCursor != nil {
-        Button {
-          Task {
-            loadingOlder = true
-            await store.refreshBucket(key, older: true)
-            loadingOlder = false
-          }
-        } label: {
-          HStack(spacing: 6) {
-            if loadingOlder { ProgressView().controlSize(.mini) }
-            Text(loadingOlder ? "Loading older conversations…" : "Load older conversations")
-          }
-          .webFont(.rowSubtitle)
-          .foregroundStyle(WebColor.textSoft.color)
-          .padding(.horizontal, 9)
-          .frame(minHeight: 31)
-          .background(WebColor.surfaceRaised.color, in: RoundedRectangle(cornerRadius: 8))
-          .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(WebColor.line.color))
-          .frame(minHeight: DesignMetrics.minimumHitTarget)
-          .contentShape(Rectangle())
+    sectionHead(archived ? "Archived" : "Recent")
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(.isHeader)
+      .accessibilityIdentifier("recent-section")
+    if threads.isEmpty {
+      recentEmpty
+    }
+    rowList(threads, id: \.id, scope: "recent") { thread in
+      rowButton(
+        conversationRoute(thread), identifier: "recent-row-\(thread.id)",
+        content: DashboardRows.recent(
+          thread, unread: store.isUnread(thread),
+          confirmed: store.isRunningConfirmed(threadID: thread.id), projects: store.projects,
+          tags: store.tags, now: now))
+    }
+    if let key = bucketKey, bucket?.nextCursor != nil {
+      Button {
+        Task {
+          loadingOlder = true
+          await store.refreshBucket(key, older: true)
+          loadingOlder = false
         }
-        .buttonStyle(.plain)
-        .disabled(loadingOlder || !store.isStarted)
-        .padding(.top, 8)
-        .accessibilityIdentifier("load-older")
+      } label: {
+        HStack(spacing: 6) {
+          if loadingOlder { ProgressView().controlSize(.mini) }
+          Text(loadingOlder ? "Loading older conversations…" : "Load older conversations")
+        }
+        .webFont(.rowSubtitle)
+        .foregroundStyle(WebColor.textSoft.color)
+        .padding(.horizontal, 9)
+        .frame(minHeight: 31)
+        .background(WebColor.surfaceRaised.color, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(WebColor.line.color))
+        .frame(minHeight: DesignMetrics.minimumHitTarget)
+        .contentShape(Rectangle())
       }
+      .buttonStyle(.plain)
+      .disabled(loadingOlder || !store.isStarted)
+      .padding(.top, 8)
+      .accessibilityIdentifier("load-older")
     }
   }
 
@@ -703,23 +681,23 @@ struct DashboardView: View {
       let active = hits.filter { $0.thread.archivedAt == nil }
       let shelved = hits.filter { $0.thread.archivedAt != nil }
       if !active.isEmpty {
-        VStack(alignment: .leading, spacing: 0) {
-          sectionHead("Conversations", note: search.status == .loading ? "Updating…" : nil)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("search-results")
-          rowList(active) { hit in searchRow(hit, current: current, now: now) }
-          if search.truncated && shelved.isEmpty { truncatedNote }
+        sectionHead("Conversations", note: search.status == .loading ? "Updating…" : nil)
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier("search-results")
+        rowList(active, id: \.thread.id, scope: "search") { hit in
+          searchRow(hit, current: current, now: now)
         }
-        .padding(.bottom, WebSpace.sectionGap)
+        if search.truncated && shelved.isEmpty { truncatedNote }
+        Color.clear.frame(height: WebSpace.sectionGap).accessibilityHidden(true)
       }
       if !shelved.isEmpty {
-        VStack(alignment: .leading, spacing: 0) {
-          sectionHead("Archived")
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier(active.isEmpty ? "search-results" : "search-archived")
-          rowList(shelved) { hit in searchRow(hit, current: current, now: now) }
-          if search.truncated { truncatedNote }
+        sectionHead("Archived")
+          .accessibilityElement(children: .combine)
+          .accessibilityIdentifier(active.isEmpty ? "search-results" : "search-archived")
+        rowList(shelved, id: \.thread.id, scope: "search") { hit in
+          searchRow(hit, current: current, now: now)
         }
+        if search.truncated { truncatedNote }
       }
     }
   }

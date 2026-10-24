@@ -4,8 +4,19 @@ import XCTest
 
 @MainActor
 final class ScenarioTests: XCTestCase {
+  private func assertEventually(
+    _ element: XCUIElement, _ predicate: NSPredicate,
+    file: StaticString = #filePath, line: UInt = #line
+  ) {
+    let expected = XCTNSPredicateExpectation(predicate: predicate, object: element)
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [expected], timeout: 5), .completed,
+      "Expected \(predicate)", file: file, line: line)
+  }
+
   private func swipePicker(_ app: XCUIApplication, _ id: String) {
     let menu = element(app, id)
+    XCTAssertTrue(menu.waitForExistence(timeout: 5))
     XCTAssertGreaterThan(menu.frame.width, 0)
     XCTAssertGreaterThan(menu.frame.height, 0)
     // Popover UIScrollViews report an empty AX visible-frame on this runtime.
@@ -26,10 +37,11 @@ final class ScenarioTests: XCTestCase {
     hit.tap()
     let title = app.buttons["rename-conversation"]
     XCTAssertTrue(title.waitForExistence(timeout: 5))
-    XCTAssertEqual(title.label, "Archived cold note")
+    assertEventually(title, NSPredicate(format: "label == %@", "Archived cold note"))
     app.buttons["conversation-actions"].tap()
     XCTAssertTrue(app.buttons["action-archive"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["action-archive"].label, "Restore conversation")
+    assertEventually(
+      app.buttons["action-archive"], NSPredicate(format: "label == %@", "Restore conversation"))
   }
   func testLongTagAndProjectPickersAtAccessibilitySize() {
     let app = launch("organize-long", accessibilityText: true)
@@ -41,7 +53,8 @@ final class ScenarioTests: XCTestCase {
     }
     app.buttons["conversation-tags"].tap()
     reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
-    XCTAssertEqual(app.buttons["conversation-tags"].value as? String, "Label 30")
+    assertEventually(
+      app.buttons["conversation-tags"], NSPredicate(format: "value == %@", "Label 30"))
     app.buttons["conversation-tags"].tap()
     reach("edit-tags", in: "tag-picker-scroll").tap()
     reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
@@ -136,7 +149,7 @@ final class ScenarioTests: XCTestCase {
     app.segmentedControls["wake-kind"].buttons["Weekly"].tap()
     app.buttons["wake-day-1"].tap()
     app.buttons["wake-add-time"].tap()
-    XCTAssertTrue(app.buttons["wake-remove-time-1"].exists)
+    XCTAssertTrue(app.buttons["wake-remove-time-1"].waitForExistence(timeout: 5))
     app.buttons["wake-remove-time-1"].tap()
     let compact = app.switches["wake-compact-first"]
     scrollWake(app, to: compact)
@@ -156,7 +169,7 @@ final class ScenarioTests: XCTestCase {
     delete.tap()
     XCTAssertTrue(app.alerts["Delete this schedule?"].waitForExistence(timeout: 5))
     app.alerts.buttons["Keep schedule"].tap()
-    XCTAssertTrue(delete.exists)
+    XCTAssertTrue(delete.waitForExistence(timeout: 5))
     delete.tap()
     app.alerts.buttons["Delete"].tap()
     XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
@@ -166,8 +179,8 @@ final class ScenarioTests: XCTestCase {
       app.descendants(matching: .any).matching(
         NSPredicate(format: "label BEGINSWITH %@", "New schedule")
       ).firstMatch.waitForExistence(timeout: 5))
-    XCTAssertFalse(app.buttons["delete-wake"].exists)
-    XCTAssertFalse(app.buttons["wake-toggle"].exists)
+    XCTAssertTrue(app.buttons["delete-wake"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["wake-toggle"].waitForNonExistence(timeout: 5))
   }
   func testWakeChangedElsewhereLoadsLatestAndKeepsEditorOpen() {
     let app = launch("wake-conflict")
@@ -183,10 +196,10 @@ final class ScenarioTests: XCTestCase {
     }
     scrollWake(app, to: reload, down: true)
     reload.tap()
-    XCTAssertTrue(app.staticTexts["Scheduled wake-up"].exists)
+    XCTAssertTrue(app.staticTexts["Scheduled wake-up"].waitForExistence(timeout: 5))
     let save = app.buttons["organize-save"]
     XCTAssertTrue(save.waitForExistence(timeout: 5))
-    XCTAssertFalse(save.isEnabled)
+    assertEventually(save, NSPredicate(format: "exists == true AND enabled == false"))
   }
 
   func testConversationActionsLight() { captureConversationActions("light") }
@@ -250,9 +263,9 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(
       app.alerts.staticTexts[
         "Permanently delete this conversation and its attachments? This cannot be undone."
-      ].exists)
+      ].waitForExistence(timeout: 5))
     app.alerts.buttons["Cancel"].tap()
-    XCTAssertTrue(app.buttons["conversation-actions"].exists)
+    XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
     open()
     app.buttons["action-delete"].tap()
     app.alerts.buttons["Permanently delete"].tap()
@@ -304,7 +317,7 @@ final class ScenarioTests: XCTestCase {
     row.tap()
     XCTAssertTrue(element(app, "conversation-header").waitForExistence(timeout: 5))
     if UIDevice.current.userInterfaceIdiom == .pad {
-      XCTAssertTrue(app.buttons["project-settings-button"].exists)
+      XCTAssertTrue(app.buttons["project-settings-button"].waitForExistence(timeout: 5))
       XCTAssertEqual(
         XCTWaiter.wait(
           for: [
@@ -326,7 +339,7 @@ final class ScenarioTests: XCTestCase {
     name.typeText("Research notes")
     app.buttons["Blue project color"].tap()
     let context = app.textFields["project-context"]
-    if context.exists {
+    if context.waitForExistence(timeout: 5) {
       context.tap()
       context.typeText("Fictional shared briefing")
     }
@@ -344,15 +357,15 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(
       app.alerts.staticTexts[
         "Delete this project? Its conversations move back to the agent. This cannot be undone."
-      ].exists)
+      ].waitForExistence(timeout: 5))
     app.alerts.buttons["Cancel"].tap()
-    XCTAssertTrue(name.exists)
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
     app.buttons["delete-project"].tap()
     app.alerts.buttons["Delete project"].tap()
     XCTAssertTrue(self.element(app, "project-settings").waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["new-project"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.buttons["project-row-project-created-1"].exists)
-    XCTAssertTrue(app.buttons["project-row-garden"].exists)
+    XCTAssertTrue(app.buttons["project-row-project-created-1"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["project-row-garden"].waitForExistence(timeout: 5))
   }
 
   func testTagMenuLight() { captureTags("light") }
@@ -433,17 +446,17 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(
       app.alerts.staticTexts[
         "Delete this tag from all conversations? Conversations are kept. This cannot be undone."
-      ].exists)
+      ].waitForExistence(timeout: 5))
     app.alerts.buttons["Cancel"].tap()
-    XCTAssertTrue(name.exists)
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
     app.buttons["delete-tag"].tap()
     app.alerts.buttons["Delete tag"].tap()
     XCTAssertTrue(self.element(app, "tag-settings").waitForNonExistence(timeout: 5))
     XCTAssertTrue(trigger.waitForExistence(timeout: 5))
-    XCTAssertEqual(trigger.value as? String, "Research")
+    assertEventually(trigger, NSPredicate(format: "value == %@", "Research"))
     trigger.tap()
     XCTAssertTrue(app.buttons["new-tag"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.buttons["tag-menu-tag-created-1"].exists)
+    XCTAssertTrue(app.buttons["tag-menu-tag-created-1"].waitForNonExistence(timeout: 5))
   }
 
   func testFidelityChatLight() {
@@ -747,6 +760,20 @@ final class ScenarioTests: XCTestCase {
 
 /// A structural guard, not a pixel snapshot: ignore system bars and reject a flat blank frame.
 func screenshotHasContent(_ screenshot: XCUIScreenshot) -> Bool {
+  let app = XCUIApplication()
+  let window = app.windows.firstMatch.frame
+  if window.width > 900 {
+    let sidebarAction = app.buttons["new-conversation"].firstMatch
+    if sidebarAction.exists && sidebarAction.frame.midX < window.width * 0.4 {
+      guard let image = screenshot.image.cgImage,
+        let sidebar = image.cropping(
+          to: CGRect(
+            x: 0, y: Double(image.height) * 0.15,
+            width: Double(image.width) * 0.3, height: Double(image.height) * 0.7)),
+        screenshotRegionHasContent(sidebar)
+      else { return false }
+    }
+  }
   guard let image = screenshot.image.cgImage,
     let content = image.cropping(
       to: CGRect(
@@ -754,6 +781,11 @@ func screenshotHasContent(_ screenshot: XCUIScreenshot) -> Bool {
         width: Double(image.width), height: Double(image.height) * 0.7
       ))
   else { return false }
+  return screenshotRegionHasContent(content)
+}
+
+/// A split-view transition can leave only the sidebar flat while detail already has content.
+private func screenshotRegionHasContent(_ content: CGImage) -> Bool {
   var pixels = [UInt8](repeating: 0, count: 64 * 64)
   let drawn = pixels.withUnsafeMutableBytes { buffer in
     guard

@@ -41,7 +41,7 @@ public struct ActivityIndicator: View {
 }
 
 /// The value-driven content of one conversation-like row (Recent, Running, search, projects).
-public struct ConversationRowContent: Sendable {
+public struct ConversationRowContent: Sendable, Equatable {
   public enum Leading: Sendable, Equatable {
     /// What the row is (conversation, scheduled, webhook, needs attention).
     case symbol(String, label: String, tone: StatusTone)

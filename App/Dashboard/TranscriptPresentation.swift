@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 import MonoAgentKit
+import MonoAgentStore
 
 /// Pure transcript decisions, independent of SwiftUI and networking.
 enum TranscriptPresentation {
+  private static let shellDirectory = try! NSRegularExpression(
+    pattern: #"^cd\s+(?:"[^"]+"|'[^']+'|[^\s;&]+)\s*(?:&&|;)\s*"#)
+  private static let path = try! NSRegularExpression(
+    pattern: #"^(?:\.{0,2}/|~/|/)?[\p{L}\p{N}._@+-]+(?:/[\p{L}\p{N}._@+-]+)+$"#)
+  private static let numericPath = try! NSRegularExpression(pattern: #"^[\d/]+$"#)
+
   struct Entry: Identifiable, Equatable {
     let id: Int
     let parts: [WebMessagePart]
@@ -93,9 +100,8 @@ enum TranscriptPresentation {
     }
     text = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     if name == "Bash" || name == "Exec" {
-      text = text.replacingOccurrences(
-        of: #"^cd\s+(?:"[^"]+"|'[^']+'|[^\s;&]+)\s*(?:&&|;)\s*"#, with: "",
-        options: .regularExpression)
+      text = shellDirectory.stringByReplacingMatches(
+        in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
     }
     if text.count <= 72 { return text }
     if name == "Bash" || name == "Exec" { return String(text.prefix(36)) + "…" + text.suffix(35) }
@@ -103,10 +109,9 @@ enum TranscriptPresentation {
     return String(text.prefix(71)) + "…"
   }
   static func pathLike(_ text: String) -> Bool {
-    text.range(
-      of: #"^(?:\.{0,2}/|~/|/)?[\p{L}\p{N}._@+-]+(?:/[\p{L}\p{N}._@+-]+)+$"#,
-      options: .regularExpression) != nil
-      && text.range(of: #"^[\d/]+$"#, options: .regularExpression) == nil
+    let range = NSRange(text.startIndex..., in: text)
+    return path.firstMatch(in: text, range: range) != nil
+      && numericPath.firstMatch(in: text, range: range) == nil
   }
   static func clusterSummary(_ calls: [WebToolCall]) -> String {
     var seen = Set<String>()
@@ -131,11 +136,9 @@ enum TranscriptPresentation {
       ? String(format: "%.0fms", milliseconds) : String(format: "%.1fs", milliseconds / 1000)
   }
   static func date(_ value: String?) -> Date? {
-    guard let value else { return nil }
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    ServerTimestamp.date(value)
   }
+  static func needsElapsedTimeline(status: String) -> Bool { status == "running" }
   static func elapsed(_ message: WebMessage, now: Date) -> String? {
     guard let start = date(message.createdAt) else { return nil }
     let end = date(message.finishedAt) ?? (message.status == "running" ? now : nil)

@@ -9,7 +9,14 @@ struct McpPartIdentity: Hashable {
   let profile: UUID
   let thread: String
   let message: String
-  let publication: Data
+  let publication: McpAppPart
+  nonisolated func hash(into hasher: inout Hasher) {
+    hasher.combine(profile)
+    hasher.combine(thread)
+    hasher.combine(message)
+    hasher.combine(publication.id)
+    hasher.combine(publication.invocationId)
+  }
   @MainActor init(part: McpAppPart, message: WebMessage, store: ConsoleStore) {
     profile = store.profile.id
     thread = message.threadId
@@ -17,9 +24,8 @@ struct McpPartIdentity: Hashable {
     var identity = part
     identity.resourceUrl = nil
     identity.bridgeUrl = nil
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    publication = (try? encoder.encode(identity)) ?? Data()
+    // Equality still covers every sanitized publication field; hashing needs only stable IDs.
+    publication = identity
   }
 }
 

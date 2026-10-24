@@ -207,10 +207,12 @@
         #"{"id":"sample-terminal-turn","version":1,"type":"turn.changed","at":"2030-01-02T12:00:00Z","threadId":"t-atlas-launch","payload":{"turn":{"id":"turn-transcript","status":"complete","model":"sample:large","effort":"high","startedAt":"2030-01-02T11:59:00Z","finishedAt":"2030-01-02T12:00:00Z"}}}"#
       )
     }
-    static func delta(_ index: Int) throws -> ApiEvent {
-      let terminal = index == 8
+    static func delta(_ index: Int, total: Int = 8, timestamp: String = "2030-01-02T12:00:00Z")
+      throws -> ApiEvent
+    {
+      let terminal = index == total
       return try decode(
-        #"{"id":"sample-delta-\#(index)","version":1,"type":"message.delta","at":"2030-01-02T12:00:00Z","threadId":"t-atlas-launch","payload":{"messageId":"sample-assistant","baseSeq":\#(index),"seq":\#(index + 1),"status":"\#(terminal ? "complete" : "running")","updatedAt":"2030-01-02T12:00:00Z"\#(terminal ? ",\"finishedAt\":\"2030-01-02T12:00:00Z\"" : ""),"ops":[{"op":"set","index":1,"part":{"type":"text","text":"Live sample · \#(index) updates received\#(terminal ? " · Stream complete" : "…")"}}]}}"#
+        #"{"id":"sample-delta-\#(index)","version":1,"type":"message.delta","at":"\#(timestamp)","threadId":"t-atlas-launch","payload":{"messageId":"sample-assistant","baseSeq":\#(index),"seq":\#(index + 1),"status":"\#(terminal ? "complete" : "running")","updatedAt":"2030-01-02T12:00:00Z"\#(terminal ? ",\"finishedAt\":\"2030-01-02T12:00:00Z\"" : ""),"ops":[{"op":"set","index":1,"part":{"type":"text","text":"Live sample · \#(index) updates received\#(terminal ? " · Stream complete" : "…")"}}]}}"#
       )
     }
   }

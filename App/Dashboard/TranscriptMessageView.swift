@@ -7,8 +7,18 @@ import SwiftUI
 struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
-  let startsTurn: Bool
   @State private var gallery = ReplyMessageGallery()
+  @Environment(\.transcriptMinuteDate) private var minuteDate
+  #if DEBUG
+    @Environment(\.fixtureReferenceDate) private var referenceDate
+  #endif
+  private var actionDate: Date {
+    if let minuteDate { return minuteDate }
+    #if DEBUG
+      if let referenceDate { return referenceDate }
+    #endif
+    return Date().addingTimeInterval(store.serverClockOffset)
+  }
   private var hasMcp: Bool {
     row.message.parts.contains { if case .mcpApp = $0 { true } else { false } }
   }
@@ -19,6 +29,9 @@ struct TranscriptMessageView: View {
   /// Web message layout: the user's turn is a neutral bubble on the trailing edge with its
   /// actions below; assistant prose sits directly on the panel (no bubble, card or avatar).
   var body: some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("TranscriptMessageView")
+    #endif
     let message = row.message
     VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
       if message.role == "system" {
@@ -68,7 +81,10 @@ struct TranscriptMessageView: View {
           MessageQuote(quote.text)
 
         }
-        ForEach(TranscriptPresentation.activityBands(message.parts)) { band in
+        ForEach(
+          TranscriptPresentation.activityBands(
+            message.parts.filter { TranscriptTelemetry.visible($0, in: message) })
+        ) { band in
           if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
             TranscriptActivityBand(parts: band.parts, message: message, store: store)
           } else if band.parts.allSatisfy(TranscriptPresentation.isReplyImage) {
@@ -128,17 +144,15 @@ struct TranscriptMessageView: View {
   private func actions(_ message: WebMessage) -> some View {
     HStack(spacing: 4) {
       if isUser { Spacer(minLength: 0) }
-      TimelineView(.periodic(from: .now, by: 60)) { context in
-        Text(
-          DashboardModel.relativeTime(
-            message.createdAt, now: context.date.addingTimeInterval(store.serverClockOffset))
-        )
-        .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
-        // The role is spoken with the time, as the old visible "You"/"Assistant" header was.
-        .accessibilityLabel(
-          role + ", "
-            + (TranscriptPresentation.date(message.createdAt)?.formatted() ?? "time unavailable"))
-      }
+      Text(
+        DashboardModel.relativeTime(
+          message.createdAt, now: actionDate)
+      )
+      .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
+      .accessibilityLabel(
+        role + ", "
+          + (TranscriptPresentation.date(message.createdAt)?.formatted() ?? "time unavailable")
+      )
       .padding(.horizontal, isUser ? 0 : 7)
       .opacity(message.parts.isEmpty ? 0 : 1)
       if !QuoteFormatting.text(of: message).isEmpty {
@@ -160,7 +174,10 @@ struct TranscriptPartView: View {
   let store: ConsoleStore
   var body: some View {
     switch part {
-    case .text(let value): RichTextDocumentView(source: value.text, fill: message.role != "user")
+    case .text(let value):
+      RichTextDocumentView(
+        source: value.text, fill: message.role != "user", identity: message.id,
+        streaming: message.status == "running")
     case .reasoning(let value):
       ReasoningDisclosure(text: value.text, message: message, store: store)
     case .toolCall(let call):
@@ -223,19 +240,21 @@ struct TranscriptPartView: View {
         }
       }
     case .telemetry(let value):
-      if let marker = TranscriptPresentation.compaction(value, running: message.status == "running")
+      switch TranscriptTelemetry.presentation(
+        value, hasVisibleContent: !TranscriptTelemetry.isLegacySilentCronMessage(message))
       {
-        TranscriptMarkerRow(marker, systemImage: "arrow.triangle.2.circlepath")
-      } else if value.event == "context_usage"
-        || UsagePresentation.layers(value.data).contains(where: {
-          $0["kind"] == .string("context_usage")
-        })
-      {
-        Label("Context measurement recorded", systemImage: "chart.pie").designFont(.caption)
-          .foregroundStyle(.secondary)
-      } else {
-        DeferredTranscriptPart(
-          title: value.kind ?? value.event, kind: "Telemetry", feature: "Context viewer")
+      case .hidden: EmptyView()
+      case .note(let text):
+        Text(text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
+          .textSelection(.enabled).accessibilityIdentifier("runtime-warning-note")
+      case .compaction:
+        if let marker = TranscriptPresentation.compaction(
+          value, running: message.status == "running")
+        {
+          TranscriptMarkerRow(marker, systemImage: "arrow.triangle.2.circlepath")
+        }
+      case .cron(let run):
+        CronRunTranscriptView(run: run)
       }
     case .unknown:
       Label(
@@ -272,11 +291,19 @@ struct TranscriptActivityBand: View {
   let store: ConsoleStore
   @State private var expanded = true
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 1)) { context in
+    RunningTimeline(
+      running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
+    ) {
+      store.serverClockOffset
+    } content: { date in
+      #if DEBUG
+        let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
+      #endif
       ActivityBand(
         meta: "\(parts.count) \(parts.count == 1 ? "step" : "steps")"
           + (TranscriptPresentation.elapsed(
-            message, now: context.date.addingTimeInterval(store.serverClockOffset)
+            message,
+            now: date
           )
           .map { " · " + $0 } ?? ""),
         running: message.status == "running", expanded: $expanded
@@ -304,12 +331,21 @@ struct ReasoningDisclosure: View {
   @State private var userOpen: Bool?
   private var running: Bool { message.status == "running" }
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 1)) { context in
+    RunningTimeline(
+      running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
+    ) {
+      store.serverClockOffset
+    } content: { date in
+      #if DEBUG
+        let _ = PerformanceProbe.body("ReasoningDisclosure.clock")
+      #endif
       ActivityDisclosure(
         running ? "Thinking…" : "Reasoning",
         status: running ? .connecting : .disconnected,
         detail: TranscriptPresentation.elapsed(
-          message, now: context.date.addingTimeInterval(store.serverClockOffset)),
+          message,
+          now: date
+        ),
         glyph: .reasoning, identifier: "reasoning-disclosure",
         expanded: Binding(
           get: { userOpen ?? running },
@@ -466,12 +502,20 @@ struct RunAttributionView: View {
           }
         }
       }
-      TimelineView(.periodic(from: .now, by: 1)) { context in
+      RunningTimeline(
+        running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
+      ) {
+        store.serverClockOffset
+      } content: { date in
+        #if DEBUG
+          let _ = PerformanceProbe.body("RunAttributionView.clock")
+        #endif
         Text(
           [
             TranscriptPresentation.cost(cost),
             TranscriptPresentation.elapsed(
-              message, now: context.date.addingTimeInterval(store.serverClockOffset)),
+              message,
+              now: date),
           ].compactMap { $0 }.joined(separator: " · "))
       }
     }
@@ -483,5 +527,29 @@ struct RunAttributionView: View {
       return .unknown(knownSpend: nil)
     }
     return activity.cost
+  }
+}
+
+/// Read-only web CronRunPart presentation; activity reads/reply import belong to automations.
+private struct CronRunTranscriptView: View {
+  let run: TranscriptTelemetry.CronRun
+  @State private var expanded = false
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      TranscriptMarkerRow(run.title + " · " + run.status, systemImage: "clock.arrow.circlepath")
+      if let at = run.orderedAt {
+        Text(TranscriptPresentation.date(at)?.formatted() ?? at).webFont(.messageAction)
+      }
+      if !run.details.isEmpty {
+        ContentDisclosure("cron-run-details-" + run.runID, expanded: $expanded) {
+          ForEach(run.details, id: \.self) { Text($0).webFont(.system).textSelection(.enabled) }
+        } label: {
+          Text("Details").webFont(.messageAction)
+        }
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Cron run " + run.runID + ", " + run.status)
+    .accessibilityIdentifier("cron-run-" + run.runID)
   }
 }

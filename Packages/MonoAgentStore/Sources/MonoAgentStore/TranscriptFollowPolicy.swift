@@ -45,6 +45,11 @@ public struct TranscriptFollowPolicy: Sendable, Equatable {
   public func shouldScrollAfterWrite(_ metrics: TranscriptScrollMetrics) -> Bool {
     shouldFollowWrite && !metrics.contentFits && metrics.distanceFromBottom > 1
   }
+  /// A dock/markdown size change can retain an over-pulled refresh-control offset.
+  /// No following transcript should settle above its reading edge, even when it overflows.
+  public func shouldRestoreReadingEdge(_ metrics: TranscriptScrollMetrics) -> Bool {
+    shouldFollowWrite && metrics.contentOffset + metrics.topInset < -1
+  }
   public mutating func beginPaging() {
     following = false
     paging = true

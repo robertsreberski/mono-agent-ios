@@ -48,6 +48,9 @@ struct ConversationScreen: View {
   }
 
   var body: some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("ConversationScreen")
+    #endif
     VStack(spacing: 0) {
       if let threadID, let state = store.conversations[threadID] {
         ConversationTranscript(state: state, store: store) {
@@ -186,9 +189,7 @@ struct ConversationScreen: View {
   private var knownRoute: ConversationHeaderModel.Route? {
     guard let thread else { return nil }
     let state = store.conversations[thread.id]
-    let latest = state?.orderedMessageIDs.reversed().lazy.compactMap {
-      state?.messageStates[$0]?.message.attribution
-    }.first(where: ConversationHeaderModel.hasReportedModel)
+    let latest = state?.latestReportedAttribution
     return ConversationHeaderModel.route(thread, agent: agent, latest: latest)
   }
 

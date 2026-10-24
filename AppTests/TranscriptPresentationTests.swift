@@ -7,6 +7,13 @@ import Testing
 @testable import MonoAgent
 
 struct TranscriptPresentationTests {
+  @Test func onlyRunningMessagesScheduleElapsedTicks() {
+    #expect(TranscriptPresentation.needsElapsedTimeline(status: "running"))
+    for status in ["complete", "failed", "cancelled", "interrupted", "queued", ""] {
+      #expect(!TranscriptPresentation.needsElapsedTimeline(status: status))
+    }
+  }
+
   @Test func adjacentSameToolClustersAndChronologySurvives() throws {
     let a = WebMessagePart.toolCall(try TranscriptFixture.tool(1))
     let b = WebMessagePart.toolCall(try TranscriptFixture.tool(2))

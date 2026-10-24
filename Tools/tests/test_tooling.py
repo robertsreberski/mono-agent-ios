@@ -87,7 +87,8 @@ class ToolingTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 runpy.run_path(str(ROOT / "Tools/select-simulators"), run_name="__main__")
 
-    def export(self, omit_last=False, extra=None, fail_family=None, family=None):
+    def export(self, omit_last=False, extra=None, fail_family=None, family=None, focus=None, matrix=None):
+        matrix = MATRIX if matrix is None else matrix
         # Copy only the executable into an isolated root; no real Artifacts or simulator use.
         (ROOT / ".build").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / ".build") as directory:
@@ -113,7 +114,7 @@ class ToolingTests(unittest.TestCase):
                     destination = pathlib.Path(command[command.index("--output-path") + 1])
                     destination.mkdir()
                     attachments = []
-                    entries = MATRIX[:-1] if omit_last else MATRIX
+                    entries = matrix[:-1] if omit_last else matrix
                     for number, entry in enumerate(entries + ([extra] if extra else [])):
                         suffix = f"__{entry['variant']}" if entry.get("variant") else ""
                         label = f"synthetic-fixture__{entry['scenario']}__{entry['appearance']}{suffix}"
@@ -127,6 +128,8 @@ class ToolingTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, stdout=stdout)
 
             argv = ["screenshots", "--iphone", "phone", "--ipad", "pad"] + (["--family", family] if family else [])
+            if focus:
+                argv.append(focus)
             index_name = f"index-{family}" if family else "index"
             with patch.object(sys, "argv", argv), patch("subprocess.run", side_effect=fake_run), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 try:
@@ -137,14 +140,14 @@ class ToolingTests(unittest.TestCase):
                     self.partial_index = json.loads(index_path.read_text()) if index_path.exists() else None
             index = json.loads((root / f"Artifacts/Screenshots/{index_name}.json").read_text())
             count = 1 if family else 2
-            self.assertEqual(len(index), count * len(MATRIX))
+            self.assertEqual(len(index), count * len(matrix))
             self.assertTrue(all(item["label"] == "synthetic fixture" for item in index))
             self.assertEqual(sum(command[0] == "xcodebuild" for command in calls), count)
-            self.assertEqual(sum(command[:3] == ("sips", "-Z", "2000") for command in calls), count * len(MATRIX))
+            self.assertEqual(sum(command[:3] == ("sips", "-Z", "2000") for command in calls), count * len(matrix))
             files = {item["file"] for item in index}
-            if family != "iPad":
+            if family != "iPad" and focus is None:
                 self.assertIn("iPhone__connection-failed__light__ax3.png", files)
-            if family != "iPhone":
+            if family != "iPhone" and focus is None:
                 self.assertIn("iPad__design-catalog-reduce-transparency__dark.png", files)
             return index
 
@@ -220,6 +223,23 @@ class ToolingTests(unittest.TestCase):
             with self.subTest(family=family):
                 index = self.export(family=family)
                 self.assertEqual({row["file"].split("__")[0] for row in index}, {family})
+
+    def test_activity_only_runs_exact_activity_matrix(self):
+        matrix = [entry for entry in MATRIX if entry["scenario"] in {
+            "conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context", "peer-question"}]
+        self.export(family="iPhone", focus="--activity-only", matrix=matrix)
+        command = next(call for call in self.calls if call[0] == "xcodebuild")
+        self.assertIn("-only-testing:MonoAgentUITests/ActivityScenarioTests", command)
+
+    def test_accessibility_only_runs_exact_review_matrix(self):
+        matrix = [entry for entry in MATRIX if
+                  (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+                   and entry.get("variant") in {"ax3", "opaque"})
+                  or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
+        self.assertEqual(len(matrix), 12)
+        self.export(family="iPhone", focus="--accessibility-only", matrix=matrix)
+        command = next(call for call in self.calls if call[0] == "xcodebuild")
+        self.assertIn("-only-testing:MonoAgentUITests/AccessibilityReviewTests", command)
 
     def test_export_requires_and_indexes_complete_matrix(self):
         index = self.export()

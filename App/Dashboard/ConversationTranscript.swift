@@ -10,6 +10,7 @@ struct ConversationTranscript<Header: View>: View {
   @State private var policy = TranscriptFollowPolicy()
   @State private var phase: ScrollPhase = .idle
   @State private var paging = false
+  @State private var refreshing = false
   @State private var visibleIDs: [String] = []
   @State private var scrollPosition = ScrollPosition(idType: String.self)
   @State private var heldCompaction: String?
@@ -29,7 +30,24 @@ struct ConversationTranscript<Header: View>: View {
     self.store = store
     self.header = header()
   }
+  #if DEBUG
+    @Environment(\.fixtureReferenceDate) private var referenceDate
+  #endif
   var body: some View {
+    // One minute schedule for relative ages; settled elapsed leaves remain unscheduled.
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      transcript.environment(\.transcriptMinuteDate, minuteDate(context.date))
+    }
+  }
+  private func minuteDate(_ wall: Date) -> Date {
+    #if DEBUG
+      return TranscriptClock.ageDate(
+        wall: wall, offset: store.serverClockOffset, fixture: referenceDate)
+    #else
+      return TranscriptClock.ageDate(wall: wall, offset: store.serverClockOffset)
+    #endif
+  }
+  @ViewBuilder private var transcript: some View {
     let regular = sizeClass == .regular
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
@@ -65,9 +83,9 @@ struct ConversationTranscript<Header: View>: View {
             )
             .padding(.horizontal, inset(regular: regular))
           }
-          ForEach(Array(state.orderedMessageIDs.enumerated()), id: \.element) { index, id in
+          ForEach(state.transcriptMessageIDs, id: \.self) { id in
             if let row = state.messageStates[id] {
-              TranscriptMessageView(row: row, store: store, startsTurn: startsTurn(index, id: id))
+              TranscriptMessageView(row: row, store: store)
                 .padding(.horizontal, inset(regular: regular))
                 .id(id)
             }
@@ -135,18 +153,14 @@ struct ConversationTranscript<Header: View>: View {
         topInset: geometry.contentInsets.top, bottomInset: geometry.contentInsets.bottom)
     } action: { old, next in
       policy.update(next, userDriven: phase == .interacting || phase == .decelerating)
-      if old.contentHeight != next.contentHeight && policy.shouldScrollAfterWrite(next)
+      if phase == .idle && !refreshing && policy.shouldRestoreReadingEdge(next) {
+        scrollPosition.scrollTo(edge: .top)
+      } else if old.contentHeight != next.contentHeight && policy.shouldScrollAfterWrite(next)
         && phase == .idle
       {
-        if !next.contentFits {
-          // Anchor to the realized bottom row, not the lazily estimated content edge: with a
-          // short viewport (keyboard up) edge scrolling re-estimated rows and never settled.
-          scrollPosition.scrollTo(id: "transcript-bottom", anchor: .bottom)
-        } else {
-          // Content shorter than the viewport: the clamped edge scroll never over-pulls into
-          // the refresh control.
-          scrollPosition.scrollTo(edge: .bottom)
-        }
+        // Anchor to the realized bottom row, not the lazily estimated content edge: with a
+        // short viewport (keyboard up) edge scrolling re-estimated rows and never settled.
+        scrollPosition.scrollTo(id: "transcript-bottom", anchor: .bottom)
       }
     }
     .accessibilityIdentifier("conversation-transcript")
@@ -180,7 +194,11 @@ struct ConversationTranscript<Header: View>: View {
     .contentMargins(.bottom, DesignSpacing.xxl, for: .scrollContent)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
     .background(theme.palette.panel.color)
-    .refreshable { await store.refreshDetail(state.thread.id) }
+    .refreshable {
+      refreshing = true
+      defer { refreshing = false }
+      await store.refreshDetail(state.thread.id)
+    }
     .task(id: state.thread.compaction?.startedAt) {
       if let value = state.thread.compaction, value.status == "running", value.trigger == "manual",
         TranscriptPresentation.date(value.startedAt) != nil
@@ -212,11 +230,6 @@ struct ConversationTranscript<Header: View>: View {
     if let error = store.errorMessage {
       ConnectionBanner(.problem, title: "Conversation update failed", message: error)
     }
-  }
-  private func startsTurn(_ index: Int, id: String) -> Bool {
-    guard index > 0 else { return false }
-    let previous = state.orderedMessageIDs[index - 1]
-    return state.messageStates[id]?.turnID != state.messageStates[previous]?.turnID
   }
   private func hasCompactionResult(since at: String) -> Bool {
     // Only consult bodies while a manual hint exists. Automatic/older results never clear it.

@@ -28,7 +28,7 @@ struct ConversationJobStack: View {
   @State private var disclosures = JobDisclosureState()
   @Environment(\.horizontalSizeClass) private var sizeClass
   var body: some View {
-    let items = JobShelf.items(messages: state.messages)
+    let items = state.jobItems
     let deadlines = items.flatMap(\.jobs).compactMap { job -> Date? in
       guard job.peerQuestion?.state == "awaiting_answer" else { return nil }
       return JobPresentation.date(job.peerQuestion?.expiresAt)?.addingTimeInterval(
@@ -130,7 +130,8 @@ struct ConversationJobStack: View {
   @ViewBuilder private func group(_ item: JobShelfItem, now: Date) -> some View {
     if item.family != nil {
       ProcessJobGroupView(
-        item: item, messages: state.messages, threadID: state.thread.id, store: store, now: now,
+        item: item, messages: state.jobParentMessages, threadID: state.thread.id, store: store,
+        now: now,
         disclosures: disclosures, onAnswerPeerQuestion: onAnswerPeerQuestion)
     } else {
       ProcessJobCardView(
@@ -423,6 +424,9 @@ struct JobCallOutcomes: View {
 private struct ProcessJobElapsed: View {
   let job: ProcessJobProjection
   let offset: TimeInterval
+  #if DEBUG
+    @Environment(\.fixtureReferenceDate) private var referenceDate
+  #endif
   var body: some View {
     if JobPresentation.terminal(job) {
       label(now: Date())
@@ -431,7 +435,12 @@ private struct ProcessJobElapsed: View {
     }
   }
   @ViewBuilder private func label(now: Date) -> some View {
-    if let elapsed = JobPresentation.elapsed(job, now: now.addingTimeInterval(offset)) {
+    #if DEBUG
+      let serverDate = referenceDate ?? now.addingTimeInterval(offset)
+    #else
+      let serverDate = now.addingTimeInterval(offset)
+    #endif
+    if let elapsed = JobPresentation.elapsed(job, now: serverDate) {
       Text(JobPresentation.duration(elapsed)).webFont(.jobMono)
         .accessibilityLabel(
           "Job \(JobPresentation.terminal(job) ? "duration" : "elapsed time") "

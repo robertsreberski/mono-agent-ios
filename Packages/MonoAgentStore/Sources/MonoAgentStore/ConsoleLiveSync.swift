@@ -79,15 +79,13 @@ extension ConsoleStore {
     case .event(let generation, _, let envelope):
       guard generation >= streamGeneration else { return }
       streamGeneration = generation
-      let formatter = ISO8601DateFormatter()
-      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-      if let timestamp = formatter.date(from: envelope.at)
-        ?? ISO8601DateFormatter().date(from: envelope.at)
-      {
+      if let timestamp = ServerTimestamp.date(envelope.at) {
         let generation = epoch
         let now = await clock.wallNow()
         guard epoch == generation else { return }
-        serverClockOffset = timestamp.timeIntervalSince(now)
+        let offset = ServerTimestamp.correctedOffset(
+          current: serverClockOffset, proposed: timestamp.timeIntervalSince(now))
+        if offset != serverClockOffset { serverClockOffset = offset }
       }
       await apply(envelope)
     }
@@ -105,17 +103,20 @@ extension ConsoleStore {
         return
       }
       let state = conversations[id]
-      let message = state?.record.messages.first { $0.id == delta.messageId }
+      let message = state.flatMap { state in
+        state.messageIndex(delta.messageId).map { state.record.messages[$0] }
+      }
       let result = DeltaReducer.apply(
         delta, to: message, threadHeld: state != nil,
         repairedToolCallIds: state?.record.repairedToolCallIDs ?? [])
       switch result.outcome {
       case .applied:
         if let state, let message = result.message,
-          let index = state.record.messages.firstIndex(where: { $0.id == message.id })
+          let index = state.messageIndex(message.id)
         {
           state.record.messages[index] = message
-          publish(state, terminal: message.status != "running")
+          state.pendingMessageIndices.insert(index)
+          publish(state, terminal: message.status != "running", delta: true)
           scheduleCache()
         }
       case .stale, .unheld: break
@@ -245,13 +246,15 @@ extension ConsoleStore {
     observation &+= 1
     if global && (!bootstrap || !pendingDiscontinuity) {
       bootstrapClock &+= 1
-      freshness = .stale
+      if freshness != .stale { freshness = .stale }
     }
     for id in conversations.keys {
       observations[id] = observation
-      conversations[id]?.freshness = .stale
+      if conversations[id]?.freshness != .stale { conversations[id]?.freshness = .stale }
     }
-    for key in buckets.keys { buckets[key]?.freshness = .stale }
+    for key in buckets.keys where buckets[key]?.freshness != .stale {
+      buckets[key]?.freshness = .stale
+    }
     if bootstrap && !pendingDiscontinuity {
       needsBootstrap = true
       pendingDiscontinuity = true
@@ -323,6 +326,7 @@ extension ConsoleStore {
     stopped = true
     backgrounded = true
     await stopEffects()
+    publishAll()
     // Finish the last authored checkpoint before this lifetime becomes disabled.
     await flushAuthored()
     enabled = false
