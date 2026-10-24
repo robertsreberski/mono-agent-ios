@@ -9,10 +9,11 @@ import UIKit
 public struct RichTextDocumentView: View {
   private let source: String
   private let fill: Bool
+  private let identity: String
   private let cacheKey: String
   private let streaming: Bool
   private let initial: RichDocument?
-  @State private var document: RichDocument?
+  @State private var rendering = RichDocumentRendering()
   @Environment(\.consoleTheme) private var theme
   @Environment(\.horizontalSizeClass) private var sizeClass
   @ScaledMetric(relativeTo: .body) private var proseSize: CGFloat = 13.5
@@ -21,6 +22,7 @@ public struct RichTextDocumentView: View {
     source: String, fill: Bool = true, identity: String = "document", streaming: Bool = false
   ) {
     self.source = source
+    self.identity = identity
     self.fill = fill
     self.streaming = streaming
     cacheKey = RichRenderingCache.key(source: source, identity: identity)
@@ -29,7 +31,7 @@ public struct RichTextDocumentView: View {
   private var em: CGFloat { proseSize }
   public var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      if let document = initial ?? document {
+      if let document = initial ?? rendering.document {
         ForEach(Array(document.blocks.enumerated()), id: \.element.id) { index, block in
           blockView(block)
             .padding(.top, index == 0 ? 0 : gap(before: block, after: document.blocks[index - 1]))
@@ -46,22 +48,14 @@ public struct RichTextDocumentView: View {
       }
     }
     .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
-    .task(id: cacheKey) {
-      if let initial {
-        document = initial
-        return
-      }
-      do {
-        // Coalesce large streaming inputs independently of the transport's publication cadence.
-        if streaming { try await Task.sleep(for: .milliseconds(83)) }
-        try Task.checkCancellation()
-        let parsed = try await RichDocumentParser.shared.parse(source)
-        try Task.checkCancellation()
-        RichRenderingCache.insert(parsed, key: cacheKey, bytes: source.utf8.count)
-        document = parsed
-      } catch {
-        // Superseded or disappeared: retain the last complete rendering.
-      }
+    .onChange(of: cacheKey) {
+      rendering.submit(source: source, key: cacheKey, streaming: streaming)
+    }
+    .onChange(of: streaming) {
+      rendering.submit(source: source, key: cacheKey, streaming: streaming)
+    }
+    .task(id: identity) {
+      await rendering.run(source: source, key: cacheKey, streaming: streaming)
     }
   }
   /// `.markdown p, ul, pre { margin-bottom: .85em }`, `li + li { margin-top: .3em }`.
