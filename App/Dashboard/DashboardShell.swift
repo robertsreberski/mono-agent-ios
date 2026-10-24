@@ -19,6 +19,7 @@ struct DashboardShell: View {
   @Environment(\.consoleTheme) private var theme
   @SceneStorage("dashboard.route") private var storedRoute = ""
   @State private var route: AppRoute?
+  @State private var projectDestination: AppRoute?
   @State private var columns: NavigationSplitViewVisibility = .all
   @State private var launched = false
   /// Search lives here so a size-class change (rotation, iPad resizing) keeps the query.
@@ -38,8 +39,17 @@ struct DashboardShell: View {
 
   private var path: Binding<[AppRoute]> {
     Binding(
-      get: { route.map { $0.isDashboardDestination ? [$0] : [] } ?? [] },
-      set: { route = $0.last })
+      get: {
+        guard let route, route.isDashboardDestination else { return [] }
+        if let projectDestination, projectDestination != route {
+          return [projectDestination, route]
+        }
+        return [route]
+      },
+      set: {
+        route = $0.last
+        if $0.isEmpty { projectDestination = nil }
+      })
   }
 
   var body: some View {
@@ -50,7 +60,7 @@ struct DashboardShell: View {
             .navigationSplitViewColumnWidth(min: 320, ideal: WebMetrics.dashboardColumn, max: 520)
         } detail: {
           NavigationStack {
-            detail(route).id(route)
+            detail(regularDetailRoute).id(regularDetailRoute)
           }
         }
         .navigationSplitViewStyle(.balanced)
@@ -67,23 +77,49 @@ struct DashboardShell: View {
         route = .newConversation(profile: store.profile.id, sourceID: source)
       }
     )
-    .onChange(of: route) { _, value in storedRoute = value?.encoded ?? "" }
+    .onChange(of: route) { _, value in
+      storedRoute = value?.encoded ?? ""
+      if case .project = value { projectDestination = value }
+    }
     .task(id: model.isReady) { applyLaunchRoute() }
   }
 
-  private func dashboard(selectable: Bool) -> some View {
-    DashboardView(
-      model: model, store: store, route: $route, selectable: selectable,
-      manageConsoles: manageConsoles, query: $query, search: search)
+  private var regularDetailRoute: AppRoute? {
+    if case .project = route {
+      return store.selectedConversation.map {
+        .conversation(
+          profile: store.profile.id, sourceID: $0.thread.sourceId, threadID: $0.thread.id,
+          archived: $0.thread.archivedAt != nil)
+      }
+    }
+    return route
+  }
+
+  @ViewBuilder private func dashboard(selectable: Bool) -> some View {
+    if selectable, case .project(_, let source, let id) = projectDestination ?? route {
+      ProjectScreen(
+        store: store, sourceID: source, projectID: id, selectable: true,
+        navigate: navigateFromProject)
+    } else {
+      DashboardView(
+        model: model, store: store, route: $route, selectable: selectable,
+        manageConsoles: manageConsoles, query: $query, search: search)
+    }
   }
 
   @ViewBuilder
   private func detail(_ route: AppRoute?) -> some View {
     switch route {
     case .conversation, .newConversation:
-      if let route { ConversationScreen(model: model, store: store, route: route).id(route) }
+      if let route {
+        ConversationScreen(
+          model: model, store: store, route: route,
+          navigate: { self.route = $0 ?? projectDestination }
+        )
+        .id(route)
+      }
     case .project(_, let source, let id):
-      ProjectPlaceholder(store: store, sourceID: source, projectID: id)
+      ProjectScreen(store: store, sourceID: source, projectID: id, navigate: navigateFromProject)
     case .console, nil:
       EmptyStateView(
         "Choose a conversation", systemImage: "bubble.left.and.bubble.right",
@@ -93,6 +129,23 @@ struct DashboardShell: View {
       .background(theme.palette.canvas.color)
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("detail-empty")
+    }
+  }
+
+  private func navigateFromProject(_ target: AppRoute?) {
+    if let target {
+      route = target
+    } else {
+      projectDestination = nil
+      if sizeClass == .regular {
+        route = store.selectedConversation.map {
+          .conversation(
+            profile: store.profile.id, sourceID: $0.thread.sourceId, threadID: $0.thread.id,
+            archived: $0.thread.archivedAt != nil)
+        }
+      } else {
+        route = nil
+      }
     }
   }
 

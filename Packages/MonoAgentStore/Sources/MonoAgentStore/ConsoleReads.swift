@@ -224,23 +224,62 @@ extension ConsoleStore {
   }
   func refreshRegistries() async {
     guard let source = selectedBucket?.sourceID else { return }
+    await refreshOrganizeLabels(sourceID: source)
+  }
+  public func refreshOrganizeLabels(sourceID: String) async {
+    guard canOrganize else { return }
     let generation = epoch
+    let selected = selection
     do {
-      let tagsBegan = observation
-      let tagResult = try await api.tags(query: .init(sourceId: source), etag: nil)
-      guard epoch == generation, source == selectedBucket?.sourceID, !Task.isCancelled else {
-        return
+      let tagsBegan = tags.filter { $0.sourceId == sourceID }
+      let tagResult = try await api.tags(query: .init(sourceId: sourceID), etag: nil)
+      try checkOrganizeResponse(epoch: generation, selection: selected)
+      if case .modified(let value, _) = tagResult {
+        tags =
+          tags.filter { $0.sourceId != sourceID }
+          + mergeOrganizeRegistry(
+            baseline: tagsBegan, current: tags.filter { $0.sourceId == sourceID },
+            fetched: value.tags.filter { $0.sourceId == sourceID }, id: \.id, revision: \.revision)
       }
-      if observation == tagsBegan, case .modified(let value, _) = tagResult { tags = value.tags }
-      let projectsBegan = observation
-      let projectResult = try await api.projects(query: .init(sourceId: source), etag: nil)
-      guard epoch == generation, source == selectedBucket?.sourceID, !Task.isCancelled else {
-        return
+      let projectsBegan = projects.filter { $0.sourceId == sourceID }
+      let projectResult = try await api.projects(query: .init(sourceId: sourceID), etag: nil)
+      try checkOrganizeResponse(epoch: generation, selection: selected)
+      if case .modified(let value, _) = projectResult {
+        projects =
+          projects.filter { $0.sourceId != sourceID }
+          + mergeOrganizeRegistry(
+            baseline: projectsBegan, current: projects.filter { $0.sourceId == sourceID },
+            fetched: value.projects.filter { $0.sourceId == sourceID }, id: \.id,
+            revision: \.revision)
       }
-      if observation == projectsBegan, case .modified(let value, _) = projectResult {
-        projects = value.projects
+    } catch {
+      if canOrganize, epoch == generation, selection == selected, !(error is CancellationError) {
+        errorMessage = "Tags and projects may be stale."
       }
-    } catch { if epoch == generation { errorMessage = "Tags and projects may be stale." } }
+    }
+  }
+  /// Preserve only rows changed during this read; unrelated SSE envelopes cannot starve it.
+  private func mergeOrganizeRegistry<Row: Equatable>(
+    baseline: [Row], current: [Row], fetched: [Row], id: KeyPath<Row, String>,
+    revision: KeyPath<Row, Int>
+  ) -> [Row] {
+    let before = Dictionary(
+      baseline.map { ($0[keyPath: id], $0) }, uniquingKeysWith: { _, last in last })
+    let held = Dictionary(
+      current.map { ($0[keyPath: id], $0) }, uniquingKeysWith: { _, last in last })
+    var merged = fetched.compactMap { row -> Row? in
+      let key = row[keyPath: id]
+      if held[key] != before[key] { return held[key] }
+      if let current = held[key], current[keyPath: revision] > row[keyPath: revision] {
+        return current
+      }
+      return row
+    }
+    for row in current
+    where held[row[keyPath: id]] != before[row[keyPath: id]]
+      && !merged.contains(where: { $0[keyPath: id] == row[keyPath: id] })
+    { merged.append(row) }
+    return merged
   }
   func patchSummary(_ incoming: WebThread, listed: Bool = false) {
     guard acceptSummary(incoming) else { return }

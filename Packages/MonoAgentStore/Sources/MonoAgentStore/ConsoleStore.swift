@@ -62,6 +62,14 @@ public final class ConsoleStore {
   public var isStarted: Bool { started }
   public internal(set) var hydrated = false
   public internal(set) var draftClearStorage: [String: PersistenceState] = [:]
+  public internal(set) var wakeEditor: WakeEditorState?
+  public internal(set) var tagDeletionConfirmation: TagDeletionConfirmation?
+  public internal(set) var projectMembers: [String: ProjectMembers] = [:]
+  public internal(set) var projectConfirmation: ProjectConfirmation?
+  @ObservationIgnored var projectMemberRequests: [String: UUID] = [:]
+  public internal(set) var conversationActionConfirmation: ConversationActionConfirmation?
+  public internal(set) var pendingConversationActions: [String: UUID] = [:]
+  public internal(set) var manualCompactions: [String: ManualCompactionState] = [:]
   public internal(set) var stagedAttachments: [WebAttachment] = []
   public internal(set) var uploadProgress: [UploadProgressItem] = []
   /// Per-agent skill registries for the composer; memory only, refreshed on demand.
@@ -86,6 +94,8 @@ public final class ConsoleStore {
   @ObservationIgnored var tombstones: [String: ThreadTombstone] = [:]
   @ObservationIgnored var authoritativeRows: [String: Date] = [:]
   @ObservationIgnored var observedOrder: [String] = []
+  @ObservationIgnored var independentOrganizeOperations: [String: IndependentOrganizeOperation] =
+    [:]
   @ObservationIgnored var observations: [String: UInt64] = [:]
   @ObservationIgnored var observation: UInt64 = 0
   @ObservationIgnored var bootstrapClock: UInt64 = 0

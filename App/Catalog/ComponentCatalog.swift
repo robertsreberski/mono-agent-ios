@@ -87,9 +87,32 @@
           catalogSection("Banners") { BannerSpecimens() }
           catalogSection("Agent tiles") { AgentTileSpecimens() }
           catalogSection("Tags and projects") { ChipSpecimens() }
+          catalogSection("Organize forms") {
+            OrganizeSheetHeader("New project", saving: false, canSave: true, cancel: {}, save: {})
+            LabelPalette(
+              selection: .constant(.blue), colors: [.standard, .blue, .purple, .amber, .rose],
+              kind: "project")
+          }
+          catalogSection("Organize menus") {
+            OrganizeMenuRow("Move to project", systemImage: "folder", detail: "Garden planner") {}
+            OrganizeMenuRow("Permanently delete", systemImage: "trash", destructive: true) {}
+          }
           catalogSection("Conversation rows") { RowSpecimens() }
           catalogSection("Section headers") {
             VStack(alignment: .leading, spacing: DesignSpacing.md) {
+              Section("Long organize menus") {
+                OrganizeMenuScroll(maximumHeight: 220) {
+                  ForEach(1...30, id: \.self) { value in
+                    OrganizeMenuRow("Label \(value)", systemImage: "tag") {}
+                  }
+                }
+              }
+              Section("Wake schedules") {
+                WakeSummaryView(
+                  state: "Active", sentence: "Every weekday at 09:00",
+                  next: "Next: Mon 12 May, 09:00 (UTC)", outcome: "Last wake-up ran.")
+                WakeScheduleStatus("Weekly · paused · compact first")
+              }
               SectionHeader("Saved consoles")
               SectionHeader("Agents", detail: "3 active · synthetic") { UnreadMarker(count: 4) }
             }

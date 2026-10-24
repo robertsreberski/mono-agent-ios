@@ -93,6 +93,7 @@ struct WebTokenTests {
     #expect(WebType.contextFigure.spec.size == 21)
     #expect(WebType.contextFigureRegular.spec.size == 18)
     #expect(WebType.stateTitle.spec.size == 23)
+    #expect(WebType.projectName.spec.size == 22 && WebType.projectName.spec.tracking == -0.015)
     #expect(WebType.settingsTitle.spec.size == 16)
     #expect(WebType.stateBody.spec.size == 13 && WebType.stateBody.spec.lineHeight == 1.55)
     #expect(WebType.notice.spec.size == 11)
@@ -100,6 +101,7 @@ struct WebTokenTests {
     #expect(
       WebType.allCases.allSatisfy {
         switch $0 {
+        case .projectName: $0.spec.size == 22
         case .contextFigure: $0.spec.size == 21
         case .stateTitle: $0.spec.size == 23
         default: $0.spec.size >= 8 && $0.spec.size <= 18

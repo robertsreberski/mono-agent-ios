@@ -72,7 +72,9 @@ struct ConversationTranscript<Header: View>: View {
                 .id(id)
             }
           }
-          if let pending = heldCompaction, !hasCompactionResult(since: pending) {
+          if store.manualCompactions[state.thread.id] == .pending
+            || (heldCompaction.map { !hasCompactionResult(since: $0) } ?? false)
+          {
             TranscriptMarkerRow(
               "Compacting context… · manual", systemImage: "arrow.triangle.2.circlepath"
             )

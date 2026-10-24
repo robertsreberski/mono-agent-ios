@@ -33,7 +33,8 @@ import XCTest
       "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL",
     ]
     app.launch()
-    wait(element(app, "mcp-status-garden"), contains: "ready")
+    // Cold launch: same fresh-WebKit startup bound as `interactive(_:)`.
+    wait(element(app, "mcp-status-garden"), contains: "ready", timeout: 30)
     XCTAssertTrue(app.buttons["Open guide"].waitForExistence(timeout: 10))
     app.buttons["Open guide"].tap()
     let cancel = app.buttons["mcp-consent-cancel"]
@@ -63,10 +64,10 @@ import XCTest
     XCTAssertTrue(element(app, "mcp-part-garden").waitForExistence(timeout: 20))
     return app
   }
-  private func wait(_ element: XCUIElement, contains text: String) {
+  private func wait(_ element: XCUIElement, contains text: String, timeout: TimeInterval = 15) {
     let expectation = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "label CONTAINS %@", text), object: element)
-    XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 15), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed)
   }
   private func capture(
     _ app: XCUIApplication, _ scenario: String, _ appearance: String, variant: String? = nil
@@ -100,7 +101,9 @@ import XCTest
   private func interactive(_ appearance: String) {
     let scenario = "conversation-mcp-app"
     let app = launch(scenario, appearance)
-    wait(element(app, "mcp-status-garden"), contains: "ready")
+    // A fresh WebKit process can need longer than an already-loaded app on hosted simulators.
+    // Only this cold startup gets the larger bound; warm transitions retain the 15-second bound.
+    wait(element(app, "mcp-status-garden"), contains: "ready", timeout: 30)
     XCTAssertTrue(app.buttons["Plan beds"].waitForExistence(timeout: 10))
     wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 0")
     XCTAssertGreaterThanOrEqual(

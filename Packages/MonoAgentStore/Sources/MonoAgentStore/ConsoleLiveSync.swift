@@ -160,6 +160,7 @@ extension ConsoleStore {
     case .tagsChanged(let payload):
       if payload.removed == true, let id = payload.tagId {
         tags.removeAll { $0.id == id }
+        mutateOrganizeRows { $0.tagIds.removeAll { $0 == id } }
       } else if let tag = payload.tag {
         if let index = tags.firstIndex(where: { $0.id == tag.id }) {
           if tag.revision >= tags[index].revision { tags[index] = tag }
@@ -171,6 +172,14 @@ extension ConsoleStore {
     case .projectsChanged(let payload):
       if payload.removed == true, let id = payload.projectId {
         projects.removeAll { $0.id == id }
+        projectMembers[id] = nil
+        projectMemberRequests[id] = nil
+        mutateOrganizeRows {
+          if $0.projectId == id {
+            $0.projectId = nil
+            $0.projectName = nil
+          }
+        }
       } else if let project = payload.project {
         if let index = projects.firstIndex(where: { $0.id == project.id }) {
           if project.revision >= projects[index].revision { projects[index] = project }
@@ -324,6 +333,17 @@ extension ConsoleStore {
   func stopEffects() async {
     invalidateMcpApps()
     epoch &+= 1
+    wakeEditor = nil
+    conversationActionConfirmation = nil
+    tagDeletionConfirmation = nil
+    projectConfirmation = nil
+    for operation in independentOrganizeOperations.values {
+      operation.request?.cancel()
+      operation.deadline?.cancel()
+    }
+    independentOrganizeOperations.removeAll()
+    pendingConversationActions.removeAll()
+    manualCompactions = manualCompactions.filter { $0.value != .pending }
     streamTask?.cancel()
     streamTask = nil
     subscriptionTask?.cancel()

@@ -184,8 +184,11 @@ struct TranscriptPartView: View {
       }.padding(DesignSpacing.sm).background(DesignColor.contentSurface)
     case .scheduledWake(let value):
       VStack(alignment: .leading) {
-        Label("Scheduled wake-up", systemImage: "alarm").designFont(.headline)
-        Text(TranscriptPresentation.date(value.scheduledAt)?.formatted() ?? value.scheduledAt)
+        WakeScheduleStatus(
+          "Scheduled wake-up · "
+            + WakeScheduleModel.instant(value.scheduledAt, zone: value.timezone)
+            + " (\(value.timezone))")
+        Text("Ran " + WakeScheduleModel.instant(value.firedAt, zone: value.timezone))
           .designFont(.caption)
         if let text = value.message { Text(text).textSelection(.enabled) }
       }
