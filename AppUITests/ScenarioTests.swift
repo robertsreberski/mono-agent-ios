@@ -747,6 +747,20 @@ final class ScenarioTests: XCTestCase {
 
 /// A structural guard, not a pixel snapshot: ignore system bars and reject a flat blank frame.
 func screenshotHasContent(_ screenshot: XCUIScreenshot) -> Bool {
+  let app = XCUIApplication()
+  let window = app.windows.firstMatch.frame
+  if window.width > 900 {
+    let sidebarAction = app.buttons["new-conversation"].firstMatch
+    if sidebarAction.exists && sidebarAction.frame.midX < window.width * 0.4 {
+      guard let image = screenshot.image.cgImage,
+        let sidebar = image.cropping(
+          to: CGRect(
+            x: 0, y: Double(image.height) * 0.15,
+            width: Double(image.width) * 0.3, height: Double(image.height) * 0.7)),
+        screenshotRegionHasContent(sidebar)
+      else { return false }
+    }
+  }
   guard let image = screenshot.image.cgImage,
     let content = image.cropping(
       to: CGRect(
@@ -754,6 +768,11 @@ func screenshotHasContent(_ screenshot: XCUIScreenshot) -> Bool {
         width: Double(image.width), height: Double(image.height) * 0.7
       ))
   else { return false }
+  return screenshotRegionHasContent(content)
+}
+
+/// A split-view transition can leave only the sidebar flat while detail already has content.
+private func screenshotRegionHasContent(_ content: CGImage) -> Bool {
   var pixels = [UInt8](repeating: 0, count: 64 * 64)
   let drawn = pixels.withUnsafeMutableBytes { buffer in
     guard
