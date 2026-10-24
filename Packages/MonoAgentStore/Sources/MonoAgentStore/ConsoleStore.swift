@@ -94,6 +94,8 @@ public final class ConsoleStore {
   @ObservationIgnored var tombstones: [String: ThreadTombstone] = [:]
   @ObservationIgnored var authoritativeRows: [String: Date] = [:]
   @ObservationIgnored var observedOrder: [String] = []
+  @ObservationIgnored var independentOrganizeOperations: [String: IndependentOrganizeOperation] =
+    [:]
   @ObservationIgnored var observations: [String: UInt64] = [:]
   @ObservationIgnored var observation: UInt64 = 0
   @ObservationIgnored var bootstrapClock: UInt64 = 0

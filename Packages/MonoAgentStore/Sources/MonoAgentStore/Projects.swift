@@ -166,28 +166,35 @@ extension ConsoleStore {
   }
 
   func mutateOrganizeRows(_ mutation: (inout WebThread) -> Void) {
+    var changed = Set<String>()
+    func apply(_ row: inout WebThread) {
+      let before = row
+      mutation(&row)
+      if row != before { changed.insert(row.id) }
+    }
     for state in conversations.values {
-      mutation(&state.record.thread)
+      apply(&state.record.thread)
       state.thread = state.record.thread
     }
     for key in buckets.keys {
       guard var bucket = buckets[key] else { continue }
-      for index in bucket.threads.indices { mutation(&bucket.threads[index]) }
+      for index in bucket.threads.indices { apply(&bucket.threads[index]) }
       buckets[key] = bucket
     }
     if var fleet = activeFleet {
-      for index in fleet.threads.indices { mutation(&fleet.threads[index]) }
+      for index in fleet.threads.indices { apply(&fleet.threads[index]) }
       activeFleet = fleet
     }
     if var value = bootstrap {
-      for index in value.threads.indices { mutation(&value.threads[index]) }
+      for index in value.threads.indices { apply(&value.threads[index]) }
       bootstrap = value
     }
     for id in projectMembers.keys {
       guard var page = projectMembers[id] else { continue }
-      for index in page.threads.indices { mutation(&page.threads[index]) }
+      for index in page.threads.indices { apply(&page.threads[index]) }
       projectMembers[id] = page
     }
+    for id in changed { observe(id) }
   }
 
   /// Lists actual server members, not just the currently paged dashboard bucket.
@@ -208,7 +215,7 @@ extension ConsoleStore {
     }
     let generation = epoch
     let selected = selection
-    let began = observation
+    let began = observations
     let token = UUID()
     projectMemberRequests[id] = token
     page.loading = true
@@ -222,14 +229,32 @@ extension ConsoleStore {
       ).valueRequired()
       try checkOrganizeResponse(epoch: generation, selection: selected)
       guard projectMemberRequests[id] == token else { return }
-      guard observation == began else {
-        projectMembers[id]?.loading = false
-        projectMemberRequests[id] = nil
-        return
+      guard projects.contains(where: { $0.id == id }) else { return }
+      let current = projectMembers[id]?.threads ?? []
+      func observedSinceStart(_ row: WebThread) -> Bool {
+        (observations[row.id] ?? 0) > (began[row.id] ?? 0)
       }
-      let rows = result.threads.filter { $0.projectId == id && tombstones[$0.id] == nil }
+      let known =
+        Array(conversations.values.map(\.thread)) + buckets.values.flatMap(\.threads)
+        + (activeFleet?.threads ?? []) + current
+      var rows = result.threads.compactMap { fetched -> WebThread? in
+        guard tombstones[fetched.id] == nil else { return nil }
+        let held = known.filter { $0.id == fetched.id }.max { $0.revision < $1.revision }
+        let row =
+          observedSinceStart(fetched)
+          ? held ?? fetched : (held?.revision ?? 0) > fetched.revision ? held! : fetched
+        return row.projectId == id && row.archivedAt == nil ? row : nil
+      }
+      let latestCurrent = current.compactMap { cached -> WebThread? in
+        let row = known.filter { $0.id == cached.id }.max { $0.revision < $1.revision } ?? cached
+        return row.projectId == id && row.archivedAt == nil && tombstones[row.id] == nil ? row : nil
+      }
+      for row in latestCurrent
+      where observedSinceStart(row) && !rows.contains(where: { $0.id == row.id }) {
+        rows.append(row)
+      }
       page.threads =
-        older ? page.threads.filter { old in !rows.contains { $0.id == old.id } } + rows : rows
+        older ? latestCurrent.filter { old in !rows.contains { $0.id == old.id } } + rows : rows
       page.nextCursor = result.nextCursor
       page.loading = false
       projectMembers[id] = page

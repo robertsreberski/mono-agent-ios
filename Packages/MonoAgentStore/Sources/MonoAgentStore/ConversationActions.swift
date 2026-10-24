@@ -66,6 +66,11 @@ struct OrganizeContext {
   let held: ConversationState
 }
 
+@MainActor final class IndependentOrganizeOperation {
+  var request: Task<Void, Never>?
+  var deadline: Task<Void, Never>?
+}
+
 extension ConsoleStore {
   public var canOrganize: Bool {
     started && !stopping && !stopped && !backgrounded && connection == .live
@@ -107,7 +112,9 @@ extension ConsoleStore {
     case .archive: queueConversationPatch(threadID: thread.id, body: .init(archived: true))
     case .delete:
       guard canDeleteConversation(thread) else { return }
-      queueConversationOperation(threadID: thread.id) { store, context in
+      runIndependentConversationOperation(
+        threadID: thread.id, timeout: ConsoleBounds.threadWriteTimeout
+      ) { store, context in
         try await store.api.deleteThread(id: thread.id, query: .init())
         guard store.organizeContextIsCurrent(context, threadID: thread.id) else {
           throw CancellationError()
@@ -124,7 +131,9 @@ extension ConsoleStore {
       pendingConversationActions[threadID] == nil
     else { return }
     manualCompactions[threadID] = .pending
-    queueConversationOperation(threadID: threadID) { store, context in
+    runIndependentConversationOperation(
+      threadID: threadID, timeout: APIClient.manualCompactionTimeout
+    ) { store, context in
       let result: ApiCompaction
       do { result = try await store.api.compact(id: threadID, body: .init()) } catch {
         if store.organizeContextIsCurrent(context, threadID: threadID) {
@@ -199,6 +208,57 @@ extension ConsoleStore {
         store.selectedThreadID = nil
         store.selection &+= 1
         store.visible = false
+      }
+    }
+  }
+
+  /// Delete has no row snapshot to serialize; compaction has its own longer budget.
+  /// Neither waits out an unrelated queued write before dispatching.
+  private func runIndependentConversationOperation(
+    threadID: String, timeout: TimeInterval,
+    operation: @escaping @MainActor @Sendable (ConsoleStore, OrganizeContext) async throws -> Void
+  ) {
+    guard canOrganize, pendingConversationActions[threadID] == nil,
+      let held = conversations[threadID]
+    else { return }
+    let context = OrganizeContext(epoch: epoch, selection: selection, held: held)
+    let token = UUID()
+    let state = IndependentOrganizeOperation()
+    pendingConversationActions[threadID] = token
+    independentOrganizeOperations[threadID] = state
+    state.request = Task { [weak self] in
+      guard let self else { return }
+      var failed = false
+      do {
+        guard self.organizeContextIsCurrent(context, threadID: threadID) else {
+          throw CancellationError()
+        }
+        try await operation(self, context)
+      } catch { failed = !(error is CancellationError) }
+      guard self.pendingConversationActions[threadID] == token else { return }
+      state.deadline?.cancel()
+      self.independentOrganizeOperations[threadID] = nil
+      self.pendingConversationActions[threadID] = nil
+      if self.manualCompactions[threadID] == .pending { self.manualCompactions[threadID] = nil }
+      guard self.organizeContextIsCurrent(context, threadID: threadID) else { return }
+      self.errorMessage =
+        failed && self.manualCompactions[threadID] == nil
+        ? "The conversation change was not confirmed. Refresh before retrying." : nil
+    }
+    state.deadline = Task { [weak self, clock] in
+      do { try await clock.sleep(seconds: timeout) } catch { return }
+      guard let self, self.pendingConversationActions[threadID] == token else { return }
+      state.request?.cancel()
+      self.independentOrganizeOperations[threadID] = nil
+      self.pendingConversationActions[threadID] = nil
+      guard self.organizeContextIsCurrent(context, threadID: threadID) else {
+        if self.manualCompactions[threadID] == .pending { self.manualCompactions[threadID] = nil }
+        return
+      }
+      if self.manualCompactions[threadID] == .pending {
+        self.manualCompactions[threadID] = .failed
+      } else {
+        self.errorMessage = "The conversation change was not confirmed. Refresh before retrying."
       }
     }
   }

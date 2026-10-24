@@ -155,6 +155,7 @@ struct ConversationActionTests {
     block()
     h.store.restoreConversation(threadID: "thread-example")
     await gate.release()
+    await h.store.independentOrganizeOperations["thread-example"]?.request?.value
     await h.store.writeTasks["thread-example"]?.value
     #expect(await h.transport.count(path) == 0)
     #expect(h.store.pendingConversationActions.isEmpty)
@@ -205,6 +206,7 @@ struct ConversationActionTests {
         data: Data(
           #"{"status":"succeeded","operationId":"compact-example","trigger":"manual"}"#.utf8))
     await h.transport.release(reply)
+    await h.store.independentOrganizeOperations["thread-example"]?.request?.value
     await h.store.writeTasks["thread-example"]?.value
     #expect(h.store.conversations["thread-example"] != nil)
     #expect(h.store.manualCompactions["thread-example"] == nil)
@@ -221,6 +223,7 @@ struct ConversationActionTests {
     await eventually { await h.clock.pending() >= 2 }
     await h.clock.advance(ConsoleBounds.threadWriteTimeout + 1)
     await gate.release()
+    await h.store.independentOrganizeOperations["thread-example"]?.request?.value
     await h.store.writeTasks["thread-example"]?.value
     #expect(await h.transport.count(path) == 0)
     #expect(h.store.pendingConversationActions.isEmpty)
@@ -239,6 +242,7 @@ struct ConversationActionTests {
       #"{"status":"succeeded","operationId":"compact-example","trigger":"manual","tokensBefore":4000,"tokensAfter":2000,"tokenCountsExact":true}"#,
       as: AgentManualCompactionResult.self)
     await h.transport.release(try response(result))
+    await h.store.independentOrganizeOperations["thread-example"]?.request?.value
     try await h.store.settleThreadWrites("thread-example")
     #expect(h.store.manualCompactions["thread-example"] == .result(result))
     #expect(await h.transport.count(compactPath, method: "POST") == 1)

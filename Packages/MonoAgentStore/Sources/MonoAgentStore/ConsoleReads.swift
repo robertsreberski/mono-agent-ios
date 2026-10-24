@@ -231,26 +231,55 @@ extension ConsoleStore {
     let generation = epoch
     let selected = selection
     do {
-      let tagsBegan = observation
+      let tagsBegan = tags.filter { $0.sourceId == sourceID }
       let tagResult = try await api.tags(query: .init(sourceId: sourceID), etag: nil)
       try checkOrganizeResponse(epoch: generation, selection: selected)
-      if observation == tagsBegan, case .modified(let value, _) = tagResult {
+      if case .modified(let value, _) = tagResult {
         tags =
-          tags.filter { $0.sourceId != sourceID } + value.tags.filter { $0.sourceId == sourceID }
+          tags.filter { $0.sourceId != sourceID }
+          + mergeOrganizeRegistry(
+            baseline: tagsBegan, current: tags.filter { $0.sourceId == sourceID },
+            fetched: value.tags.filter { $0.sourceId == sourceID }, id: \.id, revision: \.revision)
       }
-      let projectsBegan = observation
+      let projectsBegan = projects.filter { $0.sourceId == sourceID }
       let projectResult = try await api.projects(query: .init(sourceId: sourceID), etag: nil)
       try checkOrganizeResponse(epoch: generation, selection: selected)
-      if observation == projectsBegan, case .modified(let value, _) = projectResult {
+      if case .modified(let value, _) = projectResult {
         projects =
           projects.filter { $0.sourceId != sourceID }
-          + value.projects.filter { $0.sourceId == sourceID }
+          + mergeOrganizeRegistry(
+            baseline: projectsBegan, current: projects.filter { $0.sourceId == sourceID },
+            fetched: value.projects.filter { $0.sourceId == sourceID }, id: \.id,
+            revision: \.revision)
       }
     } catch {
       if canOrganize, epoch == generation, selection == selected, !(error is CancellationError) {
         errorMessage = "Tags and projects may be stale."
       }
     }
+  }
+  /// Preserve only rows changed during this read; unrelated SSE envelopes cannot starve it.
+  private func mergeOrganizeRegistry<Row: Equatable>(
+    baseline: [Row], current: [Row], fetched: [Row], id: KeyPath<Row, String>,
+    revision: KeyPath<Row, Int>
+  ) -> [Row] {
+    let before = Dictionary(
+      baseline.map { ($0[keyPath: id], $0) }, uniquingKeysWith: { _, last in last })
+    let held = Dictionary(
+      current.map { ($0[keyPath: id], $0) }, uniquingKeysWith: { _, last in last })
+    var merged = fetched.compactMap { row -> Row? in
+      let key = row[keyPath: id]
+      if held[key] != before[key] { return held[key] }
+      if let current = held[key], current[keyPath: revision] > row[keyPath: revision] {
+        return current
+      }
+      return row
+    }
+    for row in current
+    where held[row[keyPath: id]] != before[row[keyPath: id]]
+      && !merged.contains(where: { $0[keyPath: id] == row[keyPath: id] })
+    { merged.append(row) }
+    return merged
   }
   func patchSummary(_ incoming: WebThread, listed: Bool = false) {
     guard acceptSummary(incoming) else { return }

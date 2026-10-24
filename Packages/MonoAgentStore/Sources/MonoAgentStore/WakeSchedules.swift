@@ -50,7 +50,7 @@ extension ConsoleStore {
       wakeEditor?.refreshAfterMutation = true
       return
     }
-    let knownRevision = conversations[initial.threadID]?.thread.wakeSchedule?.revision
+    let knownSummary = conversations[initial.threadID]?.thread.wakeSchedule
     let token = UUID()
     wakeEditor?.read = token
     do {
@@ -61,28 +61,21 @@ extension ConsoleStore {
         deferWakeRefresh(id)
         return
       }
-      if value == nil,
-        conversations[initial.threadID]?.thread.wakeSchedule?.revision != knownRevision
-      {
+      if conversations[initial.threadID]?.thread.wakeSchedule != knownSummary {
         deferWakeRefresh(id)
         return
       }
       if state.loaded && !explicit
         && ((state.schedule != nil && state.dirty) || (state.schedule == nil && value != nil))
       {
-        if value?.revision != state.schedule?.revision { wakeEditor?.changedElsewhere = true }
-        return
-      }
-      if let value, let known = conversations[initial.threadID]?.thread.wakeSchedule,
-        known.revision > value.revision
-      {
-        wakeEditor?.changedElsewhere = true
-        if !state.loaded {
-          wakeEditor?.failure = .init(message: "The schedule changed while loading. Try again.")
+        if value?.revision != state.schedule?.revision
+          || value?.scheduleId != state.schedule?.scheduleId
+        {
+          wakeEditor?.changedElsewhere = true
         }
         return
       }
-      adoptWakeSummary(threadID: initial.threadID, value: value, expectedRevision: knownRevision)
+      adoptWakeSummary(threadID: initial.threadID, value: value)
       scheduleCache()
       wakeEditor?.schedule = value
       if let value { wakeEditor?.draft = WakeScheduleModel.draft(from: value.definition) }
@@ -170,20 +163,15 @@ extension ConsoleStore {
         }
       }, operation: { [weak self] in try await self?.performWakeMutation(id, action: action) })
   }
-  private func adoptWakeSummary(threadID: String, value: WebWakeSchedule?, expectedRevision: Int?) {
+  private func adoptWakeSummary(threadID: String, value: WebWakeSchedule?) {
     let summary = value.map {
       WakeSummary(
         state: $0.state, revision: $0.revision, nextFireAt: $0.nextFireAt, kind: $0.definition.kind,
         compactFirst: $0.definition.compactFirst)
     }
-    mutateOrganizeRows {
-      if $0.id == threadID,
-        ($0.wakeSchedule?.revision ?? 0) <= (value?.revision ?? expectedRevision ?? 0)
-      {
-        $0.wakeSchedule = summary
-      }
-    }
+    mutateOrganizeRows { if $0.id == threadID { $0.wakeSchedule = summary } }
   }
+
   private func performWakeMutation(_ id: UUID, action: WakeAction) async throws {
     guard let state = currentWake(id), state.busy == action else { throw CancellationError() }
     if action == .save || action == .resume {
@@ -191,6 +179,7 @@ extension ConsoleStore {
         throw OrganizeError.unavailable
       }
     }
+    let knownSummary = conversations[state.threadID]?.thread.wakeSchedule
     do {
       let result: WebWakeSchedule?
       if action == .delete {
@@ -218,8 +207,11 @@ extension ConsoleStore {
       }
       guard currentWake(id) != nil, !Task.isCancelled else { throw CancellationError() }
       observation &+= 1
-      adoptWakeSummary(
-        threadID: state.threadID, value: result, expectedRevision: state.schedule?.revision)
+      if conversations[state.threadID]?.thread.wakeSchedule == knownSummary {
+        adoptWakeSummary(threadID: state.threadID, value: result)
+      } else {
+        wakeEditor?.refreshAfterMutation = true
+      }
       scheduleCache()
       errorMessage = nil
       if action == .save || action == .delete {

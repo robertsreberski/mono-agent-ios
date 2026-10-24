@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 import MonoAgentKit
+import os
 
 /// Wall-clock values only. The server resolves DST gaps, overlaps and future instants.
 public struct WakeDraft: Sendable, Equatable {
@@ -44,28 +45,47 @@ public enum WakeScheduleModel {
   ]
   public static let shortDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
   public static func utf8Bytes(_ text: String) -> Int { text.utf8.count }
-  public static func normalizeTimeZone(_ zone: String) -> String? {
-    let zone = zone.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !zone.isEmpty, zone.count <= 128 else { return nil }
-    if ["utc", "etc/utc", "gmt", "etc/gmt"].contains(zone.lowercased()) { return "UTC" }
-    let known = TimeZone.knownTimeZoneIdentifiers
-    if let canonical = known.first(where: { $0.lowercased() == zone.lowercased() }) {
-      return canonical
+  private static let zoneNames: [String: String] = {
+    var names = Dictionary(
+      uniqueKeysWithValues: TimeZone.knownTimeZoneIdentifiers.map { ($0.lowercased(), $0) })
+    // Intl canonical links used by the web. Never infer identity from equal TZif bytes:
+    // distinct jurisdictions can share rules today and diverge in the future.
+    for (link, name) in [
+      "GB": "Europe/London", "GB-Eire": "Europe/London", "Eire": "Europe/Dublin",
+      "US/Eastern": "America/New_York", "US/Central": "America/Chicago",
+      "US/Mountain": "America/Denver",
+      "US/Pacific": "America/Los_Angeles", "US/Alaska": "America/Anchorage",
+      "US/Hawaii": "Pacific/Honolulu",
+      "UTC": "UTC", "Etc/UTC": "UTC", "GMT": "UTC", "Etc/GMT": "UTC",
+    ] { names[link.lowercased()] = name }
+    for offset in -14...14 {
+      let name = "Etc/GMT" + (offset >= 0 ? "+" : "") + String(offset)
+      names[name.lowercased()] = name
     }
-    // Foundation's picker list excludes valid IANA links and fixed Etc zones.
-    // Keep accepting those identifiers; compare their rule data to known canonical names.
-    let cased = zone.split(separator: "/").map { part in
-      if part.lowercased() == "us" { return "US" }
-      if part.lowercased().hasPrefix("gmt") { return "GMT" + part.dropFirst(3) }
-      return part.capitalized
-    }.joined(separator: "/")
-    guard
-      let alias = NSTimeZone(name: zone) ?? NSTimeZone(name: cased)
-        ?? NSTimeZone(name: zone.uppercased()),
-      !alias.name.hasPrefix("GMT+") && !alias.name.hasPrefix("GMT-")
-    else { return nil }
-    if alias.name.hasPrefix("Etc/GMT") { return alias.name }
-    return known.first { NSTimeZone(name: $0)?.data == alias.data } ?? alias.name
+    return names
+  }()
+  private static let zoneCache = OSAllocatedUnfairLock(initialState: [String: String]())
+  // Value formatters are Sendable on the package's macOS 14 floor; unlike a shared
+  // ISO8601DateFormatter they need no unsafe isolation escape hatch.
+  private static let fractionalParser = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+  private static let plainParser = Date.ISO8601FormatStyle()
+  private static func parseInstant(_ iso: String) -> Date? {
+    (try? fractionalParser.parse(iso)) ?? (try? plainParser.parse(iso))
+  }
+  public static func normalizeTimeZone(_ input: String) -> String? {
+    let zone = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !zone.isEmpty, zone.count <= 128 else { return nil }
+    return zoneCache.withLock { cache in
+      if let result = cache[zone] { return result.isEmpty ? nil : result }
+      let result = zoneNames[zone.lowercased()] ?? TimeZone(identifier: zone)?.identifier
+      let valid = result.flatMap { name in
+        name.hasPrefix("GMT+") || name.hasPrefix("GMT-") ? nil : name
+      }
+      // Bound arbitrary text typed into the timezone field as well as valid results.
+      if cache.count >= 512 { cache.removeAll(keepingCapacity: true) }
+      cache[zone] = valid ?? ""
+      return valid
+    }
   }
   public static func validTime(_ time: String) -> Bool {
     time.range(of: "^([01][0-9]|2[0-3]):[0-5][0-9]$", options: .regularExpression) != nil
@@ -248,7 +268,7 @@ public enum WakeScheduleModel {
   public static func instant(
     _ iso: String, zone: String = TimeZone.current.identifier, locale: Locale = .current
   ) -> String {
-    guard let date = ISO8601DateFormatter().date(from: iso) else { return iso }
+    guard let date = parseInstant(iso) else { return iso }
     let f = formatter("", zone: zone, locale: locale)
     f.setLocalizedDateFormatFromTemplate("EEE d MMM jjmm")
     return f.string(from: date)
@@ -259,7 +279,7 @@ public enum WakeScheduleModel {
   ) -> (scheduled: String, local: String?) {
     let scheduled = instant(iso, zone: scheduleZone, locale: locale)
     guard normalizeTimeZone(scheduleZone) != normalizeTimeZone(deviceZone),
-      let date = ISO8601DateFormatter().date(from: iso)
+      let date = parseInstant(iso)
     else { return (scheduled, nil) }
     let scheduleWall = wallClock(date, zone: scheduleZone)
     let deviceWall = wallClock(date, zone: deviceZone)

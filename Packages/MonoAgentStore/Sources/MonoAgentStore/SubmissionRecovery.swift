@@ -30,7 +30,7 @@ extension ConsoleStore {
     defer { attachmentClaims[claim] = nil }
     let value = try await api.createThread(body: input)
     let now = await clock.wallNow()
-    guard epoch == generation, selection == selected, canOrganize else {
+    guard epoch == generation, selection == selected, !backgrounded, !stopped, !stopping else {
       throw CancellationError()
     }
     hold(.init(thread: value.thread, messages: [], savedAt: now))
