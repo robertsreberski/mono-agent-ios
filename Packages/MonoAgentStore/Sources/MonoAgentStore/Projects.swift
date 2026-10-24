@@ -240,9 +240,15 @@ extension ConsoleStore {
       var rows = result.threads.compactMap { fetched -> WebThread? in
         guard tombstones[fetched.id] == nil else { return nil }
         let held = known.filter { $0.id == fetched.id }.max { $0.revision < $1.revision }
-        let row =
-          observedSinceStart(fetched)
-          ? held ?? fetched : (held?.revision ?? 0) > fetched.revision ? held! : fetched
+        let row: WebThread
+        if let held,
+          held.revision > fetched.revision
+            || (observedSinceStart(fetched) && held.revision == fetched.revision)
+        {
+          row = held
+        } else {
+          row = fetched
+        }
         return row.projectId == id && row.archivedAt == nil ? row : nil
       }
       let latestCurrent = current.compactMap { cached -> WebThread? in

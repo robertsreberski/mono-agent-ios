@@ -123,6 +123,7 @@ import Testing
     var other = original
     other.id = "streaming-other"
     other.revision += 1
+    h.store.hold(.init(thread: other, messages: [], savedAt: Date()))
     await h.transport.set("/api/v1/threads", [.paused])
     let members = Task { await h.store.loadProjectMembers(id: project.id) }
     await eventually { await h.transport.pauseCount() == 1 }
@@ -138,13 +139,17 @@ import Testing
         generation: 1, gap: .initial,
         try event("thread.changed", thread: other.id, payload: .object(["thread": try json(other)]))
       ))
+    var newer = other
+    newer.revision += 1
+    newer.title = "Newest member title"
     await h.transport.release(
       try response(
         JSONValue.object([
-          "threads": .array([try json(original), try json(other)]), "nextCursor": .null,
+          "threads": .array([try json(original), try json(newer)]), "nextCursor": .null,
         ])))
     await members.value
     #expect(h.store.projectMembers[project.id]?.threads.map(\.id) == [other.id])
+    #expect(h.store.projectMembers[project.id]?.threads.first?.title == "Newest member title")
     let tag = h.store.tags[0]
     var fetched = tag
     fetched.id = "new-registry-tag"
