@@ -441,7 +441,7 @@ private struct McpPlainRenderFixture: View {
   let probe: McpPlainRenderProbe
   var body: some View {
     ScrollView {
-      TranscriptMessageView(row: row, store: store, startsTurn: false)
+      TranscriptMessageView(row: row, store: store)
     }
     .environment(\.mcpHostPool, pool)
     .onAppear { probe.text = QuoteFormatting.text(of: row.message) }
