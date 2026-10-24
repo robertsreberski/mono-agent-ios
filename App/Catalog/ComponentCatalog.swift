@@ -87,6 +87,10 @@
           catalogSection("Banners") { BannerSpecimens() }
           catalogSection("Agent tiles") { AgentTileSpecimens() }
           catalogSection("Tags and projects") { ChipSpecimens() }
+          catalogSection("Organize menus") {
+            OrganizeMenuRow("Move to project", systemImage: "folder", detail: "Garden planner") {}
+            OrganizeMenuRow("Permanently delete", systemImage: "trash", destructive: true) {}
+          }
           catalogSection("Conversation rows") { RowSpecimens() }
           catalogSection("Section headers") {
             VStack(alignment: .leading, spacing: DesignSpacing.md) {

@@ -18,6 +18,11 @@ struct ConversationScreen: View {
   /// A new conversation created by this screen's composer (C8); the route stays unchanged.
   @State private var createdThreadID: String?
   @State private var screenWidth: CGFloat = 402
+  @State private var actionsOpen = false
+  @State private var renaming = false
+  @State private var renamedTitle = ""
+  @State private var pendingRename = false
+  @State private var pendingAction: ConversationAction?
 
   private var threadID: String? { route.threadID ?? createdThreadID }
   private var sourceID: String { route.sourceID ?? "" }
@@ -40,7 +45,15 @@ struct ConversationScreen: View {
   var body: some View {
     VStack(spacing: 0) {
       if let threadID, let state = store.conversations[threadID] {
-        ConversationTranscript(state: state, store: store) { EmptyView() }
+        ConversationTranscript(state: state, store: store) {
+          if let error = store.errorMessage {
+            ConnectionBanner(.problem, title: "Conversation change", message: error)
+          }
+          if let result = store.manualCompactions[threadID] {
+            TranscriptNotice(result.text)
+              .accessibilityIdentifier("manual-compaction-status")
+          }
+        }
       } else {
         ScrollView {
           placeholder
@@ -91,7 +104,35 @@ struct ConversationScreen: View {
       applyVisibility()
     }
     .onChange(of: scenePhase) { applyVisibility() }
-    .onChange(of: store.selectedThreadID) { applyVisibility() }
+    .onChange(of: store.selectedThreadID) {
+      actionsOpen = false
+      pendingRename = false
+      pendingAction = nil
+      renaming = false
+      store.cancelConversationAction()
+      applyVisibility()
+    }
+    .alert("Rename conversation", isPresented: $renaming) {
+      TextField("Title", text: $renamedTitle).accessibilityIdentifier("rename-title")
+      Button("Cancel", role: .cancel) {}
+      Button("Save") {
+        if let threadID { store.renameConversation(threadID: threadID, title: renamedTitle) }
+      }
+    }
+    .alert(
+      store.conversationActionConfirmation?.action.title ?? "Conversation action",
+      isPresented: Binding(
+        get: { store.conversationActionConfirmation != nil },
+        set: { if !$0 { store.cancelConversationAction() } }
+      ), presenting: store.conversationActionConfirmation
+    ) { request in
+      Button("Cancel", role: .cancel) { store.cancelConversationAction() }
+      Button(request.action.title, role: request.action == .compact ? nil : .destructive) {
+        store.confirmConversationAction(request.id)
+      }
+    } message: { request in
+      Text(request.action.confirmation)
+    }
     .onChange(of: store.selectedBucket) { applyVisibility() }
   }
 
@@ -246,28 +287,71 @@ struct ConversationScreen: View {
     .accessibilityIdentifier("conversation-run-state")
   }
 
-  /// The web header's trailing "…" tile. iOS has no conversation actions yet, so it shows the
-  /// facts the old in-transcript header carried: agent, state and the route's provenance.
+  /// The web header's trailing conversation menu; no read-only details dead end.
   private func detailsMenu(glass: Bool) -> some View {
-    Menu {
-      Section(agent?.label ?? "Agent unavailable") {
-        if let runStatus { Text(runStatus.label) }
-        if let route = knownRoute {
-          Text(route.label + (route.effort.map { " · " + $0 } ?? ""))
-          Text(route.provenance)
+    Button("Conversation actions", systemImage: "ellipsis") { actionsOpen = true }
+      .buttonStyle(WebTileButtonStyle(material: glass ? .glass : .flat))
+      .accessibilityIdentifier("conversation-actions")
+      .disabled(thread == nil)
+      .popover(isPresented: $actionsOpen, arrowEdge: .top) {
+        VStack(spacing: 0) {
+          if let thread {
+            OrganizeMenuRow("Rename conversation", systemImage: "pencil") {
+              actionsOpen = false
+              renamedTitle = thread.title
+              pendingRename = true
+            }
+            .accessibilityIdentifier("action-rename")
+            if agent?.supportsManualCompaction == true {
+              OrganizeMenuRow(
+                "Compact context", systemImage: "arrow.trianglehead.2.clockwise.rotate.90"
+              ) {
+                actionsOpen = false
+                pendingAction = .compact
+              }
+              .disabled(!store.canCompactConversation(thread))
+              .accessibilityIdentifier("action-compact")
+            }
+            OrganizeMenuRow(
+              thread.archivedAt == nil ? "Archive conversation" : "Restore conversation",
+              systemImage: thread.archivedAt == nil ? "archivebox" : "arrow.uturn.backward"
+            ) {
+              actionsOpen = false
+              if thread.archivedAt == nil {
+                pendingAction = .archive
+              } else {
+                store.restoreConversation(threadID: thread.id)
+              }
+            }
+            .accessibilityIdentifier("action-archive")
+            if store.canDeleteConversation(thread) {
+              OrganizeMenuRow("Permanently delete", systemImage: "trash", destructive: true) {
+                actionsOpen = false
+                pendingAction = .delete
+              }
+              .accessibilityIdentifier("action-delete")
+            }
+          }
+        }
+        .disabled(
+          !store.canOrganize || threadID.flatMap { store.pendingConversationActions[$0] } != nil
+        )
+        .padding(4)
+        .frame(idealWidth: 280)
+        .background(WebColor.surfaceRaised.color)
+        .presentationCompactAdaptation(.popover)
+        .onDisappear {
+          // Present only after the toolbar popover releases its presentation owner (iPad).
+          if pendingRename {
+            pendingRename = false
+            renaming = true
+          }
+          if let pendingAction, let threadID {
+            self.pendingAction = nil
+            store.requestConversationAction(pendingAction, threadID: threadID)
+          }
         }
       }
-    } label: {
-      // The web's quiet three-dot glyph: small and regular weight inside the 36 pt tile.
-      Label {
-        Text("Conversation details")
-      } icon: {
-        Image(systemName: "ellipsis").font(.system(size: 13, weight: .regular))
-      }
-    }
-    .menuStyle(.button)
-    .buttonStyle(WebTileButtonStyle(material: glass ? .glass : .flat))
-    .accessibilityIdentifier("conversation-details")
   }
 
   /// The web empty chat: no card and no second title (the header already names it), only a

@@ -1082,6 +1082,20 @@
       "textSize": "accessibilityXL",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-actions",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-actions",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

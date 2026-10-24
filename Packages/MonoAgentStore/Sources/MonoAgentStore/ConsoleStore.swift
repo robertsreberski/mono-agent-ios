@@ -62,6 +62,9 @@ public final class ConsoleStore {
   public var isStarted: Bool { started }
   public internal(set) var hydrated = false
   public internal(set) var draftClearStorage: [String: PersistenceState] = [:]
+  public internal(set) var conversationActionConfirmation: ConversationActionConfirmation?
+  public internal(set) var pendingConversationActions: [String: UUID] = [:]
+  public internal(set) var manualCompactions: [String: ManualCompactionState] = [:]
   public internal(set) var stagedAttachments: [WebAttachment] = []
   public internal(set) var uploadProgress: [UploadProgressItem] = []
   /// Per-agent skill registries for the composer; memory only, refreshed on demand.

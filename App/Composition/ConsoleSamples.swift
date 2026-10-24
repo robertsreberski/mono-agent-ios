@@ -11,6 +11,7 @@
     case unread = "store-unread"
     case uncertain = "store-uncertain"
     case fidelityChat = "fidelity-chat"
+    case conversationActions = "conversation-actions"
     case fidelityDashboard = "fidelity-dashboard"
     case dashboardPopulated = "dashboard-populated"
     case dashboardEmpty = "dashboard-empty"
@@ -54,8 +55,12 @@
       [.conversationImages, .conversationImagesSingle, .conversationImagesEmpty].contains(self)
     }
 
-    var isTranscript: Bool { rawValue.hasPrefix("conversation-") || self == .fidelityChat }
-    var isFidelity: Bool { self == .fidelityChat || self == .fidelityDashboard }
+    var isTranscript: Bool {
+      rawValue.hasPrefix("conversation-") || self == .fidelityChat || self == .conversationActions
+    }
+    var isFidelity: Bool {
+      self == .fidelityChat || self == .fidelityDashboard || self == .conversationActions
+    }
 
     /// Composer scenarios are served by a stateful per-instance `ComposerScript`.
     var isComposer: Bool {
@@ -143,6 +148,7 @@
     let theme: String
     let script: ComposerScript?
     let mcp: McpUiScript?
+    let organize: OrganizeScript?
     init(
       _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
       mcp: McpUiScript? = nil
@@ -151,6 +157,7 @@
       self.theme = theme
       self.script = script
       self.mcp = mcp
+      organize = scenario == .conversationActions ? OrganizeScript() : nil
     }
     func upload(
       _ request: URLRequest, file: URL, progress: @escaping @Sendable (Double) -> Void
@@ -161,6 +168,7 @@
     func send(_ request: URLRequest) async throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
+      if let organize { return try await organize.response(request, theme: theme) }
       if let response = try await mcp?.response(request) { return response }
       if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }
       if let scenario, let response = try RichReplyFixture.response(request, scenario: scenario) {

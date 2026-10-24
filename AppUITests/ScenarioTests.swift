@@ -4,6 +4,71 @@ import XCTest
 
 @MainActor
 final class ScenarioTests: XCTestCase {
+  func testConversationActionsLight() { captureConversationActions("light") }
+  func testConversationActionsDark() { captureConversationActions("dark") }
+  private func captureConversationActions(_ appearance: String) {
+    capture(
+      "conversation-actions", appearance,
+      expect: ["conversation-actions"]
+    ) { app in
+      app.buttons["conversation-actions"].tap()
+      for id in ["action-rename", "action-archive", "action-compact"] {
+        XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5))
+      }
+    }
+  }
+
+  func testConversationActionsRenameCompactArchiveAndDeleteConfirmation() {
+    let app = launch("conversation-actions")
+    func open() {
+      let button = app.buttons["conversation-actions"]
+      XCTAssertTrue(button.waitForExistence(timeout: 5))
+      button.tap()
+    }
+    open()
+    app.buttons["action-rename"].tap()
+    let title = app.alerts.textFields["Title"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    title.tap()
+    let previous = title.value as? String ?? ""
+    title.typeText(
+      String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count) + "Research")
+    app.alerts.buttons["Save"].tap()
+    XCTAssertTrue(
+      app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Research")).firstMatch
+        .waitForExistence(timeout: 5))
+    open()
+    app.buttons["action-compact"].tap()
+    XCTAssertTrue(app.alerts["Compact context"].waitForExistence(timeout: 5))
+    app.alerts.buttons["Compact context"].tap()
+    XCTAssertTrue(app.staticTexts["Compacted."].waitForExistence(timeout: 5))
+    open()
+    app.buttons["action-archive"].tap()
+    XCTAssertTrue(app.alerts["Archive conversation"].waitForExistence(timeout: 5))
+    app.alerts.buttons["Cancel"].tap()
+    open()
+    app.buttons["action-archive"].tap()
+    app.alerts.buttons["Archive conversation"].tap()
+    open()
+    let delete = app.buttons["action-delete"]
+    XCTAssertTrue(delete.waitForExistence(timeout: 5))
+    delete.tap()
+    XCTAssertTrue(
+      app.alerts.staticTexts[
+        "Permanently delete this conversation and its attachments? This cannot be undone."
+      ].exists)
+    app.alerts.buttons["Cancel"].tap()
+    XCTAssertTrue(app.buttons["conversation-actions"].exists)
+    open()
+    app.buttons["action-delete"].tap()
+    app.alerts.buttons["Permanently delete"].tap()
+    XCTAssertTrue(
+      app.staticTexts[
+        "Write the first message below. The conversation is created when you send it."
+      ].waitForExistence(timeout: 5)
+        || !app.buttons["conversation-actions"].isEnabled)
+  }
+
   func testFidelityChatLight() {
     capture("fidelity-chat", "light", expect: ["message-garden-plan", "composer-field"])
   }
