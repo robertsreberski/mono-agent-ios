@@ -76,6 +76,7 @@
       return call
     }
     static func messages(_ scenario: StoreScenario, older: Bool = false) throws -> [WebMessage] {
+      if scenario.isMcp { return try McpUiScript.messages(scenario) }
       if scenario == .conversationRestartCard { return try RichReplyFixture.restarts() }
       if scenario == .conversationAttachments { return try RichReplyFixture.images(scenario) }
       if scenario.isReplyImageScenario { return try RichReplyFixture.images(scenario) }

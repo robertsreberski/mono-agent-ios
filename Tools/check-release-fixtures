@@ -28,7 +28,7 @@ MARKERS = (b"fixture-opaque", b"ScreenFixture", b"fidelity-chat", b"fidelity-das
            b"ComposerFixture", b"ComposerScript", b"composer-empty", b"composer-draft-attachments",
            b"composer-skill-picker", b"composer-model-selector", b"composer-running", b"composer-send-failed",
            b"composer-quote", b"conversation-ask-form", b"conversation-quick-replies", b"peer-question-sheet",
-           b"Sample files (synthetic)", b"McpGardenFixture", b"Garden planner (synthetic)", b"garden-invocation", b"mcpCompleteInitialLoad", b"mcpBufferState", b"debugSendAttempts")
+           b"Sample files (synthetic)", b"McpGardenFixture", b"Garden planner (synthetic)", b"garden-invocation", b"mcpCompleteInitialLoad", b"mcpBufferState", b"debugSendAttempts", b"McpUiScript", b"McpUiDiagnostics", b"conversation-mcp-app", b"conversation-mcp-unavailable", b"conversation-mcp-long-title")
 # The SDK-derived conformance resources and original licence belong only to tests.
 for path in args.app.rglob("*"):
     if path.name in {"mcp-protocol-vectors.json", "ext-apps-LICENSE.txt"}:

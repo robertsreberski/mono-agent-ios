@@ -21,6 +21,7 @@ struct MonoAgentApp: App {
       }
       #if DEBUG
         .prefersOpaqueSurfaces(model.opaqueFixtureSurfaces)
+        .environment(\.mcpDiagnostics, model.mcpScript?.diagnostics)
       #endif
       .preferredColorScheme(model.appearance)
       .task { await model.start() }

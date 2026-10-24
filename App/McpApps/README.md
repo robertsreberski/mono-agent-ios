@@ -156,3 +156,31 @@ consent/result tests independent of a closed bridge's incoming debug observer. I
 coverage also runs through the real Store gateway/APIClient and a per-instance scripted
 HTTPTransport, never a console: Cancel 0 / Allow 1 POST, overlapping expiry reads, and a completed
 confirmed tool overlapped by read renewal with exactly one tool POST and one native reply.
+
+
+## Transcript presentation and lifetime
+
+McpAppPartView now replaces the placeholder. A transcript-owned McpHostPool admits at most
+two loading/live hosts, oldest offscreen first (then oldest visible when all slots are visible).
+Visibility is measured on each part, not its message. Full mode opens only at the first
+viewport arrival; Lean requires Show. Arrival metadata survives lazy row recreation and is
+pruned with the held message list. Hide/offscreen/background/selection/identity change destroys
+the document; Show/Reopen refetches, with no retained HTML cache. Memory warning, process
+termination and a15s load/initialize deadline offer Reopen without automatic restart.
+The loaded resource must also match the visible publication's core binding, so a delayed
+UI projection cannot mount a different invocation under an old header.
+
+Native McpNativeConsent implements token-scoped McpConsentPresenting with a system modal
+sheet, redacted bounded preview, Cancel/Allow once and restored accessibility focus. The
+transcript below the sheet is hit-test/AX-hidden, and the system sheet isolates the rest of
+the scene. Parent message quote menus are removed from MCP-bearing rows; quoting stays on
+the native message action strip, not over WK controls. Card typography uses shared reply
+WebType roles,44pt actions, opaque WebColor surfaces and full accessible names. WK pageZoom
+follows Dynamic Type; theme/BCP47 locale/width updates do not recreate the bridge. Requested
+height keeps the160–1600 clamp and phones cap at70% of the measured transcript viewport.
+Existing transcript measured-height/follow policy remains the scroll owner.
+
+DEBUG conversation-mcp-app/unavailable/long-title scenarios use the Store/APIClient path
+with a per-instance scripted transport and the synthetic garden document. Native test POST
+counters are transport-derived, not app-supplied diagnostics. Release excludes those types,
+scenario names and content. Automated UI/screenshot evidence is added separately.

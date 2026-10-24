@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: GPL-3.0-only
+import UIKit
+import XCTest
+
+@MainActor final class McpScenarioTests: XCTestCase {
+  func testReadyLight() { interactive("light") }
+  func testReadyDark() { interactive("dark") }
+  func testUnavailableLight() { unavailable("conversation-mcp-unavailable", "light") }
+  func testUnavailableDark() { unavailable("conversation-mcp-unavailable", "dark") }
+  func testLongTitleLight() { unavailable("conversation-mcp-long-title", "light") }
+  func testLongTitleDark() { unavailable("conversation-mcp-long-title", "dark") }
+
+  private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+    app.descendants(matching: .any).matching(identifier: id).firstMatch
+  }
+  private func launch(_ scenario: String, _ appearance: String) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchArguments = ["--scenario", scenario, "--appearance", appearance, "--reset-test-data"]
+    app.launch()
+    XCTAssertTrue(element(app, "mcp-part-garden").waitForExistence(timeout: 20))
+    return app
+  }
+  private func wait(_ element: XCUIElement, contains text: String) {
+    let expectation = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label CONTAINS %@", text), object: element)
+    XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 15), .completed)
+  }
+  private func capture(
+    _ app: XCUIApplication, _ scenario: String, _ appearance: String, variant: String? = nil
+  ) {
+    let attachment = XCTAttachment(screenshot: app.screenshot())
+    attachment.name =
+      "synthetic-fixture__\(scenario)__\(appearance)" + (variant.map { "__" + $0 } ?? "")
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+  private func showHeader(_ app: XCUIApplication) {
+    let action = app.buttons["mcp-action-garden"]
+    for _ in 0..<4 where !action.isHittable {
+      let transcript = element(app, "conversation-transcript")
+      transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.2)).press(
+        forDuration: 0.05,
+        thenDragTo: transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.85)))
+    }
+    XCTAssertTrue(action.isHittable)
+  }
+  private func unavailable(_ scenario: String, _ appearance: String) {
+    let app = launch(scenario, appearance)
+    wait(element(app, "mcp-status-garden"), contains: "unavailable")
+    XCTAssertTrue(app.buttons["mcp-action-garden"].label.hasPrefix("Reopen"))
+    XCTAssertFalse(element(app, "mcp-web-garden").exists)
+    if scenario == "conversation-mcp-long-title" {
+      XCTAssertTrue(element(app, "mcp-part-garden").label.contains("complete accessible app name"))
+    }
+    capture(app, scenario, appearance)
+  }
+  private func interactive(_ appearance: String) {
+    let scenario = "conversation-mcp-app"
+    let app = launch(scenario, appearance)
+    wait(element(app, "mcp-status-garden"), contains: "ready")
+    XCTAssertTrue(app.buttons["Plan beds"].waitForExistence(timeout: 10))
+    wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 0")
+    capture(app, scenario, appearance)
+    app.buttons["Plan beds"].tap()
+    XCTAssertTrue(app.buttons["mcp-consent-cancel"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["Plan beds"].isHittable)
+    XCTAssertTrue(element(app, "mcp-consent-preview").exists)
+    capture(app, scenario, appearance, variant: "consent")
+    app.buttons["mcp-consent-cancel"].tap()
+    XCTAssertTrue(app.buttons["Plan beds"].waitForExistence(timeout: 10))
+    wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 0")
+    app.buttons["Plan beds"].tap()
+    XCTAssertTrue(app.buttons["mcp-consent-allow"].waitForExistence(timeout: 10))
+    app.buttons["mcp-consent-allow"].tap()
+    wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 1")
+    app.buttons["Open guide"].tap()
+    XCTAssertTrue(app.buttons["mcp-consent-cancel"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Open external link?"].exists)
+    app.buttons["mcp-consent-cancel"].tap()
+    wait(element(app, "mcp-native-counters"), contains: "Link POSTs: 0")
+    let web = element(app, "mcp-web-garden")
+    let originalHeight = web.frame.height
+    app.buttons["Resize app"].tap()
+    let resized = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in web.frame.height > originalHeight + 10 }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [resized], timeout: 10), .completed)
+    showHeader(app)
+    app.buttons["mcp-action-garden"].tap()
+    wait(element(app, "mcp-status-garden"), contains: "hidden")
+    XCTAssertFalse(element(app, "mcp-web-garden").exists)
+    capture(app, scenario, appearance, variant: "hidden")
+    app.buttons["mcp-action-garden"].tap()
+    wait(element(app, "mcp-status-garden"), contains: "ready")
+    app.buttons["Close app"].tap()
+    wait(element(app, "mcp-status-garden"), contains: "closed")
+    XCTAssertTrue(app.buttons["mcp-action-garden"].label.hasPrefix("Reopen"))
+    app.buttons["mcp-action-garden"].tap()
+    wait(element(app, "mcp-status-garden"), contains: "ready")
+    wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 1")
+  }
+}

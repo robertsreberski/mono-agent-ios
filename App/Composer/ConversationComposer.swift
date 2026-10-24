@@ -41,8 +41,8 @@ extension View {
 
   /// The minimal transcript hook: a "Quote" context menu, VoiceOver action and a native
   /// text-selection sheet for one message.
-  func quotable(_ message: WebMessage) -> some View {
-    modifier(QuotableMessage(message: message))
+  func quotable(_ message: WebMessage, enabled: Bool = true) -> some View {
+    modifier(QuotableMessage(message: message, enabled: enabled))
   }
 }
 
@@ -87,12 +87,13 @@ private struct ConversationComposerMount: ViewModifier {
 
 private struct QuotableMessage: ViewModifier {
   let message: WebMessage
+  let enabled: Bool
   @Environment(\.composerActions) private var actions
   @State private var selecting = false
 
   func body(content: Content) -> some View {
     let quote = QuoteFormatting.quote(message: message)
-    if let quote, let action = actions.quote, actions.threadID == message.threadId {
+    if enabled, let quote, let action = actions.quote, actions.threadID == message.threadId {
       content
         .contextMenu {
           Button("Quote", systemImage: "quote.opening") { action(quote) }
