@@ -57,8 +57,8 @@ public enum WebGlass {
   /// (`#9b9e9b`) and dark glass over a light app frame (`#6a706d`), including selection ink.
   public static let sheetVeil = GlassInk(WebColor.surfaceRaised, light: 0.69, dark: 0.80)
   /// The stronger consent veil (`webSheetVeil(.consent)`): every role, accent included,
-  /// keeps AA over arbitrary third-party content.
-  public static let consentVeil = GlassInk(WebColor.surfaceRaised, light: 0.75, dark: 0.75)
+  /// keeps AA over the sampled third-party content bleed.
+  public static let consentVeil = GlassInk(WebColor.surfaceRaised, light: 0.75, dark: 0.80)
   /// The busiest bleed sampled through the medium-detent glass (light: a dark code block
   /// behind; dark: a light MCP app frame behind).
   public static func sampledBleed(_ scheme: ColorScheme) -> RGBColor {

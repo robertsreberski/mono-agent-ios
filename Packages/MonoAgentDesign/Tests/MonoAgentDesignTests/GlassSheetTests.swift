@@ -77,6 +77,11 @@ struct GlassSheetTests {
   }
 
   /// Minimal: one step (1%) less veil no longer keeps muted text AA over the bleed.
+  @Test func consentVeilIsAtLeastAsStrongAsStandard() {
+    #expect(WebGlass.consentVeil.lightOpacity >= WebGlass.sheetVeil.lightOpacity)
+    #expect(WebGlass.consentVeil.darkOpacity >= WebGlass.sheetVeil.darkOpacity)
+  }
+
   @Test func sheetVeilIsTheMinimum() {
     for scheme in schemes {
       let veil = WebGlass.sheetVeil
