@@ -314,12 +314,13 @@ import UIKit
       window.rootViewController = nil
       controller.hide()
     }
-    try await wait { hosting.view.window != nil }
+    try await wait { hosting.view.window != nil && pool.consent.presentationAvailable?() == true }
     let other = UIViewController()
     other.view.backgroundColor = .systemBackground
     other.modalPresentationStyle = .pageSheet
     hosting.present(other, animated: false)
     try await wait { hosting.presentedViewController === other }
+    #expect(pool.consent.presentationAvailable?() == false)
     try await host.sendEnvelope(
       try JSONEncoder().encode(
         JSONValue.object([
