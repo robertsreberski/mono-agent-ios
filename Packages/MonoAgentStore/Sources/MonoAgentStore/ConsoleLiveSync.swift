@@ -79,15 +79,13 @@ extension ConsoleStore {
     case .event(let generation, _, let envelope):
       guard generation >= streamGeneration else { return }
       streamGeneration = generation
-      let formatter = ISO8601DateFormatter()
-      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-      if let timestamp = formatter.date(from: envelope.at)
-        ?? ISO8601DateFormatter().date(from: envelope.at)
-      {
+      if let timestamp = ServerTimestamp.date(envelope.at) {
         let generation = epoch
         let now = await clock.wallNow()
         guard epoch == generation else { return }
-        serverClockOffset = timestamp.timeIntervalSince(now)
+        let offset = ServerTimestamp.correctedOffset(
+          current: serverClockOffset, proposed: timestamp.timeIntervalSince(now))
+        if offset != serverClockOffset { serverClockOffset = offset }
       }
       await apply(envelope)
     }
