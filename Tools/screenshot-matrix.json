@@ -446,6 +446,38 @@
       "variant": "ax3"
     },
     {
+      "scenario": "conversation-context",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "large"
+    },
+    {
+      "scenario": "conversation-context",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "large"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "context"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "context"
+    },
+    {
       "scenario": "composer-empty",
       "appearance": "light",
       "textSize": "standard",
