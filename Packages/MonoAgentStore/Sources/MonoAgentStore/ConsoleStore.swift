@@ -25,13 +25,19 @@ public final class ConsoleStore {
   public let namespace: ConsoleNamespace
   public internal(set) var bootstrap: ApiBootstrap?
   public var agents: [WebAgentSummary] { bootstrap?.agents ?? [] }
-  public internal(set) var buckets: [BucketKey: ThreadBucket] = [:]
-  public internal(set) var activeFleet: WebActiveThreads?
+  public internal(set) var buckets: [BucketKey: ThreadBucket] = [:] {
+    didSet { refreshUnreadCounts() }
+  }
+  public internal(set) var activeFleet: WebActiveThreads? { didSet { refreshUnreadCounts() } }
   public internal(set) var tags: [WebTag] = []
   public internal(set) var projects: [WebProject] = []
   public internal(set) var selectedBucket: BucketKey?
   public internal(set) var selectedThreadID: String?
-  public internal(set) var conversations: [String: ConversationState] = [:]
+  public private(set) var unreadCounts: [String: Int] = [:]
+  public private(set) var cachedThreads: [WebThread] = []
+  public internal(set) var conversations: [String: ConversationState] = [:] {
+    didSet { refreshCachedThreads() }
+  }
   public var selectedConversation: ConversationState? {
     selectedThreadID.flatMap { conversations[$0] }
   }
@@ -221,6 +227,7 @@ public final class ConsoleStore {
       authored = record
       authoredBaseline = record
       authoredRevision &+= 1
+      refreshUnreadCounts()
       dataMode = record.dataMode
     } catch {
       authoredStorage = .memoryOnly
@@ -343,6 +350,7 @@ public final class ConsoleStore {
   func authoredChanged() {
     // Assigning the value is required because the I/O record itself is observation-ignored.
     authoredRevision &+= 1
+    refreshUnreadCounts()
     draftTask?.cancel()
     let generation = epoch
     draftTask = Task { [weak self, clock] in
@@ -360,8 +368,30 @@ public final class ConsoleStore {
     state.record = entry
     state.runningConfirmed = !fromDevice
     state.publish()
-    conversations[entry.thread.id] = state
+    if conversations[entry.thread.id] == nil {
+      state.onThreadChange = { [weak self] in self?.refreshCachedThreads() }
+      conversations[entry.thread.id] = state
+    }
+    refreshCachedThreads()
     touch(entry.thread.id)
+  }
+  func refreshCachedThreads() {
+    let threads = conversations.values.map(\.thread).sorted { $0.id < $1.id }
+    if cachedThreads != threads { cachedThreads = threads }
+  }
+  func refreshUnreadCounts() {
+    let markers = Dictionary(authored.seen.map { ($0.id, $0.revision) }, uniquingKeysWith: max)
+    let listed = buckets.filter { !$0.key.archived }.values.flatMap(\.threads).filter {
+      $0.trigger?.kind != "cron"
+    }
+    var seen: Set<String> = []
+    var counts: [String: Int] = [:]
+    for thread in listed + (activeFleet?.threads ?? []) where seen.insert(thread.id).inserted {
+      if let marker = markers[thread.id], thread.revision > marker {
+        counts[thread.sourceId, default: 0] += 1
+      }
+    }
+    if unreadCounts != counts { unreadCounts = counts }
   }
   func touch(_ id: String) {
     lru.removeAll { $0 == id }
@@ -427,6 +457,7 @@ public final class ConsoleStore {
         authored = record
         dataMode = record.dataMode
         authoredRevision &+= 1
+        refreshUnreadCounts()
         changed = authoredRevision
         savingRevision = record.revision
         result = try await repository.saveAuthored(record, namespace: namespace)

@@ -12,7 +12,10 @@ public struct ConversationTurn: Identifiable, Sendable {
 /// The UI observes one conversation, not the entire fleet on every token.
 @MainActor @Observable
 public final class ConversationState {
-  public internal(set) var thread: WebThread
+  public internal(set) var thread: WebThread {
+    didSet { if oldValue != thread { onThreadChange?() } }
+  }
+  @ObservationIgnored var onThreadChange: (() -> Void)?
   /// Compatibility snapshot, assembled only on demand. Never shares the mutable cache buffer.
   public var messages: [WebMessage] { orderedMessageIDs.compactMap { messageStates[$0]?.message } }
   public private(set) var jobItems: [JobShelfItem] = []
