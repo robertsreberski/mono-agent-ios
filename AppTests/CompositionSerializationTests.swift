@@ -11,13 +11,21 @@ private actor CompositionRepository: ConsoleRepository {
     directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
   var pauseCache = false
   var pauseAuthored = false
+  var cachePauseObserver: CheckedContinuation<Void, Never>?
+  var authoredPauseObserver: CheckedContinuation<Void, Never>?
   var cacheWaiter: CheckedContinuation<Void, Never>?
   var authoredWaiter: CheckedContinuation<Void, Never>?
   var hydratedDuringFinalSave = false
   func pauseNextCacheLoad() { pauseCache = true }
   func pauseNextAuthoredSave() { pauseAuthored = true }
-  func cacheIsPaused() -> Bool { cacheWaiter != nil }
-  func authoredIsPaused() -> Bool { authoredWaiter != nil }
+  func waitUntilCachePaused() async {
+    if cacheWaiter != nil { return }
+    await withCheckedContinuation { cachePauseObserver = $0 }
+  }
+  func waitUntilAuthoredPaused() async {
+    if authoredWaiter != nil { return }
+    await withCheckedContinuation { authoredPauseObserver = $0 }
+  }
   func releaseCache() {
     cacheWaiter?.resume()
     cacheWaiter = nil
@@ -30,7 +38,11 @@ private actor CompositionRepository: ConsoleRepository {
     if authoredWaiter != nil { hydratedDuringFinalSave = true }
     if pauseCache {
       pauseCache = false
-      await withCheckedContinuation { cacheWaiter = $0 }
+      await withCheckedContinuation {
+        cacheWaiter = $0
+        cachePauseObserver?.resume()
+        cachePauseObserver = nil
+      }
     }
     return try await base.loadCache(namespace)
   }
@@ -48,7 +60,11 @@ private actor CompositionRepository: ConsoleRepository {
   {
     if pauseAuthored {
       pauseAuthored = false
-      await withCheckedContinuation { authoredWaiter = $0 }
+      await withCheckedContinuation {
+        authoredWaiter = $0
+        authoredPauseObserver?.resume()
+        authoredPauseObserver = nil
+      }
     }
     return try await base.saveAuthored(record, namespace: namespace)
   }
@@ -83,7 +99,7 @@ private func waitForComposition(_ condition: () async -> Bool) async {
       _ = try await model.registry.add(
         name: "Other fixture", endpoint: Scenario.endpoint, httpAcknowledged: false)
       let first = Task { await model.synchronizeStore() }
-      await waitForComposition { await repository.authoredIsPaused() }
+      await repository.waitUntilAuthoredPaused()
       #expect(model.store == nil)
       await model.registry.select(id)
       var entered = false
@@ -116,7 +132,7 @@ private func waitForComposition(_ condition: () async -> Bool) async {
         scenario: .consoleOnline, storeScenario: waitForStoreFixture ? .offline : nil,
         consoleRepository: repository)
       let start = Task { await model.start() }
-      await waitForComposition { await repository.cacheIsPaused() }
+      await repository.waitUntilCachePaused()
       #expect(model.connectedProfile != nil)
       #expect(model.store?.hydrated == false)
       #expect(model.isReady == !waitForStoreFixture)
