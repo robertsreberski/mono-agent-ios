@@ -404,9 +404,7 @@ struct DashboardView: View {
     _ items: [Item], id: KeyPath<Item, ID>, scope: String, @ViewBuilder row: @escaping (Item) -> Row
   ) -> some View {
     ForEach(
-      items.map {
-        DashboardListItem(id: DashboardListID(scope: scope, value: $0[keyPath: id]), value: $0)
-      }
+      DashboardListProjection.rows(items, id: id, scope: scope)
     ) { entry in
       let item = entry.value
       let divided = items.first.map { $0[keyPath: id] != item[keyPath: id] } ?? false
@@ -486,9 +484,7 @@ struct DashboardView: View {
           expanded
           ? group.threads : Array(group.threads.prefix(DashboardModel.runningCardsPerAgent))
         ForEach(
-          cards.map {
-            DashboardListItem(id: DashboardListID(scope: "running", value: $0.id), value: $0)
-          }
+          DashboardListProjection.rows(cards, id: \.id, scope: "running")
         ) { entry in
           let thread = entry.value
           runningCard(thread, agent: group.agent, now: now)

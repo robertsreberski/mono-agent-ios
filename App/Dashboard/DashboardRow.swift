@@ -64,3 +64,14 @@ struct DashboardListItem<Value, ID: Hashable>: Identifiable {
   let id: DashboardListID<ID>
   let value: Value
 }
+
+/// The actual ForEach input shared by running and list sections, with section-scoped IDs.
+enum DashboardListProjection {
+  static func rows<Value, ID: Hashable>(
+    _ values: [Value], id: KeyPath<Value, ID>, scope: String
+  ) -> [DashboardListItem<Value, ID>] {
+    values.map {
+      DashboardListItem(id: DashboardListID(scope: scope, value: $0[keyPath: id]), value: $0)
+    }
+  }
+}
