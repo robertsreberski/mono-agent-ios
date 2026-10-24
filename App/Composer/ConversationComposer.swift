@@ -140,6 +140,7 @@ struct QuoteSelectionSheet: View {
           }
         }
     }
+    .webSheetVeil()
     .presentationDetents([.medium, .large])
   }
 }

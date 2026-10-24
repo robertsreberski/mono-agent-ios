@@ -391,10 +391,10 @@ struct PeerQuestionAnswerSheet: View {
           StatusIndicator(.failed, label: error)
         }
       }
+      // On the sheet material: the frosted veil behind, rows as quiet ink (GLASS-RULES.md).
       .scrollContentBackground(.hidden)
-      .background(WebColor.surfaceSubtle.color)
       .webFont(.contextNote)
-      .listRowBackground(WebColor.surfaceRaised.color)
+      .listRowBackground(WebGlass.groupFill.color)
       .navigationTitle("Peer question")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -416,6 +416,7 @@ struct PeerQuestionAnswerSheet: View {
         }
       }
     }
+    .webSheetVeil()
     .accessibilityIdentifier("peer-sheet")
   }
 
