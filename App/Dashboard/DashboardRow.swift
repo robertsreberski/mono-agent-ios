@@ -54,3 +54,13 @@ struct DashboardRow: View, Equatable {
     .accessibilityIdentifier(value.identifier)
   }
 }
+
+/// Lazy layouts need globally unique identity even when the same thread occurs in two sections.
+struct DashboardListID<ID: Hashable>: Hashable {
+  let scope: String
+  let value: ID
+}
+struct DashboardListItem<Value, ID: Hashable>: Identifiable {
+  let id: DashboardListID<ID>
+  let value: Value
+}

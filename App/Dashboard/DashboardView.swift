@@ -401,9 +401,14 @@ struct DashboardView: View {
 
   /// Rows bleed 8 pt into the gutter (web `margin: 0 -8px`) and are divided by an inset line.
   private func rowList<Item, ID: Hashable, Row: View>(
-    _ items: [Item], id: KeyPath<Item, ID>, @ViewBuilder row: @escaping (Item) -> Row
+    _ items: [Item], id: KeyPath<Item, ID>, scope: String, @ViewBuilder row: @escaping (Item) -> Row
   ) -> some View {
-    ForEach(items, id: id) { item in
+    ForEach(
+      items.map {
+        DashboardListItem(id: DashboardListID(scope: scope, value: $0[keyPath: id]), value: $0)
+      }
+    ) { entry in
+      let item = entry.value
       let divided = items.first.map { $0[keyPath: id] != item[keyPath: id] } ?? false
       row(item)
         .padding(.top, divided ? 1 : 0)
@@ -480,7 +485,12 @@ struct DashboardView: View {
         let cards =
           expanded
           ? group.threads : Array(group.threads.prefix(DashboardModel.runningCardsPerAgent))
-        ForEach(cards, id: \.id) { thread in
+        ForEach(
+          cards.map {
+            DashboardListItem(id: DashboardListID(scope: "running", value: $0.id), value: $0)
+          }
+        ) { entry in
+          let thread = entry.value
           runningCard(thread, agent: group.agent, now: now)
             .padding(
               .top,
@@ -565,7 +575,7 @@ struct DashboardView: View {
             "new-project")
       }
       if !projectsCollapsed {
-        rowList(projects, id: \.id) { project in
+        rowList(projects, id: \.id, scope: "projects") { project in
           rowButton(
             AppRoute.project(profile: store.profile.id, sourceID: agent, projectID: project.id),
             identifier: "project-row-\(project.id)",
@@ -587,7 +597,7 @@ struct DashboardView: View {
     if threads.isEmpty {
       recentEmpty
     }
-    rowList(threads, id: \.id) { thread in
+    rowList(threads, id: \.id, scope: "recent") { thread in
       rowButton(
         conversationRoute(thread), identifier: "recent-row-\(thread.id)",
         content: DashboardRows.recent(
@@ -677,7 +687,9 @@ struct DashboardView: View {
         sectionHead("Conversations", note: search.status == .loading ? "Updating…" : nil)
           .accessibilityElement(children: .combine)
           .accessibilityIdentifier("search-results")
-        rowList(active, id: \.thread.id) { hit in searchRow(hit, current: current, now: now) }
+        rowList(active, id: \.thread.id, scope: "search") { hit in
+          searchRow(hit, current: current, now: now)
+        }
         if search.truncated && shelved.isEmpty { truncatedNote }
         Color.clear.frame(height: WebSpace.sectionGap).accessibilityHidden(true)
       }
@@ -685,7 +697,9 @@ struct DashboardView: View {
         sectionHead("Archived")
           .accessibilityElement(children: .combine)
           .accessibilityIdentifier(active.isEmpty ? "search-results" : "search-archived")
-        rowList(shelved, id: \.thread.id) { hit in searchRow(hit, current: current, now: now) }
+        rowList(shelved, id: \.thread.id, scope: "search") { hit in
+          searchRow(hit, current: current, now: now)
+        }
         if search.truncated { truncatedNote }
       }
     }
