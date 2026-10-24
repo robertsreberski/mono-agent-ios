@@ -9,8 +9,80 @@
     var deleted = false
     var projects: [WebProject]?
     var tags: [WebTag]?
+    let wakeScenario: String?
+    var wakeInitialized = false
+    var wake: WebWakeSchedule?
+    var wakeConflicted = false
+    init(wakeScenario: String? = nil) { self.wakeScenario = wakeScenario }
+    func publishWake() {
+      thread?.wakeSchedule = wake.map {
+        .init(
+          state: $0.state, revision: $0.revision, nextFireAt: $0.nextFireAt,
+          kind: $0.definition.kind, compactFirst: $0.definition.compactFirst)
+      }
+    }
     func response(_ request: URLRequest, theme: String) throws -> HTTPResponse {
       if thread == nil { thread = try ScreenFixture.bootstrap(theme: theme).threads[0] }
+      if !wakeInitialized {
+        wakeInitialized = true
+        if let wakeScenario, wakeScenario.hasPrefix("wake-"), wakeScenario != "wake-new" {
+          let weekly = wakeScenario != "wake-once"
+          let definition = WebWakeScheduleDefinition(
+            kind: weekly ? "weekly" : "once", timezone: "UTC",
+            localAt: weekly ? nil : "2031-05-14T09:00", days: weekly ? [1, 3, 5] : nil,
+            times: weekly ? ["09:00", "14:30"] : nil, message: "Review the fictional garden plan.",
+            compactFirst: true)
+          let json: JSONValue = .object([
+            "scheduleId": .string("wake-garden"), "threadId": .string(thread!.id),
+            "sourceId": .string(thread!.sourceId),
+            "definition": try TranscriptFixture.json(definition), "state": .string("active"),
+            "revision": .number(1), "nextFireAt": .string("2031-05-14T09:00:00Z"),
+            "lastOutcome": .string("fired"), "createdAt": .string(ScreenFixture.stamp),
+          ])
+          wake = try JSONDecoder().decode(WebWakeSchedule.self, from: JSONEncoder().encode(json))
+          publishWake()
+        }
+      }
+      if request.url?.path == "/api/v1/threads/" + thread!.id + "/wake-schedule" {
+        let method = request.httpMethod ?? "GET"
+        if method != "GET", wakeScenario == "wake-conflict", !wakeConflicted {
+          wakeConflicted = true
+          wake?.revision += 1
+          wake?.definition.message = "Updated elsewhere."
+          publishWake()
+          return HTTPResponse(
+            data: Data(
+              #"{"error":{"code":"wake_revision_conflict","message":"Schedule changed; reload and retry."}}"#
+                .utf8), status: 409)
+        }
+        if method == "DELETE" {
+          wake = nil
+          publishWake()
+          return HTTPResponse(data: Data(), status: 204)
+        }
+        if let data = request.httpBody {
+          if method == "PATCH" {
+            let body = try JSONDecoder().decode(ApiPatchWake.self, from: data)
+            wake?.state = body.state
+            wake?.revision += 1
+          } else {
+            let definition = try JSONDecoder().decode(WebWakeScheduleDefinition.self, from: data)
+            let json: JSONValue = .object([
+              "scheduleId": .string("wake-garden"), "threadId": .string(thread!.id),
+              "sourceId": .string(thread!.sourceId),
+              "definition": try TranscriptFixture.json(definition), "state": .string("active"),
+              "revision": .number(Double((wake?.revision ?? 0) + 1)),
+              "nextFireAt": .string("2031-05-14T09:00:00Z"), "lastOutcome": .null,
+              "createdAt": .string(ScreenFixture.stamp),
+            ])
+            wake = try JSONDecoder().decode(WebWakeSchedule.self, from: JSONEncoder().encode(json))
+          }
+          publishWake()
+        }
+        let json: JSONValue = .object(["schedule": try wake.map(TranscriptFixture.json) ?? .null])
+        return HTTPResponse(
+          data: try JSONEncoder().encode(json), status: method == "POST" ? 201 : 200)
+      }
       if tags == nil { tags = try ScreenFixture.bootstrap(theme: theme).tags }
       if request.url?.path == "/api/v1/tags", request.httpMethod == "POST",
         let data = request.httpBody
@@ -147,9 +219,18 @@
           return HTTPResponse(data: try JSONEncoder().encode(["thread": thread!]))
         }
         if deleted { return HTTPResponse(data: Data(), status: 404) }
+        var messages = try ScreenFixture.messages()
+        if wakeScenario == "wake-once", !messages.isEmpty {
+          let marker = try JSONDecoder().decode(
+            WebMessagePart.self,
+            from: Data(
+              #"{"type":"scheduled-wake","occurrenceId":"wake-occurrence-example","scheduledAt":"2031-05-14T09:00:00Z","firedAt":"2031-05-14T09:00:02Z","timezone":"UTC","message":"Review the fictional garden plan."}"#
+                .utf8))
+          messages[0].parts.insert(marker, at: 0)
+        }
         let value: JSONValue = .object([
           "thread": try TranscriptFixture.json(thread!),
-          "messages": try TranscriptFixture.json(ScreenFixture.messages()),
+          "messages": try TranscriptFixture.json(messages),
           "messagesNextCursor": .null,
         ])
         return HTTPResponse(data: try JSONEncoder().encode(value))

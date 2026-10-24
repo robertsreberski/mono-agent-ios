@@ -14,6 +14,10 @@
     case conversationActions = "conversation-actions"
     case projectPage = "project-page"
     case projectSettings = "project-settings"
+    case wakeNew = "wake-new"
+    case wakeOnce = "wake-once"
+    case wakeWeekly = "wake-weekly"
+    case wakeConflict = "wake-conflict"
     case tagMenu = "tag-menu"
     case tagSettings = "tag-settings"
     case fidelityDashboard = "fidelity-dashboard"
@@ -61,10 +65,13 @@
 
     var isTranscript: Bool {
       rawValue.hasPrefix("conversation-") || self == .fidelityChat || self == .conversationActions
-        || self == .tagMenu || self == .tagSettings
+        || self == .tagMenu || self == .tagSettings || rawValue.hasPrefix("wake-")
     }
     var isOrganize: Bool {
-      [.conversationActions, .projectPage, .projectSettings, .tagMenu, .tagSettings].contains(self)
+      [
+        .conversationActions, .projectPage, .projectSettings, .tagMenu, .tagSettings, .wakeNew,
+        .wakeOnce, .wakeWeekly, .wakeConflict,
+      ].contains(self)
     }
     var isFidelity: Bool {
       self == .fidelityChat || self == .fidelityDashboard || isOrganize
@@ -165,7 +172,8 @@
       self.theme = theme
       self.script = script
       self.mcp = mcp
-      organize = scenario?.isOrganize == true ? OrganizeScript() : nil
+      organize =
+        scenario?.isOrganize == true ? OrganizeScript(wakeScenario: scenario?.rawValue) : nil
     }
     func upload(
       _ request: URLRequest, file: URL, progress: @escaping @Sendable (Double) -> Void

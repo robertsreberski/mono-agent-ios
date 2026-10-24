@@ -100,6 +100,12 @@
           catalogSection("Conversation rows") { RowSpecimens() }
           catalogSection("Section headers") {
             VStack(alignment: .leading, spacing: DesignSpacing.md) {
+              Section("Wake schedules") {
+                WakeSummaryView(
+                  state: "Active", sentence: "Every weekday at 09:00",
+                  next: "Next: Mon 12 May, 09:00 (UTC)", outcome: "Last wake-up ran.")
+                WakeScheduleStatus("Weekly · paused · compact first")
+              }
               SectionHeader("Saved consoles")
               SectionHeader("Agents", detail: "3 active · synthetic") { UnreadMarker(count: 4) }
             }

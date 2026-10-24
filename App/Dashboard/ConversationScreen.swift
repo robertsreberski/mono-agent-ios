@@ -25,6 +25,8 @@ struct ConversationScreen: View {
   @State private var pendingAction: ConversationAction?
   @State private var projectPicker = false
   @State private var projectEditor: ProjectEditorRequest?
+  @State private var wakeRequest: WakeEditorRequest?
+  @State private var pendingWake = false
   @State private var pendingProjectEditor: ProjectEditorRequest?
 
   private var threadID: String? { route.threadID ?? createdThreadID }
@@ -102,6 +104,9 @@ struct ConversationScreen: View {
     .onDisappear {
       onScreen = false
       applyVisibility()
+    }
+    .sheet(item: $wakeRequest) { request in
+      WakeScheduleEditor(store: store, request: request)
     }
     .sheet(item: $projectEditor) { request in
       ProjectSettings(store: store, request: request) { project in
@@ -337,6 +342,16 @@ struct ConversationScreen: View {
               }.accessibilityIdentifier("action-remove-project")
             }
 
+            if thread.trigger == nil {
+              OrganizeMenuRow(
+                thread.wakeSchedule == nil ? "Schedule wake-up" : "Edit wake-up schedule",
+                systemImage: "clock",
+                detail: thread.wakeSchedule.map { WakeScheduleModel.status($0) }
+              ) {
+                pendingWake = true
+                actionsOpen = false
+              }.accessibilityIdentifier("action-wake")
+            }
             OrganizeMenuRow(
               thread.archivedAt == nil ? "Archive conversation" : "Restore conversation",
               systemImage: thread.archivedAt == nil ? "archivebox" : "arrow.uturn.backward"
@@ -368,6 +383,12 @@ struct ConversationScreen: View {
       .presentationCompactAdaptation(.popover)
       .onDisappear {
         // Present only after the toolbar popover releases its presentation owner (iPad).
+        if pendingWake, let threadID {
+          pendingWake = false
+          if let id = store.openWakeEditor(threadID: threadID) {
+            wakeRequest = .init(id: id, threadID: threadID)
+          }
+        }
         if let pendingProjectEditor {
           self.pendingProjectEditor = nil
           projectEditor = pendingProjectEditor

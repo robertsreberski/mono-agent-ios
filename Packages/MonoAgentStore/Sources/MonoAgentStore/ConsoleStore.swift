@@ -62,6 +62,7 @@ public final class ConsoleStore {
   public var isStarted: Bool { started }
   public internal(set) var hydrated = false
   public internal(set) var draftClearStorage: [String: PersistenceState] = [:]
+  public internal(set) var wakeEditor: WakeEditorState?
   public internal(set) var tagDeletionConfirmation: TagDeletionConfirmation?
   public internal(set) var projectMembers: [String: ProjectMembers] = [:]
   public internal(set) var projectConfirmation: ProjectConfirmation?

@@ -4,6 +4,107 @@ import XCTest
 
 @MainActor
 final class ScenarioTests: XCTestCase {
+  func testWakeNewLight() { captureWake("wake-new", "light") }
+  func testWakeNewDark() { captureWake("wake-new", "dark") }
+  func testWakeOnceLight() { captureWake("wake-once", "light") }
+  func testWakeOnceDark() { captureWake("wake-once", "dark") }
+  func testWakeWeeklyLight() { captureWake("wake-weekly", "light") }
+  func testWakeWeeklyDark() { captureWake("wake-weekly", "dark") }
+  func testWakeConflictLight() { captureWake("wake-conflict", "light", conflict: true) }
+  func testWakeConflictDark() { captureWake("wake-conflict", "dark", conflict: true) }
+  func testWakeStatusLight() {
+    capture("wake-once", "light", expect: ["conversation-header"], variant: "status")
+  }
+  func testWakeStatusDark() {
+    capture("wake-once", "dark", expect: ["conversation-header"], variant: "status")
+  }
+  private func openWake(_ app: XCUIApplication) {
+    app.buttons["conversation-actions"].tap()
+    XCTAssertTrue(app.buttons["action-wake"].waitForExistence(timeout: 5))
+    app.buttons["action-wake"].tap()
+    XCTAssertTrue(app.segmentedControls["wake-kind"].waitForExistence(timeout: 5))
+  }
+  private func scrollWake(_ app: XCUIApplication, to target: XCUIElement, down: Bool = false) {
+    for _ in 0..<5 where !target.isHittable {
+      if down {
+        element(app, "wake-scroll").swipeDown()
+      } else {
+        element(app, "wake-scroll").swipeUp()
+      }
+    }
+    XCTAssertTrue(target.isHittable)
+  }
+  private func saveWake(_ app: XCUIApplication) {
+    let save = app.buttons["organize-save"]
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: save)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+    save.tap()
+  }
+  private func captureWake(_ scenario: String, _ appearance: String, conflict: Bool = false) {
+    capture(scenario, appearance, expect: ["conversation-actions"]) { app in
+      self.openWake(app)
+      if conflict {
+        let compact = app.switches["wake-compact-first"]
+        self.scrollWake(app, to: compact)
+        compact.tap()
+        self.saveWake(app)
+        let reload = app.buttons["wake-reload"]
+        XCTAssertTrue(reload.waitForExistence(timeout: 5))
+        self.scrollWake(app, to: reload, down: true)
+      }
+    }
+  }
+  func testWakeCreateWeeklyPauseResumeAndDeleteConfirmation() {
+    let app = launch("wake-new")
+    openWake(app)
+    app.segmentedControls["wake-kind"].buttons["Weekly"].tap()
+    app.buttons["wake-day-1"].tap()
+    app.buttons["wake-add-time"].tap()
+    XCTAssertTrue(app.buttons["wake-remove-time-1"].exists)
+    app.buttons["wake-remove-time-1"].tap()
+    let compact = app.switches["wake-compact-first"]
+    scrollWake(app, to: compact)
+    compact.tap()
+    saveWake(app)
+    XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
+    openWake(app)
+    let toggle = app.buttons["wake-toggle"]
+    XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+    toggle.tap()
+    XCTAssertTrue(app.buttons["Resume schedule"].waitForExistence(timeout: 5))
+    toggle.tap()
+    XCTAssertTrue(app.buttons["Pause schedule"].waitForExistence(timeout: 5))
+    let delete = app.buttons["delete-wake"]
+    scrollWake(app, to: delete)
+    delete.tap()
+    XCTAssertTrue(app.alerts["Delete this schedule?"].waitForExistence(timeout: 5))
+    app.alerts.buttons["Keep schedule"].tap()
+    XCTAssertTrue(delete.exists)
+    delete.tap()
+    app.alerts.buttons["Delete"].tap()
+    XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
+  }
+  func testWakeChangedElsewhereLoadsLatestAndKeepsEditorOpen() {
+    let app = launch("wake-conflict")
+    openWake(app)
+    let compact = app.switches["wake-compact-first"]
+    scrollWake(app, to: compact)
+    compact.tap()
+    saveWake(app)
+    let reload = app.buttons["wake-reload"]
+    guard reload.waitForExistence(timeout: 5) else {
+      XCTFail(app.debugDescription)
+      return
+    }
+    scrollWake(app, to: reload, down: true)
+    reload.tap()
+    XCTAssertTrue(app.staticTexts["Scheduled wake-up"].exists)
+    let save = app.buttons["organize-save"]
+    XCTAssertTrue(save.waitForExistence(timeout: 5))
+    XCTAssertFalse(save.isEnabled)
+  }
+
   func testConversationActionsLight() { captureConversationActions("light") }
   func testConversationActionsDark() { captureConversationActions("dark") }
   private func captureConversationActions(_ appearance: String) {

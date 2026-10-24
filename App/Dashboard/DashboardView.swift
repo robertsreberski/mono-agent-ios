@@ -422,13 +422,23 @@ struct DashboardView: View {
     return Button {
       route = target
     } label: {
-      ConversationRow(content)
-        .background {
-          if selected {
-            shape.fill(WebColor.surfaceRaised.color).webShadow(.small)
-              .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
-          }
+      VStack(alignment: .leading, spacing: 0) {
+        ConversationRow(content)
+        if let id = target.threadID,
+          let summary =
+            (store.conversations[id]?.thread
+            ?? store.buckets.values.flatMap(\.threads).first { $0.id == id })?.wakeSchedule
+        {
+          WakeScheduleStatus(WakeScheduleModel.status(summary)).padding(.leading, 38).padding(
+            .bottom, 6)
         }
+      }
+      .background {
+        if selected {
+          shape.fill(WebColor.surfaceRaised.color).webShadow(.small)
+            .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+        }
+      }
     }
     .buttonStyle(WebRowButtonStyle())
     .accessibilityAddTraits(selected ? .isSelected : [])

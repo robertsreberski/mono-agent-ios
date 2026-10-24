@@ -217,6 +217,15 @@ public struct WakeSummary: Codable, Sendable, Equatable {
   public var nextFireAt: String?
   public var kind: String
   public var compactFirst: Bool?
+  public init(
+    state: String, revision: Int, nextFireAt: String?, kind: String, compactFirst: Bool? = nil
+  ) {
+    self.state = state
+    self.revision = revision
+    self.nextFireAt = nextFireAt
+    self.kind = kind
+    self.compactFirst = compactFirst
+  }
 }
 public struct PendingProject: Codable, Sendable, Equatable {
   @RequiredNullable public var projectId: String?
