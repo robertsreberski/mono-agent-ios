@@ -38,31 +38,35 @@ parser.add_argument("--family", choices=["iPhone", "iPad"], help="Run one CI mat
 parser.add_argument("--transcript-only", action="store_true", help="Focused transcript XCUI captures; preserves the full default matrix")
 parser.add_argument("--composer-only", action="store_true", help="Focused composer XCUI captures; preserves the full default matrix")
 parser.add_argument("--replies-only", action="store_true", help="Focused rich reply XCUI captures")
+parser.add_argument("--accessibility-only", action="store_true", help="Additional accessibility and opaque review captures")
 parser.add_argument("--scenario-only", action="store_true", help="Connection, dashboard, catalog and fidelity captures")
 parser.add_argument("--activity-only", action="store_true", help="Job, subagent and context captures")
 parser.add_argument("--mcp-only", action="store_true", help="Focused MCP UI scenarios and captures")
 args = parser.parse_args()
-if sum((args.transcript_only, args.composer_only, args.replies_only, args.mcp_only, args.scenario_only, args.activity_only)) > 1:
+if sum((args.transcript_only, args.composer_only, args.replies_only, args.mcp_only, args.scenario_only, args.activity_only, args.accessibility_only)) > 1:
     parser.error("Choose at most one focused capture")
-if args.transcript_only:
-    EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in {
-        "conversation-transcript", "conversation-streaming", "conversation-tools", "conversation-long", "conversation-markdown"}}
-if args.composer_only:
-    EXPECTED = {key(entry): entry for entry in MATRIX if is_composer(entry["scenario"])}
-if args.replies_only:
-    EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in {
-        "conversation-reply-files", "conversation-images", "conversation-restart-card", "conversation-attachments"}}
-if args.mcp_only:
-    EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"].startswith("conversation-mcp-")}
-ACTIVITY_SCENARIOS = {"conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context"}
-if args.activity_only:
-    EXPECTED = {key(entry): entry for entry in MATRIX if entry["scenario"] in ACTIVITY_SCENARIOS}
-if args.scenario_only:
-    EXPECTED = {key(entry): entry for entry in MATRIX if not (
-        is_composer(entry["scenario"]) or entry["scenario"] in ACTIVITY_SCENARIOS
-        or entry["scenario"] in {"conversation-transcript", "conversation-streaming", "conversation-tools", "conversation-long", "conversation-markdown",
-                                  "conversation-reply-files", "conversation-images", "conversation-restart-card", "conversation-attachments"}
-        or entry["scenario"].startswith("conversation-mcp-"))}
+def capture_suite(entry):
+    scenario, variant = entry["scenario"], entry.get("variant")
+    if ((scenario in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+         and variant in {"ax3", "opaque"})
+        or (scenario == "connection-empty" and variant in {"editorax3", "editoropaque"})):
+        return "accessibility"
+    if scenario.startswith("conversation-mcp-"):
+        return "mcp"
+    if scenario in {"conversation-transcript", "conversation-streaming", "conversation-tools", "conversation-long", "conversation-markdown"}:
+        return "transcript"
+    if scenario in {"conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context", "peer-question"}:
+        return "activity"
+    if scenario in {"conversation-reply-files", "conversation-images", "conversation-restart-card", "conversation-attachments"}:
+        return "replies"
+    if is_composer(scenario) or scenario == "skill-browser":
+        return "composer"
+    return "scenario"
+
+focused_suite = next((name for name in ("transcript", "composer", "replies", "mcp", "scenario", "activity", "accessibility")
+                      if getattr(args, name + "_only")), None)
+if focused_suite:
+    EXPECTED = {key(entry): entry for entry in MATRIX if capture_suite(entry) == focused_suite}
 if bool(args.iphone) != bool(args.ipad):
     parser.error("Supply both --iphone and --ipad, or neither for dynamic selection")
 if args.iphone:
@@ -136,7 +140,8 @@ def capture(family, device):
             *(["-only-testing:MonoAgentUITests/ReplyScenarioTests"] if args.replies_only else []),
             *(["-only-testing:MonoAgentUITests/McpScenarioTests"] if args.mcp_only else []),
             *(["-only-testing:MonoAgentUITests/ScenarioTests"] if args.scenario_only else []),
-            *(["-only-testing:MonoAgentUITests/ActivityScenarioTests"] if args.activity_only else []))
+            *(["-only-testing:MonoAgentUITests/ActivityScenarioTests"] if args.activity_only else []),
+            *(["-only-testing:MonoAgentUITests/AccessibilityReviewTests"] if args.accessibility_only else []))
     except subprocess.CalledProcessError as error:
         test_failure = error
     finally:

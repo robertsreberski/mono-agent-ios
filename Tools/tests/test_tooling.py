@@ -226,10 +226,20 @@ class ToolingTests(unittest.TestCase):
 
     def test_activity_only_runs_exact_activity_matrix(self):
         matrix = [entry for entry in MATRIX if entry["scenario"] in {
-            "conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context"}]
+            "conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context", "peer-question"}]
         self.export(family="iPhone", focus="--activity-only", matrix=matrix)
         command = next(call for call in self.calls if call[0] == "xcodebuild")
         self.assertIn("-only-testing:MonoAgentUITests/ActivityScenarioTests", command)
+
+    def test_accessibility_only_runs_exact_review_matrix(self):
+        matrix = [entry for entry in MATRIX if
+                  (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+                   and entry.get("variant") in {"ax3", "opaque"})
+                  or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
+        self.assertEqual(len(matrix), 12)
+        self.export(family="iPhone", focus="--accessibility-only", matrix=matrix)
+        command = next(call for call in self.calls if call[0] == "xcodebuild")
+        self.assertIn("-only-testing:MonoAgentUITests/AccessibilityReviewTests", command)
 
     def test_export_requires_and_indexes_complete_matrix(self):
         index = self.export()
