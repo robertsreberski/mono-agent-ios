@@ -1,7 +1,8 @@
 # MCP app isolation core
 
-This core is not connected to the transcript. It delivers bounded transport envelopes,
-not JSON-RPC method semantics or native effects. The transcript placeholder remains.
+This core is not connected to the transcript. The isolation layer delivers bounded raw
+JSON-RPC envelopes; the native bridge above it owns method semantics and consent-gated
+effects through Store. The transcript placeholder remains.
 
 Each host owns a nonpersistent website data store, content controller, fixed custom-scheme
 shell, and scripts-only sandboxed srcdoc. The shell's response-header envelope CSP and
@@ -63,9 +64,9 @@ DNS-name privacy, eliminate unknown JavaScript-realm bypasses, or attribute ever
 CSP versus content rules versus navigation policy. Keep the sandbox and navigation gate;
 do not rely on global removal alone or advertise a general network firewall.
 
-Public WKWebView APIs also provide no hard per-host CPU or memory quota. The bridge's
-method allowlist, effects, consent, request/rate limits and lifecycle presentation are not
-implemented here.
+Public WKWebView APIs provide no hard per-host CPU or memory quota. The bridge below
+bounds requests and effects; native presentation and transcript lifecycle ownership remain
+separate PR2 work.
 
 ## Native protocol / effect layer (no transcript integration yet)
 
@@ -86,40 +87,40 @@ The injected presenter must settle pending confirmation when `cancel()` is calle
 - Host capabilities exactly match the web's fixed openLinks/serverTools/serverResources,
   sandbox.csp and updateModelContext text/resource/resourceLink/structuredContent set.
   No clipboard-write, camera, microphone or other permissions are advertised. Context has
-  theme, inline/available modes, dimensions (width240–1400, height160–1600), locale/timeZone,
+  theme, inline/available modes, dimensions (width 240–1400, height 160–1600), locale/timeZone,
   native userAgent, mobile platform and injected touch/hover capabilities. Environment/height
-  changes send context notifications without rebuilding the host. Size bursts coalesce16ms.
+  changes send context notifications without rebuilding the host. Size bursts coalesce 16 ms.
 - Only resources/read, tools/call, ui/open-link and ui/update-model-context forward. Native
   alone supplies confirmed; app-supplied confirmed is discarded. One consent at a time;
-  others auto-decline. Tool preview ports web secret-key redaction, depth4, 12 array items,
-  16 fields, 240-unit strings, 120-unit keys and2048 UTF-8 bytes. Native sorts preview keys
+  others auto-decline. Tool preview ports web secret-key redaction, depth 4, 12 array items,
+  16 fields, 240-unit strings, 120-unit keys and 2048 UTF-8 bytes. Native sorts preview keys
   for deterministic output and does not split UTF-8 scalars at the byte ceiling.
 - Open-link requires confirmation, server allowed===true and opens the **returned** HTTP(S)
   URL in the system default browser, through an injected opener. A changed destination is
   not refused. Native rejects file/custom schemes and URL credentials rather than handing
   native app/file privileges to an HTML app. A refused open returns isError:true.
 - Model context succeeds only on accepted===true; refusal exposes a control-cleaned reason
-  bounded to500 UTF-16 units, like the web's bounded text. Tool/resource result structure is
+  bounded to 500 UTF-16 units, like the web's bounded text. Tool/resource result structure is
   checked before delivery. Initial tool-result fallback deliberately matches the web's
   content-array test, including its fixed error result; tool-input requires an object.
 - App `ui/notifications/request-teardown` closes and requires Reopen. Host teardown sends
-  `ui/resource-teardown` and closes on reply/error or500ms timeout. Retirement, Store session
+  `ui/resource-teardown` and closes on reply/error or 500 ms timeout. Retirement, Store session
   invalidation and close synchronously cancel native consent, pending effects and size work;
   late approval/results cannot deliver or open a URL. No automatic reopen or crash loop.
 
 Intentional native divergences from the web: local-only isolated shell/opaque relay and
 WebRTC defence described above; no clipboard-write; complete handshake before forwarding
-an effect; safe finite integer IDs / ≤256-byte string IDs and depth≤32; at most4 in-flight
-requests (extra requests get an error), a **sliding**256-ID duplicate window (duplicate closes,
-no lifetime1024-ID quota), token bucket20 messages/s with burst40 (excess closes with Reopen).
-Message ceiling remains1MiB+64KiB. Transport-invalid batches/oversize envelopes are discarded
+an effect; safe finite integer IDs / ≤256-byte string IDs and depth ≤32; at most 4 in-flight
+requests (extra requests get an error), a **sliding** 256-ID duplicate window (duplicate closes,
+no lifetime 1024-ID quota), token bucket 20 messages/s with burst 40 (excess closes with Reopen).
+Message ceiling remains 1 MiB + 64 KiB. Transport-invalid batches/oversize envelopes are discarded
 by the isolation layer, not forwarded. Resource reads renew once; effects never replay.
 On expiry, `renewAccessForRetry()` is an explicit native action that only refreshes access:
 the app must issue a new request and obtain fresh native consent. The old operation is not
 retained for replay. Unlike web fetch retry, native cannot silently repeat a confirmed effect.
 
 `AppTests/Resources/mcp-protocol-vectors.json` contains minimal schema/default-handler
-vectors from integrity-verified ext-apps1.7.5, with the full original transition LICENSE
+vectors from integrity-verified ext-apps 1.7.5, with the full original transition LICENSE
 beside it. Both are test-bundle-only; no SDK code/dependency is installed. DEBUG-only
 `McpGardenFixture` supplies an inline synthetic planner for real-WK semantic tests, not a
 transcript/catalog route. Release checks reject its symbols/strings and test resources.
