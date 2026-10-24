@@ -407,6 +407,7 @@ struct PeerQuestionAnswerSheet: View {
         .listRowBackground(WebGlass.groupFill.color)
         if let error {
           StatusIndicator(.failed, label: error)
+            .listRowBackground(WebGlass.groupFill.color)
         }
       }
       // On the sheet material: the frosted veil behind, rows as quiet ink (GLASS-RULES.md).

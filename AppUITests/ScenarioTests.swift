@@ -573,6 +573,29 @@ final class ScenarioTests: XCTestCase {
     app.terminate()
   }
 
+  func testDashboardLastRowClearsFooterLight() { captureDashboardLastRow("light") }
+  func testDashboardLastRowClearsFooterDark() { captureDashboardLastRow("dark") }
+
+  private func captureDashboardLastRow(_ appearance: String) {
+    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "footerlast") {
+      app in
+      XCTAssertTrue(self.scrollTo(app, "load-older"))
+      self.element(app, "load-older").tap()
+      XCTAssertTrue(self.scrollTo(app, "recent-row-t-atlas-older"))
+      let list = app.scrollViews.matching(identifier: "dashboard-list").firstMatch
+      let last = self.element(app, "recent-row-t-atlas-older")
+      let footer = self.element(app, "archive-toggle")
+      // Scroll to the actual end, not merely an AX-instantiated row behind floating pills.
+      for _ in 0..<4 {
+        if last.isHittable && last.frame.maxY < footer.frame.minY { break }
+        list.swipeUp()
+      }
+      XCTAssertTrue(last.isHittable)
+      XCTAssertGreaterThanOrEqual(last.frame.minY, list.frame.minY)
+      XCTAssertLessThan(last.frame.maxY, footer.frame.minY, "Last row must clear footer pills")
+    }
+  }
+
   func testDashboardOpensConversationNewConversationAndArchive() {
     let app = launch("dashboard-populated")
     XCTAssertTrue(element(app, "running-row-t-atlas-launch").waitForExistence(timeout: 10))
