@@ -116,10 +116,11 @@ light `#e3e3e0`–`#dddddb`, dark `#292c2a`–`#353736`. `GlassSheetTests` holds
 to AA on all of them, bare and on the group ink. Veiled-bleed checks also cover
 standard-veil accent text (all themes), compounded groups and Increase Contrast resolution.
 
-The expanded job shelf over the tall synthetic code fixture samples `#a0a3a1` in light
-mode: glass muted text is only 2.7:1 there. It therefore carries the same veil inside its
+The expanded job shelf over the tall synthetic code fixture samples a worst empty-area pixel of
+`#929593` in light mode: glass muted text is only 2.24:1 there (the modal
+`#a0a3a1` is 2.66:1). It therefore carries the same veil inside its
 rounded glass shape. The composer root stays pure glass: its sampled worst open-area
-backdrops (`#f4f4f1` / `#313532`) keep muted text above AA. See
+backdrops (`#f3f3f1` / `#353836`) keep muted text above AA. See
 `GlassSheetTests.floatingTextKeepsAAOverCode` and the `bleed` job-stack captures.
 
 ### Why not hierarchical `.secondary`?

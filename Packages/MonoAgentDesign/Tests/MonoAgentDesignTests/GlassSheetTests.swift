@@ -102,12 +102,12 @@ struct GlassSheetTests {
     }
   }
 
-  /// Floating controls over the tall synthetic code fixture, sampled on iPhone in both schemes.
+  /// Worst pixels in empty-area samples of floating controls over the tall synthetic code fixture.
   @Test func floatingTextKeepsAAOverCode() {
     for scheme in schemes {
-      let shelfBleed = RGBColor(scheme == .dark ? 0x383b39 : 0xa0a3a1)
+      let shelfBleed = RGBColor(scheme == .dark ? 0x393c3a : 0x929593)
       let shelf = WebGlass.sheetVeil.composited(over: shelfBleed, scheme)
-      let composer = RGBColor(scheme == .dark ? 0x313532 : 0xf4f4f1)
+      let composer = RGBColor(scheme == .dark ? 0x353836 : 0xf3f3f1)
       for ground in [shelf, WebGlass.groupFill.composited(over: shelf, scheme), composer] {
         #expect(WebGlass.textMuted.resolved(scheme).contrastRatio(with: ground) >= 4.5)
       }
