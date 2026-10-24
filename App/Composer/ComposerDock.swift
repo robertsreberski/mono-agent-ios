@@ -66,6 +66,7 @@ struct ComposerContextControl: View {
   var fixed = true
   @State private var open = false
   @Environment(\.horizontalSizeClass) private var sizeClass
+  @Environment(\.webMaterial) private var material
 
   var body: some View {
     let content = ConversationContextView.content(state)
@@ -78,7 +79,7 @@ struct ComposerContextControl: View {
         ContextRing(percent: content.percent)
         Text(content.percent == nil ? "–" : content.badge)
           .webFont(.contextTrigger).fontWeight(.bold)
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(material.textMuted.color)
           .lineLimit(fixed ? 1 : 2)
       }
       .padding(.horizontal, 7)
