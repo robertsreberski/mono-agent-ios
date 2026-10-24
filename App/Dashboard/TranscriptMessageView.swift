@@ -298,8 +298,7 @@ struct TranscriptActivityBand: View {
         meta: "\(parts.count) \(parts.count == 1 ? "step" : "steps")"
           + (TranscriptPresentation.elapsed(
             message,
-            now: message.status == "running"
-              ? date.addingTimeInterval(store.serverClockOffset) : date
+            now: date
           )
           .map { " · " + $0 } ?? ""),
         running: message.status == "running", expanded: $expanded
@@ -511,8 +510,7 @@ struct RunAttributionView: View {
             TranscriptPresentation.cost(cost),
             TranscriptPresentation.elapsed(
               message,
-              now: message.status == "running"
-                ? date.addingTimeInterval(store.serverClockOffset) : date),
+              now: date),
           ].compactMap { $0 }.joined(separator: " · "))
       }
     }
