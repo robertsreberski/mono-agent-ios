@@ -31,6 +31,21 @@ struct TranscriptFollowPolicyTests {
     #expect(!overflow.contentFits)
     #expect(policy.shouldScrollAfterWrite(overflow))
   }
+  @Test func restoreFollowingContentOnlyWhenPastItsReadingEdgeAndNotPaging() {
+    var policy = TranscriptFollowPolicy()
+    let overpulled = TranscriptScrollMetrics(
+      contentHeight: 600, viewportHeight: 1000, contentOffset: -500,
+      topInset: 100, bottomInset: 40)
+    #expect(policy.shouldRestoreReadingEdge(overpulled))
+    var aligned = overpulled
+    aligned.contentOffset = -100
+    #expect(!policy.shouldRestoreReadingEdge(aligned))
+    var overflowing = overpulled
+    overflowing.contentHeight = 2000
+    #expect(policy.shouldRestoreReadingEdge(overflowing))
+    policy.beginPaging()
+    #expect(!policy.shouldRestoreReadingEdge(overpulled))
+  }
   @Test func expandingAndCollapsingAtBottomNeverPretendsToBeAUserScroll() {
     var policy = TranscriptFollowPolicy()
     policy.update(
