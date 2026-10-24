@@ -431,7 +431,8 @@ struct DashboardView: View {
       value: .init(
         target: target, identifier: identifier, content: content,
         selected: selectable && route == target,
-        wakeStatus: thread?.wakeSchedule.map(WakeScheduleModel.status)), select: { route = $0 }
+        wakeStatus: thread?.wakeSchedule.map { WakeScheduleModel.status($0) }),
+      select: { route = $0 }
     ).equatable()
       .contextMenu {
         if case .conversation(_, _, let id, _) = target,

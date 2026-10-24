@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import Foundation
 import Testing
 
 @testable import MonoAgent
@@ -15,4 +16,17 @@ struct DashboardIdentityTests {
       Array(threads.reversed()), id: \.id, scope: "recent")
     #expect(reordered.map(\.id) == recent.reversed().map(\.id))
   }
+  @Test func wakeSummaryParticipatesInEquatableRowValue() throws {
+    let thread = try #require(try DashboardFixture.allThreads().first)
+    let content = DashboardRows.recent(
+      thread, unread: false, confirmed: false, projects: [], tags: [], now: DashboardFixture.now)
+    let active = DashboardRowValue(
+      target: .conversation(
+        profile: UUID(), sourceID: thread.sourceId, threadID: thread.id, archived: false),
+      identifier: "recent-sample", content: content, selected: false, wakeStatus: "Weekly · active")
+    var paused = active
+    paused.wakeStatus = "Weekly · paused"
+    #expect(active != paused)
+  }
+
 }
