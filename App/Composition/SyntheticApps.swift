@@ -50,17 +50,21 @@
             #"{"error":{"code":"mcp_app_unavailable","message":"Synthetic source unavailable"}}"#
               .utf8), status: 409)
       }
-      let base =
-        "/api/v1/threads/\(DashboardFixture.openThreadID)/messages/mcp-message/mcp-apps/garden"
+      let root = "/api/v1/threads/\(DashboardFixture.openThreadID)/messages/mcp-message/mcp-apps/"
+      guard path.hasPrefix(root), let id = path.dropFirst(root.count).split(separator: "/").first
+      else { throw URLError(.resourceUnavailable) }
+      let base = root + id
+      var published = try Self.part(scenario)
+      published.id = String(id)
       if path == base + "/access" {
-        var part = try Self.part(scenario)
+        var part = published
         part.resourceUrl = base + "?expires=1&token=fictional-garden"
         part.bridgeUrl = base + "/requests?expires=1&token=fictional-garden"
         return try encoded(JSONValue.object(["part": try TranscriptFixture.json(part)]))
       }
       if path == base {
         var resource = try McpGardenFixture.resource()
-        resource.app = try Self.part(scenario)
+        resource.app = published
         return try encoded(resource)
       }
       if path == base + "/requests", let bytes = request.httpBody {

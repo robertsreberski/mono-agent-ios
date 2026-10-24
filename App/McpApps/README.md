@@ -1,8 +1,8 @@
 # MCP app isolation core
 
-This core is not connected to the transcript. The isolation layer delivers bounded raw
-JSON-RPC envelopes; the native bridge above it owns method semantics and consent-gated
-effects through Store. The transcript placeholder remains.
+MCP parts are connected to the transcript through the Store-only native presentation below.
+The isolation layer delivers bounded raw JSON-RPC envelopes; the native bridge above it
+owns method semantics and consent-gated effects through Store.
 
 Each host owns a nonpersistent website data store, content controller, fixed custom-scheme
 shell, and scripts-only sandboxed srcdoc. The shell's response-header envelope CSP and
@@ -70,16 +70,16 @@ do not rely on global removal alone or advertise a general network firewall.
 
 Public WKWebView APIs provide no hard per-host CPU or memory quota. The bridge below
 bounds requests and effects; native presentation and transcript lifecycle ownership remain
-separate PR2 work.
+owned by the transcript presentation below.
 
-## Native protocol / effect layer (no transcript integration yet)
+## Native protocol / effect layer
 
 `McpAppBridge.make(store:session:consent:opener:environment:)` consumes a loaded,
 connected Store session. `McpStoreGateway` is the sole production forwarding adapter:
 App → ConsoleStore → CapabilityService → ConsoleAPI. No App API client, credentials or
-capability URL enter WK. PR2 owns native consent presentation, visibility and the live-host
-cap; it must call `teardown()` (or immediate `close()`) when abandoning a bridge.
-PR2 implements the `McpConsentPresenting` protocol; no concrete presentation UI exists here.
+capability URL enter WK. McpAppPartView / McpHostPool own native consent presentation, visibility and the live-host
+cap, calling immediate `close()` when abandoning a bridge. McpNativeConsent implements
+`McpConsentPresenting` with the native sheet.
 Each `confirm(_:requestID:)` / `cancel(requestID:)` pair is scoped by a fresh UUID so a shared
 presenter cannot cancel a different bridge's prompt. Cancellation must settle only that request.
 
@@ -128,10 +128,11 @@ retained for replay. Unlike web fetch retry, native cannot silently repeat a con
 `AppTests/Resources/mcp-protocol-vectors.json` contains minimal schema/default-handler
 vectors from integrity-verified ext-apps 1.7.5, with the full original transition LICENSE
 beside it. Both are test-bundle-only; no SDK code/dependency is installed. DEBUG-only
-`McpGardenFixture` supplies an inline synthetic planner for real-WK semantic tests, not a
-transcript/catalog route. Release checks reject its symbols/strings and test resources.
-The tests inject consent and URL opening; they are not physical gesture, UIKit dialog or
-actual external-browser launch proof. Those UI integrations remain PR2 work.
+`McpGardenFixture` supplies an inline synthetic planner for real-WK tests and DEBUG
+conversation-mcp-* transcript scenarios. Release checks reject its symbols/strings and test resources.
+The semantic tests inject consent/URL opening; the XCUI suite additionally taps actual app
+controls and the native sheet. Actual external-browser launch and physical-device proof
+remain unverified; open-link cancellation is exercised without contacting an external site.
 
 
 Protocol errors follow ext-apps' delegated SDK Protocol: unknown method **-32601**, invalid
@@ -184,3 +185,12 @@ DEBUG conversation-mcp-app/unavailable/long-title scenarios use the Store/APICli
 with a per-instance scripted transport and the synthetic garden document. Native test POST
 counters are transport-derived, not app-supplied diagnostics. Release excludes those types,
 scenario names and content. Automated UI/screenshot evidence is added separately.
+
+The native fixed shell additionally declares a device-width viewport. Without it WK uses a
+980px layout viewport and scales44px app controls down to~18pt on phones; CSP/isolation are
+unchanged. Real-WK width and XCUI physical hit-target assertions guard the native adaptation.
+Consent's primary action uses onAccent, not hard-coded white on the light dark-mode accent.
+
+Visual review also restored the outlined spark glyph and exact dangerSoft token and uses
+wide-column gutter bleed. The existing transcript follow/read policy remains unmodified;
+short/long transcript regression tests and the actual resize interaction cover its integration.

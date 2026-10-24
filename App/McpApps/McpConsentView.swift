@@ -63,9 +63,13 @@ struct McpConsentView: View {
         Spacer()
         Button("Cancel") { presenter.settle(request.id, allowed: false) }
           .accessibilityIdentifier("mcp-consent-cancel")
-        Button("Allow once") { presenter.settle(request.id, allowed: true) }
-          .accessibilityIdentifier("mcp-consent-allow")
-          .buttonStyle(.borderedProminent).tint(theme.palette.accentStrong.color)
+        Button {
+          presenter.settle(request.id, allowed: true)
+        } label: {
+          Text("Allow once").foregroundStyle(theme.palette.onAccent.color)
+        }
+        .accessibilityIdentifier("mcp-consent-allow")
+        .buttonStyle(.borderedProminent).tint(theme.palette.accentStrong.color)
       }
       .buttonStyle(.bordered).controlSize(.large)
     }

@@ -63,7 +63,7 @@ private struct McpMountedPart: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 10) {
-        Image(systemName: "sparkle").font(.system(size: 16))
+        McpSparkle().stroke(theme.palette.accent.color, lineWidth: 1.4).frame(width: 16, height: 16)
           .foregroundStyle(theme.palette.accent.color)
           .frame(width: 30, height: 30).background(
             theme.palette.accentSoft.color, in: RoundedRectangle(cornerRadius: 8)
@@ -101,7 +101,7 @@ private struct McpMountedPart: View {
       )
       .padding(.vertical, 5).padding(.horizontal, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(error ? WebColor.danger.color.opacity(0.12) : WebColor.surfaceSubtle.color)
+      .background(error ? WebColor.dangerSoft.color : WebColor.surfaceSubtle.color)
       .overlay(alignment: .top) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
       .accessibilityLabel("App status: " + model.status).accessibilityIdentifier(
         "mcp-status-" + model.part.id)
@@ -134,6 +134,12 @@ private struct McpMountedPart: View {
     } action: {
       width = $0
     }
+    .padding(
+      .horizontal,
+      sizeClass == .regular
+        && min(viewport.width, WebMetrics.column) - 2 * WebSpace.transcriptGutterRegular >= 816
+        ? -WebSpace.transcriptGutterRegular : 0
+    )
     .onScrollVisibilityChange(threshold: 0.01) { model.visibility($0) }
     .onDisappear {
       model.visibility(false)
@@ -164,5 +170,21 @@ private struct McpWebContent: UIViewRepresentable {
   func updateUIView(_ view: McpAppWebView, context: Context) {
     view.accessibilityLabel = label + " interactive app"
     view.pageZoom = scale
+  }
+}
+
+private struct McpSparkle: Shape {
+  func path(in rect: CGRect) -> Path {
+    func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+      CGPoint(x: rect.minX + x * rect.width / 24, y: rect.minY + y * rect.height / 24)
+    }
+    var path = Path()
+    path.move(to: point(12, 2))
+    path.addCurve(to: point(2, 12), control1: point(11, 9), control2: point(9, 11))
+    path.addCurve(to: point(12, 22), control1: point(9, 13), control2: point(11, 15))
+    path.addCurve(to: point(22, 12), control1: point(13, 15), control2: point(15, 13))
+    path.addCurve(to: point(12, 2), control1: point(15, 11), control2: point(13, 9))
+    path.closeSubpath()
+    return path
   }
 }

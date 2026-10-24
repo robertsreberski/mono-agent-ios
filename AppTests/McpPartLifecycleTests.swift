@@ -49,6 +49,9 @@ import UIKit
     try await attach(controller)
     let old = try #require(controller.bridge?.host)
     #expect(pool.activeCount == 1)
+    let cssWidth = try await old.webView.callAsyncJavaScript(
+      "return window.innerWidth", arguments: [:], in: nil, contentWorld: .page)
+    #expect(cssWidth as? Int == 320)
     controller.visibility(false)
     #expect(controller.bridge == nil && old.isRetired && pool.activeCount == 0)
     controller.visibility(true)
@@ -89,6 +92,41 @@ import UIKit
     controller.visibility(false)
     controller.visibility(true)
     #expect(controller.phase == .closed)
+    await store.stop()
+  }
+  @Test func actualHostsNeverExceedTwoAndOldestVisibleIsEvictedWithoutRestart() async throws {
+    let (app, store, original, part) = try await setup()
+    _ = app
+    var parts = [part]
+    for id in ["garden-two", "garden-three"] {
+      var next = part
+      next.id = id
+      parts.append(next)
+    }
+    var message = original
+    message.parts = parts.map(WebMessagePart.mcpApp)
+    let state = try #require(store.conversations[message.threadId])
+    let pool = McpHostPool()
+    let controllers = parts.map {
+      McpPartController(part: $0, message: message, store: store, pool: pool)
+    }
+    controllers[0].visibility(true)
+    try await attach(controllers[0])
+    let oldest = try #require(controllers[0].bridge?.host)
+    await store.reconciliationTask?.value
+    state.record.messages = [message]
+    state.publish()
+    controllers[1].visibility(true)
+    try await attach(controllers[1])
+    #expect(pool.activeCount == 2)
+    controllers[2].visibility(true)
+    try await attach(controllers[2])
+    #expect(pool.activeCount == 2 && oldest.isRetired && controllers[0].phase == .closed)
+    #expect(controllers.filter { $0.bridge?.host?.isRetired == false }.count == 2)
+    controllers[1].visibility(false)
+    #expect(pool.activeCount == 1 && controllers[1].bridge == nil)
+    pool.closeAll()
+    #expect(pool.activeCount == 0)
     await store.stop()
   }
   @Test func admissionCapsTwoAndEvictsOffscreenBeforeOlderVisible() async throws {

@@ -243,17 +243,22 @@ also bundled in the app. Package.resolved files lock both package and app graphs
 The parser is off-main; input is capped at 65,536 UTF-8 bytes, long lines and excessive
 nesting/table widths fall back before parsing, and the value tree has node/depth/row limits.
 No HTML, images, embedded scripts or arbitrary URL schemes execute. Code display is limited
-to 16,384 UTF-8 bytes while Copy includes the entire supplied value. Files/images/MCP/restart
-remain explicitly labelled for later features.
+to 16,384 UTF-8 bytes while Copy includes the entire supplied value. Files/images/restart use native rich parts; MCP uses the isolated Store-backed app surface below.
 
 Focused capture: `./Tools/screenshots --transcript-only` runs app/Design unit tests and the
 12 transcript XCUI captures on both device families, without removing existing matrix entries;
 `--composer-only` runs the 23 composer XCUI captures. The default screenshot command still
-captures the complete matrix (82 images per device).
+captures the complete versioned matrix.
 
-### MCP protocol core (not yet connected to the transcript)
+### MCP apps
 
-The isolated host and native Store-backed method layer are documented in
-[App/McpApps/README.md](App/McpApps/README.md). PR2 supplies the native UI through
-`McpConsentPresenting`, with request-scoped UUID confirmation/cancellation. There is no
-concrete consent presenter or transcript integration in PR1; the placeholder remains.
+Transcript MCP parts use the isolated WebKit host and Store-backed native bridge described in
+[App/McpApps/README.md](App/McpApps/README.md). Native token-scoped consent sheets expose
+Cancel / Allow once; app content has no credentials, console URLs or direct network access.
+Per-part viewport lifetime, Lean Show, Hide/Reopen, background/selection/memory/crash cleanup
+and a two-host cap bound native resources. There is no retained HTML cache or automatic effect
+replay. DEBUG garden scenarios cover ready, unavailable and long-title states.
+
+`./Tools/screenshots --mcp-only` captures both device families in light/dark, plus native
+consent, hidden and large-text variants. Physical-device and external-browser-launch proof
+remain separate gaps; no live console is used by tests or captures.

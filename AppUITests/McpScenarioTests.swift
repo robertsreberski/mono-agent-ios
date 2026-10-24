@@ -8,6 +8,21 @@ import XCTest
   func testUnavailableLight() { unavailable("conversation-mcp-unavailable", "light") }
   func testUnavailableDark() { unavailable("conversation-mcp-unavailable", "dark") }
   func testLongTitleLight() { unavailable("conversation-mcp-long-title", "light") }
+  func testLongTitleAccessibility() {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-mcp-long-title", "--appearance", "light", "--reset-test-data",
+      "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "mcp-part-garden").waitForExistence(timeout: 20))
+    wait(element(app, "mcp-status-garden"), contains: "unavailable")
+    let action = app.buttons["mcp-action-garden"]
+    XCTAssertGreaterThanOrEqual(action.frame.height, 44)
+    XCTAssertLessThanOrEqual(action.frame.maxX, app.frame.maxX)
+    XCTAssertTrue(element(app, "mcp-part-garden").label.contains("complete accessible app name"))
+    capture(app, "conversation-mcp-long-title", "light", variant: "ax3")
+  }
   func testLongTitleDark() { unavailable("conversation-mcp-long-title", "dark") }
 
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
@@ -60,6 +75,9 @@ import XCTest
     wait(element(app, "mcp-status-garden"), contains: "ready")
     XCTAssertTrue(app.buttons["Plan beds"].waitForExistence(timeout: 10))
     wait(element(app, "mcp-native-counters"), contains: "Native tool POSTs: 0")
+    XCTAssertGreaterThanOrEqual(
+      app.buttons["Plan beds"].frame.height, 43.5, "Native viewport must not shrink app hit targets"
+    )
     capture(app, scenario, appearance)
     app.buttons["Plan beds"].tap()
     XCTAssertTrue(app.buttons["mcp-consent-cancel"].waitForExistence(timeout: 10))
