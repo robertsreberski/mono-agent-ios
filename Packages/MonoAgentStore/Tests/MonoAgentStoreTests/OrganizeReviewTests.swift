@@ -244,6 +244,22 @@ import Testing
     await h.store.stop()
   }
 
+  @Test func deleteCanOvertakeAnActualPendingRenameWithoutResurrection() async throws {
+    let h = try await ConversationActionTests().live(archived: true)
+    await h.transport.set(
+      "/api/v1/threads/thread-example", [.paused, .response(.init(data: Data(), status: 204))])
+    h.store.renameConversation(threadID: "thread-example", title: "Pending title")
+    await eventually { await h.transport.pauseCount() == 1 }
+    h.store.requestConversationAction(.delete, threadID: "thread-example")
+    h.store.confirmConversationAction(try #require(h.store.conversationActionConfirmation).id)
+    await h.store.independentOrganizeOperations["thread-example"]?.request?.value
+    #expect(h.store.conversations["thread-example"] == nil)
+    await h.transport.release(try response(["thread": sampleThread(revision: 9)]))
+    await h.store.writeTasks["thread-example"]?.value
+    #expect(h.store.conversations["thread-example"] == nil)
+    await h.store.stop()
+  }
+
   @Test func createdThreadSurvivesSseDropDuringPost() async throws {
     let h = try await ConversationActionTests().live()
     var created = try sampleThread()

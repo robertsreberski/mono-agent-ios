@@ -67,6 +67,8 @@ struct OrganizeContext {
 }
 
 @MainActor final class IndependentOrganizeOperation {
+  let deleting: Bool
+  init(deleting: Bool) { self.deleting = deleting }
   var request: Task<Void, Never>?
   var deadline: Task<Void, Never>?
 }
@@ -91,12 +93,17 @@ extension ConsoleStore {
   }
 
   public func requestConversationAction(_ action: ConversationAction, threadID: String) {
-    guard canOrganize, pendingConversationActions[threadID] == nil,
+    guard canOrganize, pendingConversationActions[threadID] == nil || action == .delete,
+      !conversationDeletionPending(threadID),
       let thread = conversations[threadID]?.thread,
       action != .delete || canDeleteConversation(thread)
     else { return }
     conversationActionConfirmation = .init(
       id: UUID(), threadID: threadID, action: action, epoch: epoch, selection: selection)
+  }
+
+  public func conversationDeletionPending(_ threadID: String) -> Bool {
+    independentOrganizeOperations[threadID]?.deleting == true
   }
 
   public func cancelConversationAction() { conversationActionConfirmation = nil }
@@ -113,7 +120,7 @@ extension ConsoleStore {
     case .delete:
       guard canDeleteConversation(thread) else { return }
       runIndependentConversationOperation(
-        threadID: thread.id, timeout: ConsoleBounds.threadWriteTimeout
+        threadID: thread.id, timeout: ConsoleBounds.threadWriteTimeout, deleting: true
       ) { store, context in
         try await store.api.deleteThread(id: thread.id, query: .init())
         guard store.organizeContextIsCurrent(context, threadID: thread.id) else {
@@ -215,15 +222,16 @@ extension ConsoleStore {
   /// Delete has no row snapshot to serialize; compaction has its own longer budget.
   /// Neither waits out an unrelated queued write before dispatching.
   private func runIndependentConversationOperation(
-    threadID: String, timeout: TimeInterval,
+    threadID: String, timeout: TimeInterval, deleting: Bool = false,
     operation: @escaping @MainActor @Sendable (ConsoleStore, OrganizeContext) async throws -> Void
   ) {
-    guard canOrganize, pendingConversationActions[threadID] == nil,
+    guard canOrganize, pendingConversationActions[threadID] == nil || deleting,
+      independentOrganizeOperations[threadID] == nil,
       let held = conversations[threadID]
     else { return }
     let context = OrganizeContext(epoch: epoch, selection: selection, held: held)
     let token = UUID()
-    let state = IndependentOrganizeOperation()
+    let state = IndependentOrganizeOperation(deleting: deleting)
     pendingConversationActions[threadID] = token
     independentOrganizeOperations[threadID] = state
     state.request = Task { [weak self] in
