@@ -39,7 +39,14 @@ import XCTest
           && header.isHittable
       }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
-    XCTAssertFalse(element(app, "jump-to-latest").exists)
+    // A user drag can enter reading mode on phones; its Jump control must still resume following.
+    let jump = element(app, "jump-to-latest")
+    if jump.exists {
+      jump.tap()
+      let following = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in !jump.exists }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [following], timeout: 10), .completed)
+    }
     XCTAssertTrue(element(app, "composer").isHittable)
     app.terminate()
   }
