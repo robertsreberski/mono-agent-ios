@@ -256,10 +256,12 @@ struct McpAppBridgeTests {
     gateway: any McpAppRequestGateway = BridgeGateway(), consent: BridgeConsent = .init(),
     opener: BridgeOpener = .init(),
     observations: BridgeObservations = .init(), toolResult: JSONValue? = nil,
-    advancingClock: Bool = false
+    advancingClock: Bool = false, html: String? = nil
   ) async throws -> McpAppBridge {
+    var resource = try McpGardenFixture.resource(toolResult: toolResult)
+    if let html { resource.html = html }
     let bridge = McpAppBridge(
-      resource: try McpGardenFixture.resource(toolResult: toolResult), gateway: gateway,
+      resource: resource, gateway: gateway,
       consent: consent, opener: opener,
       now: {
         if advancingClock {
@@ -655,6 +657,37 @@ struct McpAppBridgeTests {
       failure[mcp: "error"]?[mcp: "code"] == golden[mcp: "errorCodes"]?[mcp: "handlerFailure"])
     let unknown = try await request(bridge, observations, "unknown", id: "error-unknown")
     #expect(unknown[mcp: "error"]?[mcp: "code"] == golden[mcp: "errorCodes"]?[mcp: "unknownMethod"])
+  }
+  @Test func synchronousScriptStartInitializeReachesReady() async throws {
+    let observations = BridgeObservations()
+    let html = """
+      <script>
+      parent.postMessage({jsonrpc:'2.0',id:'initialize',method:'ui/initialize',params:{
+        appInfo:{name:'Early garden',version:'1.0'},appCapabilities:{},protocolVersion:'2026-01-26'}},'*');
+      addEventListener('message',event=>{
+        if(event.source!==parent)return;
+        const rpc=event.data;
+        if(rpc.id==='initialize'&&rpc.result)parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');
+        parent.postMessage({jsonrpc:'2.0',method:'fixture/observed',params:{kind:rpc.method?'notification':'response',rpc}},'*');
+      });
+      </script><h1>Early garden</h1>
+      """
+    let bridge = try await make(observations: observations, html: html)
+    defer { bridge.close() }
+    let host = try #require(bridge.host)
+    let state =
+      try await host.webView.callAsyncJavaScript(
+        "return window.mcpBufferState()", arguments: [:], in: nil,
+        contentWorld: McpAppBridgeListener.world) as? [String: Any]
+    #expect(bridge.state == .ready && host.innerLoaded && !host.isRetired)
+    #expect(state?["loads"] as? Int == 1)
+    #expect(state?["count"] as? Int == 0 && state?["bytes"] as? Int == 0)
+    let sends = try host.debugSendAttempts.map {
+      try JSONDecoder().decode(JSONValue.self, from: $0)
+    }
+    #expect(
+      sends.filter { $0[mcp: "id"] == .string("initialize") && $0[mcp: "result"] != nil }.count == 1
+    )
   }
   @Test func nativeLocaleUsesBcp47() async throws {
     let environment = McpHostEnvironment()

@@ -20,6 +20,25 @@ final class McpAppHost: NSObject {
   static func make(html: String, delegate: (any McpAppEnvelopeDelegate)? = nil) async throws
     -> McpAppHost
   {
+    try await makeHost(
+      html: html, delegate: delegate,
+      listener: McpAppBridgeListener(nonce: UUID().uuidString, generation: UUID().uuidString))
+  }
+
+  #if DEBUG
+    /// Deterministically exercise authentic pre-load messages in real WK tests. Never shipped.
+    static func makeDeferringInitialLoad(
+      html: String, delegate: (any McpAppEnvelopeDelegate)? = nil
+    ) async throws -> McpAppHost {
+      let listener = McpAppBridgeListener(nonce: UUID().uuidString, generation: UUID().uuidString)
+      listener.debugDefersInitialLoad = true
+      return try await makeHost(html: html, delegate: delegate, listener: listener)
+    }
+  #endif
+
+  private static func makeHost(
+    html: String, delegate: (any McpAppEnvelopeDelegate)?, listener: McpAppBridgeListener
+  ) async throws -> McpAppHost {
     let document = try McpSecureDocument(html: html)
     let rules = try await WKContentRuleListStore.default().compileContentRuleList(
       forIdentifier: "mono-mcp-allow-local-documents-v2",
@@ -32,7 +51,7 @@ final class McpAppHost: NSObject {
          {"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}}]
         """)
     guard let rules else { throw URLError(.cannotLoadFromNetwork) }
-    let host = try McpAppHost(document: document, rules: rules)
+    let host = try McpAppHost(document: document, rules: rules, listener: listener)
     host.delegate = delegate
     host.webView.load(URLRequest(url: McpAppShellSchemeHandler.url))
     return host
@@ -56,8 +75,10 @@ final class McpAppHost: NSObject {
     })();
     """
 
-  private init(document: McpSecureDocument, rules: WKContentRuleList) throws {
-    listener = McpAppBridgeListener(nonce: UUID().uuidString, generation: UUID().uuidString)
+  private init(
+    document: McpSecureDocument, rules: WKContentRuleList, listener: McpAppBridgeListener
+  ) throws {
+    self.listener = listener
     let controller = WKUserContentController()
     controller.add(rules)
     controller.addUserScript(

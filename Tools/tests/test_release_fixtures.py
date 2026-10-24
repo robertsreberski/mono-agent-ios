@@ -79,7 +79,8 @@ class ReleaseFixtureTests(unittest.TestCase):
 
     def test_mcp_fixture_symbols_and_content_are_rejected(self):
         for tool, leak in (("nm", b"McpGardenFixture"), ("strings", b"Garden planner (synthetic)"),
-                           ("strings", b"garden-invocation")):
+                           ("strings", b"garden-invocation"), ("strings", b"mcpCompleteInitialLoad"),
+                           ("strings", b"mcpBufferState"), ("nm", b"debugSendAttempts")):
             with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
                 self.check(tool, leak)
 

@@ -17,7 +17,11 @@ requests reaching navigation policy are rejected. All future loads still retire.
 
 The app posts raw JSON-RPC to window.parent, just like the web SDK. The isolated-world
 listener requires a trusted MessageEvent from the current inner window, an opaque origin
-and exactly one frame load. It privately wraps the payload with nonce/generation; neither
+and exactly one frame load before delivery. Trusted current-inner/null-origin messages that
+arrive before that load are snapshotted in order, bounded to 16 messages and a total serialized
+transport budget of 1 MiB + 64 KiB. Overflow messages are dropped; a second load or retirement
+clears the buffer. Native semantics still receive nothing before the verified first load.
+The listener privately wraps each payload with nonce/generation; neither
 secret leaves that world. Native replies/notifications relay raw JSON-RPC back to the opaque
 inner window with targetOrigin "*". Swift independently checks the main
 WKFrameInfo, shell URL/origin, session identity and serialized envelope byte cap. HTML's
@@ -140,3 +144,15 @@ adoption, never a completed same-session result or a confirmed effect's response
 All operations have independent UUID ownership, including repeated initialized notifications
 and a slid-out request ID reused while earlier consent is pending. Teardown cancels every
 operation, and only its own resource-teardown request may send while tearing down.
+
+
+Early-message tests use real WK opaque-frame messages, including a synchronous script-start
+SDK-style initialize. A DEBUG-only initial-load gate deterministically exercises pre-delivery
+buffering, forged source/origin/isTrusted events and stale native identities, count/total-byte
+caps, ordered flush and retirement/second-load discard. It does not alter the Release path.
+The gate is completed only after the real initial iframe load; production always processes
+that load immediately. Native send-attempt auditing and task completion counters make late
+consent/result tests independent of a closed bridge's incoming debug observer. Integration
+coverage also runs through the real Store gateway/APIClient and a per-instance scripted
+HTTPTransport, never a console: Cancel 0 / Allow 1 POST, overlapping expiry reads, and a completed
+confirmed tool overlapped by read renewal with exactly one tool POST and one native reply.
