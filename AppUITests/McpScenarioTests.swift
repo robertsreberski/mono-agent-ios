@@ -33,7 +33,8 @@ import XCTest
       "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL",
     ]
     app.launch()
-    wait(element(app, "mcp-status-garden"), contains: "ready")
+    // Cold launch: same fresh-WebKit startup bound as `interactive(_:)`.
+    wait(element(app, "mcp-status-garden"), contains: "ready", timeout: 30)
     XCTAssertTrue(app.buttons["Open guide"].waitForExistence(timeout: 10))
     app.buttons["Open guide"].tap()
     let cancel = app.buttons["mcp-consent-cancel"]
