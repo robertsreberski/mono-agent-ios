@@ -113,7 +113,7 @@ surfaces become `WebGlass` inks (see GLASS-RULES.md).
 | Rich replies | `ReplyFileCard`, `ReplyFailureCard`, `ReplyImageTile`, `ReplyLightbox`, `RestartProposalCard` | Value-driven opaque web surfaces; local-image lightbox has swipe, bounded zoom, share and floating chrome; restart requires explicit confirmation actions |
 | Context/cost | `ContextDisplay(_:expanded:)`, `ContextDisplayContent` | Value-only disclosure; header or composer placement, explicit unknown/partial labels, AX-stacked rows |
 | Route | `RouteBadge(model:effort:detail:)` | Read-only route label with full accessible provenance, not evidence of a run |
-| Sheets on glass | `WebSheetHeader(_:subtitle:closeLabel:closeIdentifier:divider:onClose:)`, `WebSheetSection(_:detail:divider:grouped:content:)`, `WebHairline(leading:trailing:)`, `.webGlassGroup(cornerRadius:outlined:)`, `.webGlassLegibilityVeil()`, `WebGlass`, `GlassInk` | Content drawn directly on a system sheet/popover material or the job shelf glass: hairline sections, translucent inks, AA-adjusted text roles (GLASS-RULES.md) |
+| Sheets on glass | `WebSheetHeader(_:subtitle:closeLabel:closeIdentifier:divider:onClose:)`, `WebSheetSection(_:detail:divider:grouped:content:)`, `WebHairline(leading:trailing:)`, `.webGlassGroup(cornerRadius:outlined:)`, `.webSheetVeil(_:)`, `.webGlassContent()`, `.webPanelBackground(_:)`, `.webLayeredSurface(…)`, `EnvironmentValues.webMaterial`, `WebGlass`, `GlassInk`, `ThemePalette.accentInk` | Text-carrying sheets/popovers: system material + frosted web veil, hairline sections, translucent inks, AA-adjusted text roles; compact controls stay pure glass; layer-aware web components swap solid surfaces for inks on glass (GLASS-RULES.md) |
 
 Every component file has `#Preview`s across the four themes, dark mode, accessibility sizes
 and/or the opaque fallback. Previews and their `DesignPreviewMatrix` helper are DEBUG-only.
@@ -123,8 +123,9 @@ and/or the opaque fallback. Previews and their `DesignPreviewMatrix` helper are 
 **Read [GLASS-RULES.md](GLASS-RULES.md) first.** Content is web: solid web tokens. Floating
 chrome (header controls, composer, job shelf, menus, popovers, sheets) is one Liquid Glass
 material per surface, with no solid web fill on or inside it. Its glass tokens are
-`WebGlass`, `GlassInk`, `WebHairline`, `WebSheetHeader`, `WebSheetSection` and
-`.webGlassGroup()`. The summary below predates it and still applies.
+`WebGlass`, `GlassInk`, `WebHairline`, `WebSheetHeader`, `WebSheetSection`,
+`.webGlassGroup()`, `.webSheetVeil()` (text-carrying sheets and popovers) and
+`.webGlassContent()` / `webMaterial` (layer-aware components). The summary below predates it and still applies.
 
 - System navigation bars, toolbars, tab bars and sheets adopt Liquid Glass automatically.
   Prefer them.

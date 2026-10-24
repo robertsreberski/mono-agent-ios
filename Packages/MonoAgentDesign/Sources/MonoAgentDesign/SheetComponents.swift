@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// Web dialog header, drawn directly on the system presentation material (no band of its own):
-/// web title type, a glass close button and a hairline below. See GLASS-RULES.md.
+/// web title type, the web's plain ✕ in a 44 pt hit target and a hairline below.
 public struct WebSheetHeader: View {
   private let title: String
   private let subtitle: String?
@@ -33,12 +33,13 @@ public struct WebSheetHeader: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.vertical, 12)
-      // A secondary action on the material: system glass, like the system sheet close button.
+      // The web `.sheet-close`: a borderless ✕, soft ink, no fill or glass of its own.
       Button(closeLabel, systemImage: "xmark", action: onClose)
-        .labelStyle(.iconOnly).font(.system(size: 15, weight: .semibold))
-        .buttonBorderShape(.circle).controlSize(.large)
-        .designButtonStyle(.secondary, placement: .floating)
-        .frame(minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget)
+        .labelStyle(.iconOnly).font(.system(size: 15, weight: .regular))
+        .foregroundStyle(WebGlass.textSoft.color)
+        .frame(width: DesignMetrics.minimumHitTarget, height: DesignMetrics.minimumHitTarget)
+        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .accessibilityIdentifier(closeIdentifier)
     }
     // Inset from the sheet's concentric corner so the close button never crowds it.

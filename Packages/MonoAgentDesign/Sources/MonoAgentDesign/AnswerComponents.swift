@@ -58,8 +58,9 @@ extension View {
   public func webInput() -> some View {
     self.textFieldStyle(.plain).webFont(.search).foregroundStyle(WebColor.text.color)
       .padding(.vertical, 9).padding(.horizontal, 10)
-      .background(WebColor.surface.color, in: RoundedRectangle(cornerRadius: 8))
-      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(WebColor.line.color, lineWidth: 1))
+      .webLayeredSurface(
+        RoundedRectangle(cornerRadius: 8), fill: WebColor.surface.color,
+        stroke: WebColor.line.color)
   }
   public func webFormCard() -> some View {
     self.padding(16)

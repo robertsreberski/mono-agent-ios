@@ -440,16 +440,17 @@
     }
   }
 
-  /// A catalog stand-in for the system sheet/popover material (the app's sheets use the system
-  /// presentation background): one glass surface over sample content, nothing solid inside.
+  /// A catalog stand-in for a sheet/popover: glass with the frosted sheet veil (the app's sheets
+  /// use the system presentation material plus `webSheetVeil()`), over sample content.
   private struct SheetMaterialSpecimen<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {
+      let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
       GlassBackdrop {
         VStack(spacing: 0) { content() }
-          .floatingGlass(
-            in: RoundedRectangle(cornerRadius: 28, style: .continuous),
-            opaqueFill: DesignColor.opaqueControlSurface.color)
+          .environment(\.webMaterial, .glass)
+          .background(WebGlass.sheetVeil.color, in: shape)
+          .floatingGlass(in: shape, opaqueFill: DesignColor.opaqueControlSurface.color)
       }
     }
   }

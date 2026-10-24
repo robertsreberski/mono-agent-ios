@@ -16,6 +16,7 @@ public struct AttachmentChip: View {
   private let phase: Phase
   private let onRemove: (() -> Void)?
   @Environment(\.consoleTheme) private var theme
+  @Environment(\.webMaterial) private var material
   @Environment(\.dynamicTypeSize) private var typeSize
 
   public init(
@@ -64,11 +65,12 @@ public struct AttachmentChip: View {
     .padding(.leading, 8)
     .padding(.trailing, onRemove == nil ? 8 : 2)
     .frame(maxWidth: typeSize.isAccessibilitySize ? nil : 250, minHeight: 34, alignment: .leading)
-    .background(WebColor.surfaceRaised.color, in: shape)
-    .overlay {
-      shape.strokeBorder(
-        phase == .failed ? WebColor.danger.color : WebColor.line.color, lineWidth: 1)
-    }
+    // Raised web chip in the transcript; quiet ink with a hairline inside the glass composer.
+    .webLayeredSurface(
+      shape, fill: WebColor.surfaceRaised.color,
+      stroke: phase == .failed ? WebColor.danger.color : WebColor.line.color,
+      glassStroke: phase == .failed ? WebColor.danger.color : WebGlass.hairline.color
+    )
     .overlay(alignment: .bottomLeading) {
       if case .uploading(let fraction) = phase {
         GeometryReader { proxy in
@@ -96,7 +98,7 @@ public struct AttachmentChip: View {
       }
     }
     .frame(width: 20, height: 20)
-    .background(theme.palette.accentSoft.color)
+    .background(material == .glass ? theme.palette.accentInk : theme.palette.accentSoft.color)
     .clipShape(shape)
     .accessibilityHidden(true)
   }
@@ -128,6 +130,7 @@ public struct SuggestionRow: View {
   private let browsing: Bool
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.consoleTheme) private var theme
+  @Environment(\.webMaterial) private var material
 
   public init(
     _ title: String, subtitle: String? = nil, badge: String? = nil,
@@ -149,27 +152,34 @@ public struct SuggestionRow: View {
     HStack(alignment: .center, spacing: 10) {
       Image(systemName: systemImage)
         .font(.system(size: 13, weight: .medium))
-        .foregroundStyle(theme.palette.accent.color)
+        .foregroundStyle(
+          material == .glass ? WebGlass.accentText(theme.palette).color : theme.palette.accent.color
+        )
         .frame(width: 30, height: 30)
-        .background(theme.palette.accentSoft.color, in: RoundedRectangle(cornerRadius: 8))
+        .background(
+          material == .glass ? theme.palette.accentInk : theme.palette.accentSoft.color,
+          in: RoundedRectangle(cornerRadius: 8)
+        )
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(title).webFont(.triggerTitle)
           .foregroundStyle(highlighted ? WebColor.text.color : WebColor.textSoft.color)
           .lineLimit(typeSize.isAccessibilitySize ? nil : (browsing ? 2 : 1))
         if let subtitle {
-          Text(subtitle).webFont(.triggerDetail).foregroundStyle(WebColor.textMuted.color)
-            .lineLimit(typeSize.isAccessibilitySize ? nil : (browsing ? 2 : 1))
+          Text(subtitle).webFont(.triggerDetail).foregroundStyle(
+            (material == .glass ? WebGlass.textMuted : WebColor.textMuted).color
+          )
+          .lineLimit(typeSize.isAccessibilitySize ? nil : (browsing ? 2 : 1))
         }
       }
       Spacer(minLength: 8)
       if let badge {
         Text(badge)
           .font(.system(size: 8.5, weight: .semibold)).tracking(0.17)
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle((material == .glass ? WebGlass.textMuted : WebColor.textMuted).color)
           .padding(.horizontal, 6).padding(.vertical, 3)
-          .background(WebColor.surfaceSubtle.color, in: Capsule())
-          .overlay(Capsule().strokeBorder(WebColor.line.color, lineWidth: 1))
+          .webLayeredSurface(
+            Capsule(), fill: WebColor.surfaceSubtle.color, stroke: WebColor.line.color)
       }
     }
     .opacity(enabled ? 1 : 0.58)
@@ -177,7 +187,9 @@ public struct SuggestionRow: View {
     .padding(.horizontal, 8)
     .frame(maxWidth: .infinity, minHeight: browsing ? 56 : 49, alignment: .leading)
     .background(
-      highlighted ? WebColor.surfaceSubtle.color : .clear,
+      highlighted
+        ? (material == .glass ? WebGlass.selectedFill.color : WebColor.surfaceSubtle.color)
+        : .clear,
       in: RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
     )
     .contentShape(Rectangle())
@@ -187,11 +199,12 @@ public struct SuggestionRow: View {
 }
 
 /// The quote attached to a message being written (web `ComposerQuotePreview`) or shown on a
-/// sent message. Content, not glass: it sits inside the composer field slot as a plain block.
+/// sent message. Inside the glass composer it is quiet ink, never a solid surface.
 public struct QuotePreview: View {
   private let text: String
   private let onDismiss: (() -> Void)?
   @Environment(\.consoleTheme) private var theme
+  @Environment(\.webMaterial) private var material
 
   public init(_ text: String, onDismiss: (() -> Void)? = nil) {
     self.text = text
@@ -204,7 +217,9 @@ public struct QuotePreview: View {
       Image(systemName: "quote.opening").font(.system(size: 10, weight: .semibold))
         .foregroundStyle(theme.palette.accent.color)
         .accessibilityHidden(true)
-      Text(text).webFont(.quote).foregroundStyle(WebColor.textMuted.color).lineLimit(3)
+      Text(text).webFont(.quote)
+        .foregroundStyle((material == .glass ? WebGlass.textMuted : WebColor.textMuted).color)
+        .lineLimit(3)
       Spacer(minLength: 0)
       if let onDismiss {
         Button("Remove quote", systemImage: "xmark", action: onDismiss)
@@ -216,7 +231,10 @@ public struct QuotePreview: View {
     }
     .padding(.leading, 10).padding(.trailing, 8)
     .frame(minHeight: 38)
-    .background(WebColor.surfaceHover.color, in: RoundedRectangle(cornerRadius: 7))
+    .background(
+      material == .glass ? WebGlass.selectedFill.color : WebColor.surfaceHover.color,
+      in: RoundedRectangle(cornerRadius: 7)
+    )
     .overlay(alignment: .leading) {
       UnevenRoundedRectangle(topLeadingRadius: 7, bottomLeadingRadius: 7)
         .fill(theme.palette.accent.color).frame(width: 2)
@@ -262,15 +280,13 @@ public struct ChoiceRow: View {
     }
     .padding(10)
     .frame(maxWidth: .infinity, minHeight: DesignMetrics.minimumHitTarget, alignment: .leading)
-    .background(
-      selected ? theme.palette.accentSoft.color : WebColor.surface.color,
-      in: RoundedRectangle(cornerRadius: DesignRadius.sm)
+    .webLayeredSurface(
+      RoundedRectangle(cornerRadius: DesignRadius.sm),
+      fill: selected ? theme.palette.accentSoft.color : WebColor.surface.color,
+      glassFill: selected ? theme.palette.accentInk : WebGlass.groupFill.color,
+      stroke: selected ? theme.palette.accent.color : WebColor.line.color,
+      glassStroke: selected ? theme.palette.accent.color : WebGlass.hairline.color
     )
-    .overlay {
-      RoundedRectangle(cornerRadius: DesignRadius.sm).stroke(
-        selected ? theme.palette.accent.color : WebColor.line.color,
-        lineWidth: 1)
-    }
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(selected ? [.isSelected, .isButton] : [.isButton])

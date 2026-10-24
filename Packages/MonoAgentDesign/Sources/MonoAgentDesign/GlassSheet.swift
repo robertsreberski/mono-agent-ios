@@ -51,8 +51,19 @@ public enum WebGlass {
   /// Meter tracks (context window, plan usage).
   public static let track = GlassInk(WebColor.text, light: 0.09, dark: 0.14)
 
-  /// The consent-prompt veil (`webGlassLegibilityVeil`).
-  public static let legibilityVeil = GlassInk(WebColor.surfaceRaised, light: 0.75, dark: 0.75)
+  /// The frosted veil every text-carrying sheet and popover lays over the system material
+  /// (`webSheetVeil()`): the web raised surface at the lowest opacity that keeps
+  /// `textMuted` AA over the busiest sampled bleed — light glass over a dark code block
+  /// (`#9b9e9b`, ≥ 55%) and dark glass over a light app frame (`#6a706d`, ≥ 55%).
+  public static let sheetVeil = GlassInk(WebColor.surfaceRaised, light: 0.55, dark: 0.55)
+  /// The stronger consent veil (`webSheetVeil(.consent)`): every role, accent included,
+  /// keeps AA over arbitrary third-party content.
+  public static let consentVeil = GlassInk(WebColor.surfaceRaised, light: 0.75, dark: 0.75)
+  /// The busiest bleed sampled through the medium-detent glass (light: a dark code block
+  /// behind; dark: a light MCP app frame behind).
+  public static func sampledBleed(_ scheme: ColorScheme) -> RGBColor {
+    RGBColor(scheme == .dark ? 0x6a706d : 0x9b9e9b)
+  }
 
   /// `--text-soft` passes AA on every backdrop.
   public static let textSoft = WebColor.textSoft
@@ -73,12 +84,98 @@ public enum WebGlass {
   }
 }
 
+/// Which layer a view is drawn in. Sheets, popovers, the composer and the job shelf set
+/// `.glass`; layer-aware web components then swap solid surfaces for `WebGlass` inks.
+public enum WebMaterial: Sendable {
+  case content
+  case glass
+}
+
+/// The strength of a sheet veil (GLASS-RULES.md).
+public enum WebSheetVeil: Sendable {
+  /// Every text-carrying sheet and popover.
+  case standard
+  /// Consent prompts over third-party content.
+  case consent
+}
+
+extension EnvironmentValues {
+  /// The layer the view is drawn in. Defaults to the content layer.
+  @Entry public var webMaterial: WebMaterial = .content
+}
+
 extension View {
-  /// A uniform legibility veil over the whole presentation material (the web raised surface
-  /// at 75%). The only sanctioned sheet exception: prompts that must stay AA over arbitrary
-  /// third-party content (MCP consent). Applied edge to edge, so the sheet stays one material.
-  public func webGlassLegibilityVeil() -> some View {
-    background { WebGlass.legibilityVeil.color.ignoresSafeArea() }
+  /// Lays the frosted web veil edge to edge over the system sheet/popover material and marks
+  /// the content as drawn on glass. One material: no band, body or card fills inside.
+  public func webSheetVeil(_ strength: WebSheetVeil = .standard) -> some View {
+    let ink = strength == .consent ? WebGlass.consentVeil : WebGlass.sheetVeil
+    return background { ink.color.ignoresSafeArea() }
+      .environment(\.webMaterial, .glass)
+  }
+
+  /// Marks content drawn on a compact floating glass control (composer, job shelf,
+  /// suggestion popover) so layer-aware components use inks instead of solid surfaces.
+  public func webGlassContent() -> some View {
+    environment(\.webMaterial, .glass)
+  }
+
+  /// A web panel/canvas background that is drawn only in the content layer. On glass (a
+  /// screen reused inside a sheet) the material shows through instead.
+  public func webPanelBackground(_ color: AdaptiveColor) -> some View {
+    modifier(WebPanelBackground(color: color))
+  }
+}
+
+extension View {
+  /// A web surface (fill, 1 pt edge, optional elevation) in the content layer that becomes
+  /// translucent ink with a hairline edge when drawn on glass (`webMaterial == .glass`).
+  public func webLayeredSurface<S: InsettableShape>(
+    _ shape: S, fill: Color, glassFill: Color = WebGlass.groupFill.color, stroke: Color? = nil,
+    glassStroke: Color? = WebGlass.hairline.color, shadow: WebShadow? = nil
+  ) -> some View {
+    modifier(
+      WebLayeredSurface(
+        shape: shape, fill: fill, glassFill: glassFill, stroke: stroke, glassStroke: glassStroke,
+        shadow: shadow))
+  }
+}
+
+extension ThemePalette {
+  /// `--accent-soft` as a translucent accent ink for icon tiles and selections on glass.
+  public var accentInk: Color { accent.color(lightOpacity: 0.12, darkOpacity: 0.2) }
+}
+
+struct WebLayeredSurface<S: InsettableShape>: ViewModifier {
+  let shape: S
+  let fill: Color
+  let glassFill: Color
+  let stroke: Color?
+  let glassStroke: Color?
+  let shadow: WebShadow?
+  @Environment(\.webMaterial) private var material
+
+  func body(content: Content) -> some View {
+    if material == .glass {
+      content.background(glassFill, in: shape)
+        .overlay { if let glassStroke { shape.strokeBorder(glassStroke, lineWidth: 1) } }
+    } else if let shadow {
+      content.background(fill, in: shape)
+        .overlay { if let stroke { shape.strokeBorder(stroke, lineWidth: 1) } }
+        .compositingGroup().webShadow(shadow)
+    } else {
+      content.background(fill, in: shape)
+        .overlay { if let stroke { shape.strokeBorder(stroke, lineWidth: 1) } }
+    }
+  }
+}
+
+struct WebPanelBackground: ViewModifier {
+  let color: AdaptiveColor
+  @Environment(\.webMaterial) private var material
+  func body(content: Content) -> some View {
+    content.background {
+      if material == .content { color.color.ignoresSafeArea() }
+    }
   }
 }
 
@@ -167,9 +264,12 @@ extension View {
   struct SheetMaterialSample<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {
+      let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
       content()
+        .environment(\.webMaterial, .glass)
         .frame(maxWidth: 380)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(WebGlass.sheetVeil.color, in: shape)
+        .glassEffect(.regular, in: shape)
     }
   }
 

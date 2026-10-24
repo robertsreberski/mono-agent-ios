@@ -14,40 +14,83 @@ header band, a solid web body, and the system glass showing around the edges.
 
 ## Rules for the floating layer
 
+There are two kinds of floating surface:
+
+- **Text-carrying sheets and popovers** use the system material plus the frosted web veil.
+  This covers the context sheet and iPad popover, run settings, the skill browser, the
+  peer-question sheet, quote selection, console management and the connection editor, MCP
+  consent, and the composer's suggestion popover and status line.
+- **Compact floating controls** stay pure glass with no veil. This covers the composer root,
+  the job shelf, header tiles, jump-to-latest, footer pills, toolbars and menus.
+
 1. **One material per surface.** Never put a solid web panel or surface fill on or inside
    glass. Bands, bodies, cards and footers inside a sheet have no fill of their own.
-2. **Sheets and popovers use the system presentation material.** No solid
-   `presentationBackground`, no header band, no body fill, no custom
-   `presentationCornerRadius` (the system radius is concentric with the device).
-3. **Headers sit on the material** (`WebSheetHeader`): web title/subtitle type, a glass
-   close button, a hairline below.
-4. **Sections are separated by hairlines** (`WebSheetSection`, `WebHairline`). Where grouping
-   needs it (an argument preview, an open job row), use at most the quiet translucent ink
-   (`.webGlassGroup()`, `WebGlass.groupFill`). It works in light and dark and at both detents.
-5. **Web accents for meters and figures.** Meter fills use `palette.accent`. Tracks use
-   `WebGlass.track`. Accent *text* uses `WebGlass.accentText`.
-6. **Actions:** primary is `.glassProminent` tinted with the web accent, with `onAccent`
+2. **Sheets and popovers use the system presentation material.** No
+   `presentationBackground`, no header band and no body fill. There is no custom
+   `presentationCornerRadius`: the system radius is concentric with the device.
+3. **Text-carrying sheets and popovers lay the frosted veil over the material**
+   (`.webSheetVeil()`). The veil is the web raised surface, uniform and edge to edge: one
+   tinted material, never a band. Its opacity is the minimum that keeps muted text AA over
+   the busiest bleed we sampled (see *The frosted veil* below). Consent prompts use the
+   stronger `.webSheetVeil(.consent)`. Custom popovers drawn with `floatingGlass` (the
+   composer suggestions and status line) put the same veil inside their glass shape.
+4. **Compact floating controls are pure glass.** No veil, no web fill tint. Where the web
+   draws a 1 px `--line-strong` edge (the composer, the job shelf, the suggestion popover),
+   light mode keeps it as a stroke only. Dark glass already separates from the dark
+   transcript.
+5. **Headers sit on the material** (`WebSheetHeader`). They use web title and subtitle type,
+   the web's plain borderless ✕ in a 44 pt hit target with the existing accessibility label,
+   and a hairline below.
+6. **Sections are separated by hairlines** (`WebSheetSection`, `WebHairline`). Where grouping
+   needs it (an argument preview, an open job row, a form row), use at most the quiet
+   translucent ink (`.webGlassGroup()`, `WebGlass.groupFill`).
+7. **Layer-aware components.** `.webSheetVeil()` and `.webGlassContent()` set
+   `EnvironmentValues.webMaterial = .glass`. `SettingsGroup`, `.settingsField()`,
+   `.webInput()`, `ChoiceRow`, `QuotePreview`, `AttachmentChip` and `SuggestionRow` then
+   swap their solid web surfaces for inks through `.webLayeredSurface(…)`. Screens reused
+   in a sheet use `.webPanelBackground(panel)`, which paints only in the content layer. The
+   same component therefore stays solid in the transcript and turns translucent in a sheet.
+8. **Web accents for meters and figures.** Meter fills use `palette.accent`. Tracks use
+   `WebGlass.track`. Accent *text* uses `WebGlass.accentText`. Icon tiles use
+   `palette.accentInk`.
+9. **Actions:** primary is `.glassProminent` tinted with the web accent, with `onAccent`
    labels. Secondary is `.glass`. Use `.designButtonStyle(_, placement: .floating)`; it falls
    back to opaque styles under Reduce Transparency. Small in-row actions inside the job shelf
    (`WebSmallButtonStyle`) use translucent ink, not nested glass.
-7. **Text keeps the web scale, spacing and hierarchy.** The web colour is used unless it
-   fails AA on the material. In that case use the `WebGlass` adjustment (table below).
-8. **The large detent is opaque** (the system does this). Content must read there with no
-   extra fill. Translucent inks are chosen so they work over both the glass and the opaque
-   sheet.
-9. **Reduce Transparency** keeps working through `floatingGlass(…opaqueFill:opaqueStroke:)`
-   and the design button styles. System sheets handle it themselves.
+10. **Navigation bars.** On phones, the conversation's web header is a `safeAreaBar` with the
+    system hard scroll-edge effect and no panel band. On iPad, the system bar keeps its own
+    glass, with no `toolbarBackground`. The dashboard footer pills float over the list with
+    the hard scroll-edge effect, with no panel band or fade.
+11. **Text keeps the web scale, spacing and hierarchy.** The web colour is used unless it
+    fails AA on the material. In that case use the `WebGlass` adjustment (table below).
+12. **The large detent is opaque** (the system does this). The veil and inks are translucent,
+    so they read the same over the medium-detent glass and the opaque sheet.
+13. **Reduce Transparency** keeps working through `floatingGlass(…opaqueFill:opaqueStroke:)`
+    and the design button styles. System sheets handle it themselves.
 
-### The one exception: consent over third-party content
+### The frosted veil
 
-The medium-detent glass lets strong content show through. Measured on the iOS 27 simulator,
-a light MCP app frame behind the dark consent sheet lifts the glass to `#6a706d`. That drops
-the web soft text to 2.6:1 and the accent method name to 2.2:1. A consent prompt must stay
-legible over arbitrary app content. So `McpConsentView` applies `.webGlassLegibilityVeil()`:
-the web raised surface at 75%, edge to edge, behind the whole sheet. The sheet stays one
-(tinted) material with no band. This mirrors the web, where the MCP confirmation is
-`--surface-raised` at 96% over a blurred app frame. Every role keeps ≥ 4.5:1 over the sampled
-bleed (`GlassSheetTests.legibilityVeilKeepsAAOverBleed`).
+The medium-detent glass lets strong content show through. Measured on the iOS 27 simulator:
+
+| Backdrop | Glass lifts or drops to | Without a veil |
+|---|---|---|
+| Dark code block behind the light sheet | `#9b9e9b` | muted text 2.5:1 |
+| Light MCP app frame behind the dark sheet | `#6a706d` | muted text 2.3:1 |
+
+No text colour fixes this, and vibrancy measured worse in the common case (see below). So
+every text-carrying sheet lays the web raised surface over the material. Its opacity is the
+lowest that keeps `WebGlass.textMuted` ≥ 4.5:1 over those two bleeds:
+
+| Veil | Light | Dark | Guarantee | Test |
+|---|---|---|---|---|
+| `WebGlass.sheetVeil` | 55% | 55% | Muted, soft and primary text AA (4.52:1 light, 4.51:1 dark). A 1% lower veil drops muted text to 4.48:1 / 4.45:1. | `GlassSheetTests.sheetVeilsKeepAAOverBleed`, `sheetVeilIsTheMinimum` |
+| `WebGlass.consentVeil` | 75% | 75% | Accent text AA as well | same |
+
+The Markdown dark capture alone needs no veil (6.16:1). The dark value is bound by the
+brighter MCP-frame bleed. Accent text on a 55% dark sheet can still drop below AA over a
+very bright frame. Consent, where the accent names the tool method, uses the stronger veil.
+This mirrors the web: its sheets are opaque raised surfaces, and its MCP confirmation is
+`--surface-raised` at 96% over a blurred frame.
 
 ## Glass tokens (`GlassSheet.swift`)
 
@@ -60,7 +103,9 @@ bleed (`GlassSheetTests.legibilityVeilKeepsAAOverBleed`).
 | `WebGlass.textSoft` | web `--text-soft` | Passes AA everywhere (≥ 4.98:1) |
 | `WebGlass.textMuted` | light `--text-soft`; dark muted lifted 60% toward soft | The web muted is **4.34:1** on light glass (`#e3e3e0`) and 3.9:1 on the dark group ink. Both are adjusted. |
 | `WebGlass.accentText` | light `--accent-strong`; dark `--accent` | The light `--accent` is 4.48:1 on light glass |
-| `WebGlass.legibilityVeil` | `--surface-raised` 75% | Consent exception only |
+| `WebGlass.sheetVeil` | `--surface-raised` 55% | Every text-carrying sheet and popover |
+| `WebGlass.consentVeil` | `--surface-raised` 75% | Consent prompts |
+| `palette.accentInk` | `--accent` 12% / 20% | `--accent-soft` icon tiles and selections as ink |
 
 Reference backdrops (`WebGlass.referenceBackdrops`) were sampled from simulator screenshots.
 Large detent: `#ffffff` / `#1c1c1e`. Medium detent over plain and busy Markdown transcripts:
@@ -108,15 +153,21 @@ secondary text can still drop below AA. This is listed as an open design questio
 
 These quotes were fetched from Apple's documentation in October 2026. Apple does not
 publish numbers for how translucent a medium-detent sheet is. The figures here are
-simulator measurements on iOS 27.0 and may change between OS releases and on device. Glass
-buttons on the sheet material (the close button and the actions) follow the system sheet
-toolbar pattern. Apple's guidance otherwise discourages layering glass, so we use glass
-only for those controls and never for content boxes.
+simulator measurements on iOS 27.0 and may change between OS releases and on device. The sheet
+close button is the web's plain ✕, not a glass circle. Glass actions on a sheet (consent)
+follow the system sheet toolbar pattern. Apple's guidance otherwise discourages layering
+glass, so we use glass only for those controls and never for content boxes. The frosted veil
+tints the material. Apple's guidance asks for the system background, so the veil is uniform
+and edge to edge. It keeps the sheet one material and follows the HIG's advice to ensure
+legibility (as with a dimming layer behind clear glass).
 
 ## Checklist for a new floating surface
 
 - [ ] No `presentationBackground`, `presentationCornerRadius` or `.background(WebColor…)`
-      on or inside the surface (except the documented consent veil).
+      on or inside the surface.
+- [ ] Carries text? `.webSheetVeil()` (or the veil inside a custom `floatingGlass` shape).
+      Compact control? Pure glass, with a light-mode `--line-strong` stroke if the web has
+      an edge.
 - [ ] Header: `WebSheetHeader`. Sections: `WebSheetSection` / `WebHairline`. Boxes:
       `.webGlassGroup()`.
 - [ ] Secondary text uses `WebGlass.textMuted` / `textSoft`. Accent text uses

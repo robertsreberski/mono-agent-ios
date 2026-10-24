@@ -49,20 +49,35 @@ struct GlassSheetTests {
     }
   }
 
-  /// The consent veil keeps AA where bright or dark content bleeds through the medium-detent
-  /// glass (sampled: light glass over a code block, dark glass over a light app frame).
+  /// The sheet veil is the lowest opacity that keeps muted (and soft, primary) text AA over
+  /// the busiest sampled bleed; the consent veil also keeps accent text AA there.
   @Test(arguments: ConsoleTheme.allCases)
-  func legibilityVeilKeepsAAOverBleed(_ theme: ConsoleTheme) {
-    let bleed: [ColorScheme: RGBColor] = [.light: RGBColor(0x9b9e9b), .dark: RGBColor(0x6a706d)]
+  func sheetVeilsKeepAAOverBleed(_ theme: ConsoleTheme) {
     for scheme in schemes {
-      let ground = WebGlass.legibilityVeil.composited(over: bleed[scheme]!, scheme)
-      for role in [
-        WebColor.text, WebGlass.textSoft, WebGlass.textMuted,
-        WebGlass.accentText(theme.palette),
-      ] {
-        let ratio = role.resolved(scheme).contrastRatio(with: ground)
-        #expect(ratio >= 4.5, "\(theme) \(scheme) \(role.resolved(scheme)) on \(ground): \(ratio)")
+      let bleed = WebGlass.sampledBleed(scheme)
+      let sheet = WebGlass.sheetVeil.composited(over: bleed, scheme)
+      for role in [WebColor.text, WebGlass.textSoft, WebGlass.textMuted] {
+        let ratio = role.resolved(scheme).contrastRatio(with: sheet)
+        #expect(ratio >= 4.5, "\(scheme) \(role.resolved(scheme)) on \(sheet): \(ratio)")
       }
+      let consent = WebGlass.consentVeil.composited(over: bleed, scheme)
+      for role in [
+        WebColor.text, WebGlass.textSoft, WebGlass.textMuted, WebGlass.accentText(theme.palette),
+      ] {
+        let ratio = role.resolved(scheme).contrastRatio(with: consent)
+        #expect(ratio >= 4.5, "\(theme) \(scheme) \(role.resolved(scheme)) on \(consent)")
+      }
+    }
+  }
+
+  /// Minimal: one step (1%) less veil no longer keeps muted text AA over the bleed.
+  @Test func sheetVeilIsTheMinimum() {
+    for scheme in schemes {
+      let veil = WebGlass.sheetVeil
+      let lower = GlassInk(
+        veil.base, light: veil.lightOpacity - 0.01, dark: veil.darkOpacity - 0.01)
+      let ground = lower.composited(over: WebGlass.sampledBleed(scheme), scheme)
+      #expect(WebGlass.textMuted.resolved(scheme).contrastRatio(with: ground) < 4.5)
     }
   }
 
