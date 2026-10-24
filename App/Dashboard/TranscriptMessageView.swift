@@ -287,10 +287,10 @@ struct TranscriptActivityBand: View {
   @State private var expanded = true
   var body: some View {
     RunningTimeline(
-      running: TranscriptPresentation.needsElapsedTimeline(status: message.status),
-      offset: { store.serverClockOffset }
+      running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
     ) {
-      date in
+      store.serverClockOffset
+    } content: { date in
       #if DEBUG
         let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
       #endif
@@ -328,10 +328,10 @@ struct ReasoningDisclosure: View {
   private var running: Bool { message.status == "running" }
   var body: some View {
     RunningTimeline(
-      running: TranscriptPresentation.needsElapsedTimeline(status: message.status),
-      offset: { store.serverClockOffset }
+      running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
     ) {
-      date in
+      store.serverClockOffset
+    } content: { date in
       #if DEBUG
         let _ = PerformanceProbe.body("ReasoningDisclosure.clock")
       #endif
@@ -499,9 +499,10 @@ struct RunAttributionView: View {
         }
       }
       RunningTimeline(
-        running: TranscriptPresentation.needsElapsedTimeline(status: message.status),
-        offset: { store.serverClockOffset }
-      ) { date in
+        running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
+      ) {
+        store.serverClockOffset
+      } content: { date in
         #if DEBUG
           let _ = PerformanceProbe.body("RunAttributionView.clock")
         #endif

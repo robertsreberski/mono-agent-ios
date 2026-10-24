@@ -59,7 +59,9 @@ public struct RichTextDocumentView: View {
         try Task.checkCancellation()
         RichRenderingCache.insert(parsed, key: cacheKey, bytes: source.utf8.count)
         document = parsed
-      } catch { /* Superseded or disappeared: retain the last complete rendering. */  }
+      } catch {
+        // Superseded or disappeared: retain the last complete rendering.
+      }
     }
   }
   /// `.markdown p, ul, pre { margin-bottom: .85em }`, `li + li { margin-top: .3em }`.
