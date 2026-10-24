@@ -103,7 +103,8 @@ presenter cannot cancel a different bridge's prompt. Cancellation must settle on
   for deterministic output and does not split UTF-8 scalars at the byte ceiling.
 - Open-link requires confirmation, server allowed===true and opens the **returned** HTTP(S)
   URL in the system default browser, through an injected opener. A changed destination is
-  not refused. Native rejects file/custom schemes and URL credentials rather than handing
+  not refused: this is explicitly accepted web parity (D7), not a new destination-equality
+  or re-confirmation policy. Native rejects file/custom schemes and URL credentials rather than handing
   native app/file privileges to an HTML app. A refused open returns isError:true.
 - Model context succeeds only on accepted===true; refusal exposes a control-cleaned reason
   bounded to 500 UTF-16 units, like the web's bounded text. Tool/resource result structure is
@@ -199,3 +200,27 @@ Consent presentation callbacks are request-token scoped. Cancellation before the
 appears releases immediately (there may be no UIKit dismissal callback); once visible, new
 requests remain denied until that sheet's actual dismissal finishes. Stale token callbacks
 cannot cancel a newer request. A dedicated native lifecycle test covers both paths.
+
+## PR2 review corrections
+
+Access expiry degrades the whole part: Reopen replaces Hide, the app view is hidden,
+error styling is used, and the same status is displayed and spoken. Reopen stops the old
+bridge before fetching fresh access. A native action tap reasserts visibility after covers
+or navigation; inactive scene peeks retain hosts, while background closes them (D11).
+Controller construction is deferred into identity-scoped State, not repeated by streaming
+parent initialization; a real hosting/render test checks one construction across twelve updates.
+
+Native consent content scrolls independently of the pinned Cancel / Allow once row. Links
+show the destination host on its own, with a middle-truncated three-line URL and the full
+bounded URL available to VoiceOver. The DEBUG --mcp-long-link fixture focuses the garden
+on one link control with an approximately 8,000-character URL; AX3 XCUI verifies both actions
+remain hittable, the full URL label and zero link POSTs after cancellation.
+
+Only an actually attached native consent view makes the transcript inert / AX-hidden.
+SwiftUI onAppear alone is insufficient: it can run after UIKit refuses presentation. An
+occupied presentation anchor declines immediately without disturbing the other sheet;
+otherwise a one-second deadline auto-declines if native window attachment never occurs.
+The ordinary bridge decline response and zero tool POSTs are tested with another real UIKit
+sheet open. A separate native test covers the unpresented deadline. Visible prompts retain
+the dismissal fence and request-token guards. XCUI additionally swipes a tool prompt down,
+then rechecks both tool and link counters after the entire interaction/reopen sequence.

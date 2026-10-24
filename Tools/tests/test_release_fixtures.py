@@ -81,7 +81,9 @@ class ReleaseFixtureTests(unittest.TestCase):
         for tool, leak in (("nm", b"McpGardenFixture"), ("strings", b"Garden planner (synthetic)"),
                            ("strings", b"garden-invocation"), ("strings", b"mcpCompleteInitialLoad"),
                            ("strings", b"mcpBufferState"), ("nm", b"debugSendAttempts"), ("nm", b"McpUiScript"),
-                           ("nm", b"McpUiDiagnostics"), ("strings", b"conversation-mcp-app"),
+                           ("nm", b"McpUiDiagnostics"), ("strings", b"mcp-native-counters"),
+                           ("strings", b"Native tool POSTs"), ("nm", b"debugCreatedControllers"),
+                           ("strings", b"mcp-long-link"), ("strings", b"conversation-mcp-app"),
                            ("strings", b"conversation-mcp-unavailable"), ("strings", b"conversation-mcp-long-title")):
             with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
                 self.check(tool, leak)
