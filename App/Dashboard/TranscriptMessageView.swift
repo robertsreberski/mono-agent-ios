@@ -162,7 +162,10 @@ struct TranscriptPartView: View {
   let store: ConsoleStore
   var body: some View {
     switch part {
-    case .text(let value): RichTextDocumentView(source: value.text, fill: message.role != "user")
+    case .text(let value):
+      RichTextDocumentView(
+        source: value.text, fill: message.role != "user", identity: message.id,
+        streaming: message.status == "running")
     case .reasoning(let value):
       ReasoningDisclosure(text: value.text, message: message, store: store)
     case .toolCall(let call):

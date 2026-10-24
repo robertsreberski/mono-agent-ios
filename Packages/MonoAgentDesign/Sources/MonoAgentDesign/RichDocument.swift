@@ -4,7 +4,7 @@ import Markdown
 
 /// App-owned, bounded value tree. No parser nodes cross an actor boundary.
 public struct RichDocument: Sendable, Equatable {
-  public struct Run: Sendable, Equatable {
+  public struct Run: Sendable, Hashable {
     public var text: String
     public var bold = false
     public var italic = false
@@ -31,7 +31,7 @@ public struct RichDocument: Sendable, Equatable {
   public static let maximumBytes = 65_536
 
   /// Limits precede cmark, not just view traversal: huge tables/nesting cannot expand the AST.
-  public static func parse(_ source: String) -> RichDocument {
+  public static func parse(_ source: String, cancelled: () -> Bool = { false }) -> RichDocument {
     let head = String(decoding: source.utf8.prefix(maximumBytes), as: UTF8.self)
     var limited = source.utf8.count > maximumBytes
     let lines = head.split(separator: "\n", omittingEmptySubsequences: false)
@@ -62,11 +62,12 @@ public struct RichDocument: Sendable, Equatable {
             prefix: "", runs: [.init(text: head)])
         ], limited: true)
     }
+    guard !cancelled() else { return RichDocument(blocks: [], limited: false) }
     let document = Document(parsing: head, options: [.parseSymbolLinks])
     var blocks: [Block] = []
     var remaining = 1800
     func inline(_ node: any Markup, depth: Int = 0, style: Run = .init(text: "")) -> [Run] {
-      guard depth < 16, remaining > 0 else {
+      guard !cancelled(), depth < 16, remaining > 0 else {
         limited = true
         return []
       }
@@ -105,7 +106,7 @@ public struct RichDocument: Sendable, Equatable {
       return node.children.flatMap { inline($0, depth: depth + 1, style: style) }
     }
     func walk(_ node: any Markup, depth: Int = 0, prefix: String = "", quoted: Bool = false) {
-      guard depth < 13, remaining > 0, blocks.count < 300 else {
+      guard !cancelled(), depth < 13, remaining > 0, blocks.count < 300 else {
         limited = true
         return
       }

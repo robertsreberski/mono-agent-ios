@@ -9,19 +9,27 @@ import UIKit
 public struct RichTextDocumentView: View {
   private let source: String
   private let fill: Bool
+  private let cacheKey: String
+  private let streaming: Bool
+  private let initial: RichDocument?
   @State private var document: RichDocument?
   @Environment(\.consoleTheme) private var theme
   @Environment(\.horizontalSizeClass) private var sizeClass
   @ScaledMetric(relativeTo: .body) private var proseSize: CGFloat = 13.5
   /// `fill: false` sizes the document to its text (the user bubble); content fills the column.
-  public init(source: String, fill: Bool = true) {
+  public init(
+    source: String, fill: Bool = true, identity: String = "document", streaming: Bool = false
+  ) {
     self.source = source
     self.fill = fill
+    self.streaming = streaming
+    cacheKey = RichRenderingCache.key(source: source, identity: identity)
+    initial = RichRenderingCache.initial(source: source, key: cacheKey)
   }
   private var em: CGFloat { proseSize }
   public var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      if let document {
+      if let document = initial ?? document {
         ForEach(Array(document.blocks.enumerated()), id: \.element.id) { index, block in
           blockView(block)
             .padding(.top, index == 0 ? 0 : gap(before: block, after: document.blocks[index - 1]))
@@ -38,11 +46,20 @@ public struct RichTextDocumentView: View {
       }
     }
     .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
-    .task(id: source) {
-      let input = source
-      let parsed = await Task.detached(priority: .userInitiated) { RichDocument.parse(input) }.value
-      guard !Task.isCancelled else { return }
-      document = parsed
+    .task(id: cacheKey) {
+      if let initial {
+        document = initial
+        return
+      }
+      do {
+        // Coalesce large streaming inputs independently of the transport's publication cadence.
+        if streaming { try await Task.sleep(for: .milliseconds(83)) }
+        try Task.checkCancellation()
+        let parsed = try await RichDocumentParser.shared.parse(source)
+        try Task.checkCancellation()
+        RichRenderingCache.insert(parsed, key: cacheKey, bytes: source.utf8.count)
+        document = parsed
+      } catch { /* Superseded or disappeared: retain the last complete rendering. */  }
     }
   }
   /// `.markdown p, ul, pre { margin-bottom: .85em }`, `li + li { margin-top: .3em }`.
@@ -115,26 +132,28 @@ public struct RichTextDocumentView: View {
     }
   }
   private func attributed(_ runs: [RichDocument.Run]) -> AttributedString {
-    runs.reduce(into: AttributedString()) { value, run in
-      var part = AttributedString(run.text)
-      var intent: InlinePresentationIntent = []
-      if run.bold { intent.insert(.stronglyEmphasized) }
-      if run.italic { intent.insert(.emphasized) }
-      if run.code {
-        intent.insert(.code)
-        part.font = .system(size: 0.88 * em, design: .monospaced)
-        part.backgroundColor = WebColor.surfaceSubtle.color
+    RichRenderingCache.attributed(.init(runs, em: Double(em), theme: theme.rawValue)) {
+      runs.reduce(into: AttributedString()) { value, run in
+        var part = AttributedString(run.text)
+        var intent: InlinePresentationIntent = []
+        if run.bold { intent.insert(.stronglyEmphasized) }
+        if run.italic { intent.insert(.emphasized) }
+        if run.code {
+          intent.insert(.code)
+          part.font = .system(size: 0.88 * em, design: .monospaced)
+          part.backgroundColor = WebColor.surfaceSubtle.color
+        }
+        if run.strike {
+          intent.insert(.strikethrough)
+          part.foregroundColor = WebColor.textMuted.color
+        }
+        part.inlinePresentationIntent = intent
+        if let destination = run.link {
+          part.link = URL(string: destination)
+          part.foregroundColor = theme.palette.accent.color
+        }
+        value += part
       }
-      if run.strike {
-        intent.insert(.strikethrough)
-        part.foregroundColor = WebColor.textMuted.color
-      }
-      part.inlinePresentationIntent = intent
-      if let destination = run.link {
-        part.link = URL(string: destination)
-        part.foregroundColor = theme.palette.accent.color
-      }
-      value += part
     }
   }
 }
