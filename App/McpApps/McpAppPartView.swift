@@ -24,9 +24,31 @@ struct McpAppPartView: View {
 }
 
 private struct McpMountedPart: View {
+  let part: McpAppPart
+  let message: WebMessage
   let store: ConsoleStore
   let pool: McpHostPool
-  @State private var model: McpPartController
+  @State private var model: McpPartController?
+  var body: some View {
+    Group {
+      if let model {
+        McpPartSurface(store: store, pool: pool, model: model)
+      } else {
+        Color.clear.frame(height: 1).accessibilityHidden(true)
+      }
+    }
+    .task {
+      if model == nil {
+        model = McpPartController(part: part, message: message, store: store, pool: pool)
+      }
+    }
+  }
+}
+
+private struct McpPartSurface: View {
+  let store: ConsoleStore
+  let pool: McpHostPool
+  let model: McpPartController
   @Environment(\.consoleTheme) private var theme
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.horizontalSizeClass) private var sizeClass
@@ -38,21 +60,9 @@ private struct McpMountedPart: View {
   #if DEBUG
     @Environment(\.mcpDiagnostics) private var diagnostics
   #endif
-  init(part: McpAppPart, message: WebMessage, store: ConsoleStore, pool: McpHostPool) {
-    self.store = store
-    self.pool = pool
-    _model = State(
-      initialValue: McpPartController(part: part, message: message, store: store, pool: pool))
-  }
   private var label: String { model.part.title ?? model.part.toolName }
-  private var action: String {
-    switch model.phase {
-    case .hidden: "Show"
-    case .loading, .ready: "Hide"
-    case .closed, .error, .unavailable: "Reopen"
-    }
-  }
-  private var error: Bool { [.closed, .error, .unavailable].contains(model.phase) }
+  private var action: String { model.actionTitle }
+  private var error: Bool { model.isError }
   private var environment: McpHostEnvironment {
     var context = McpHostEnvironment()
     context.theme = colorScheme == .dark ? "dark" : "light"
@@ -76,7 +86,7 @@ private struct McpMountedPart: View {
             .webFont(.replyMeta).foregroundStyle(WebColor.textMuted.color).lineLimit(1)
         }.frame(maxWidth: .infinity, alignment: .leading)
         Button {
-          if action == "Hide" { model.hide() } else { model.open() }
+          model.activateAction()
         } label: {
           Text(action).webFont(.replyAction).padding(.horizontal, 10)
             .frame(minWidth: 44, minHeight: 44)
@@ -87,25 +97,22 @@ private struct McpMountedPart: View {
         }
         .buttonStyle(.plain).accessibilityLabel(action + " " + label)
         .accessibilityIdentifier("mcp-action-" + model.part.id)
-        .disabled(pool.consent.request != nil)
+        .disabled(pool.consent.isPresented)
       }.padding(.horizontal, 10).padding(.vertical, 8).frame(minHeight: 55)
-      Text(
-        model.bridge?.retryRequiresConsent == true
-          ? "App access expired. Reopen for fresh access and confirmation." : model.status
-      )
-      .webFont(.banner)
-      .foregroundStyle(
-        error
-          ? WebColor.danger.color
-          : model.phase == .ready ? theme.palette.accent.color : WebColor.textMuted.color
-      )
-      .padding(.vertical, 5).padding(.horizontal, 10)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(error ? WebColor.dangerSoft.color : WebColor.surfaceSubtle.color)
-      .overlay(alignment: .top) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
-      .accessibilityLabel("App status: " + model.status).accessibilityIdentifier(
-        "mcp-status-" + model.part.id)
-      if let bridge = model.bridge, let host = bridge.host, bridge.state != .closed {
+      Text(model.displayedStatus)
+        .webFont(.banner)
+        .foregroundStyle(
+          error
+            ? WebColor.danger.color
+            : model.phase == .ready ? theme.palette.accent.color : WebColor.textMuted.color
+        )
+        .padding(.vertical, 5).padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(error ? WebColor.dangerSoft.color : WebColor.surfaceSubtle.color)
+        .overlay(alignment: .top) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
+        .accessibilityLabel("App status: " + model.displayedStatus).accessibilityIdentifier(
+          "mcp-status-" + model.part.id)
+      if model.showsWebContent, let bridge = model.bridge, let host = bridge.host {
         McpWebContent(host: host, label: label, scale: webScale)
           .frame(
             height: McpPartController.displayHeight(

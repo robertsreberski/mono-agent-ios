@@ -113,7 +113,7 @@ struct ConversationTranscript<Header: View>: View {
     ) { request in
       McpConsentView(request: request, presenter: mcpPool.consent)
     }
-    .onChange(of: scenePhase) { _, phase in mcpPool.setActive(phase == .active) }
+    .onChange(of: scenePhase) { _, phase in mcpPool.sceneChanged(phase) }
     .onChange(of: state.orderedMessageIDs) { _, ids in mcpPool.retainMessages(ids) }
     .onChange(of: store.selectedThreadID) { _, thread in mcpPool.selectionChanged(thread) }
     .onDisappear { mcpPool.closeAll() }

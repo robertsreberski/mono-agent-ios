@@ -3,6 +3,7 @@ import Foundation
 import MonoAgentKit
 import MonoAgentStore
 import Observation
+import SwiftUI
 
 struct McpPartIdentity: Hashable {
   let profile: UUID
@@ -25,6 +26,10 @@ struct McpPartIdentity: Hashable {
 /// Scene/transcript-owned admission, including in-progress loads. No retained document cache.
 @MainActor @Observable final class McpHostPool {
   let consent = McpNativeConsent()
+  #if DEBUG
+    private(set) var debugCreatedControllers = 0
+    func recordControllerCreation() { debugCreatedControllers += 1 }
+  #endif
   private(set) var activeCount = 0
   private(set) var isActive = true
   @ObservationIgnored private var order: UInt64 = 0
@@ -71,6 +76,9 @@ struct McpPartIdentity: Hashable {
       owner.stop(.closed, text: "The selected conversation changed. Reopen to load the app again.")
     }
   }
+  func sceneChanged(_ phase: ScenePhase) {
+    if phase == .background { setActive(false) } else if phase == .active { setActive(true) }
+  }
   func setActive(_ active: Bool) {
     isActive = active
     if !active { closeAll() }
@@ -99,6 +107,9 @@ struct McpPartIdentity: Hashable {
   @ObservationIgnored private var deadline: Task<Void, Never>?
   @ObservationIgnored private var session: McpAppAccess?
   init(part: McpAppPart, message: WebMessage, store: ConsoleStore, pool: McpHostPool) {
+    #if DEBUG
+      pool.recordControllerCreation()
+    #endif
     self.part = part
     identity = McpPartIdentity(part: part, message: message, store: store)
     threadID = message.threadId
@@ -106,6 +117,35 @@ struct McpPartIdentity: Hashable {
     self.store = store
     self.pool = pool
     lean = store.effectiveDataMode == .lean
+  }
+  var degraded: Bool { bridge?.retryRequiresConsent == true }
+  var displayedStatus: String {
+    degraded ? "App access expired. Reopen for fresh access and confirmation." : status
+  }
+  var actionTitle: String {
+    if degraded { return "Reopen" }
+    switch phase {
+    case .hidden: return "Show"
+    case .loading, .ready: return "Hide"
+    case .closed, .error, .unavailable: return "Reopen"
+    }
+  }
+  var isError: Bool { degraded || [.closed, .error, .unavailable].contains(phase) }
+  var showsWebContent: Bool { !degraded && bridge?.host != nil && bridge?.state != .closed }
+  func activateAction() {
+    if !hasArrived {
+      hasArrived = true
+      _ = pool.firstArrival(identity)
+    }
+    if actionTitle == "Hide" {
+      hide()
+      return
+    }
+    // A native button tap is visibility evidence even if scroll visibility didn't re-emit
+    // after a cover or navigation transition.
+    isVisible = true
+    if degraded { stop(.closed, text: displayedStatus) }
+    open()
   }
   func visibility(_ visible: Bool) {
     guard isVisible != visible else { return }

@@ -12,7 +12,8 @@ import UIKit
   private(set) var request: Request?
   @ObservationIgnored private var continuation: CheckedContinuation<Bool, Never>?
   @ObservationIgnored private var dismissing = false
-  @ObservationIgnored private var presentedID: UUID?
+  private var presentedID: UUID?
+  var isPresented: Bool { presentedID != nil }
   @ObservationIgnored private var returnFocus: Any?
   func confirm(_ prompt: McpConsentPrompt, requestID: UUID) async -> Bool {
     guard request == nil, !dismissing else { return false }

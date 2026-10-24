@@ -18,6 +18,8 @@
   extension EnvironmentValues { @Entry var mcpDiagnostics: McpUiDiagnostics? }
 
   actor McpUiScript {
+    private var expireTool = false
+    func expireNextTool() { expireTool = true }
     let scenario: StoreScenario
     let diagnostics: McpUiDiagnostics
     init(_ scenario: StoreScenario, diagnostics: McpUiDiagnostics) {
@@ -73,6 +75,13 @@
         let result: JSONValue
         switch body.method {
         case "tools/call":
+          if expireTool {
+            expireTool = false
+            return .init(
+              data: Data(
+                #"{"error":{"code":"reply_access_expired","message":"Synthetic access expired"}}"#
+                  .utf8), status: 401)
+          }
           result = .object([
             "content": .array([
               .object(["type": .string("text"), "text": .string("Garden planned")])

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 import MonoAgentKit
+import Observation
+import SwiftUI
 import Testing
 import UIKit
 
@@ -66,6 +68,84 @@ import UIKit
     #expect(controller.phase == .hidden && pool.activeCount == 0)
     await store.stop()
   }
+  @Test func userActionRestoresVisibilityAfterCoverWithoutScrollCallback() async throws {
+    let (app, store, message, part) = try await setup()
+    _ = app
+    let pool = McpHostPool()
+    let controller = McpPartController(part: part, message: message, store: store, pool: pool)
+    controller.visibility(true)
+    try await attach(controller)
+    let old = try #require(controller.bridge?.host)
+    controller.visibility(false)
+    controller.hide()
+    #expect(!controller.isVisible && old.isRetired)
+    controller.activateAction()
+    try await attach(controller)
+    #expect(controller.isVisible && controller.bridge?.host !== old)
+    controller.hide()
+    await store.stop()
+  }
+  @Test func expiredConfirmedEffectDegradesAllPresentationAndReopensFreshHost() async throws {
+    let (app, store, message, part) = try await setup()
+    let pool = McpHostPool()
+    let controller = McpPartController(part: part, message: message, store: store, pool: pool)
+    controller.visibility(true)
+    try await attach(controller)
+    let old = try #require(controller.bridge?.host)
+    await app.mcpScript?.expireNextTool()
+    try await old.sendEnvelope(
+      try JSONEncoder().encode(
+        JSONValue.object([
+          "jsonrpc": .string("2.0"), "method": .string("fixture/command"),
+          "params": .object([
+            "rpc": .object([
+              "jsonrpc": .string("2.0"), "id": .string("expire"), "method": .string("tools/call"),
+              "params": .object(["name": .string("plan"), "arguments": .object([:])]),
+            ])
+          ]),
+        ])))
+    try await wait { pool.consent.request != nil }
+    let request = try #require(pool.consent.request)
+    pool.consent.didPresent(requestID: request.id)
+    pool.consent.settle(request.id, allowed: true)
+    pool.consent.didDismiss(requestID: request.id)
+    try await wait { controller.degraded }
+    #expect(controller.actionTitle == "Reopen" && controller.isError && !controller.showsWebContent)
+    #expect(controller.displayedStatus.contains("App access expired. Reopen"))
+    #expect(controller.phase == .ready)
+    controller.activateAction()
+    try await attach(controller)
+    #expect(old.isRetired && controller.bridge?.host !== old && !controller.degraded)
+    #expect(controller.actionTitle == "Hide" && controller.showsWebContent)
+    controller.hide()
+    await store.stop()
+  }
+  @Test func streamingParentRerendersKeepOneControllerForThePartIdentity() async throws {
+    let (app, store, message, part) = try await setup(lean: true)
+    _ = app
+    let pool = McpHostPool()
+    let state = McpStreamingRenderState(message: message)
+    let scene = try #require(
+      UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    window.rootViewController = UIHostingController(
+      rootView: McpStreamingRenderFixture(state: state, part: part, store: store, pool: pool))
+    window.isHidden = false
+    defer {
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+    try await wait { pool.debugCreatedControllers == 1 }
+    for index in 1...12 {
+      state.message.parts = [
+        .mcpApp(part), .text(.init(text: String(repeating: "Garden ", count: index))),
+      ]
+      window.layoutIfNeeded()
+      try await Task.sleep(for: .milliseconds(30))
+    }
+    #expect(pool.debugCreatedControllers == 1)
+    await store.stop()
+  }
   @Test func leanRequiresShowAndBackgroundMemoryAndCrashRequireReopen() async throws {
     let (app, store, message, part) = try await setup(lean: true)
     _ = app
@@ -75,9 +155,12 @@ import UIKit
     #expect(controller.phase == .hidden && controller.bridge == nil)
     controller.open()
     try await attach(controller)
-    pool.setActive(false)
+    let beforePeek = try #require(controller.bridge?.host)
+    pool.sceneChanged(.inactive)
+    #expect(pool.isActive && controller.bridge?.host === beforePeek && !beforePeek.isRetired)
+    pool.sceneChanged(.background)
     #expect(controller.phase == .closed && controller.bridge == nil)
-    pool.setActive(true)
+    pool.sceneChanged(.active)
     #expect(controller.bridge == nil)
     controller.open()
     try await attach(controller)
@@ -234,5 +317,20 @@ import UIKit
     #expect(await cancelled.value == false)
     presenter.didDismiss(requestID: id)
     await store.stop()
+  }
+}
+
+@MainActor @Observable private final class McpStreamingRenderState {
+  var message: WebMessage
+  init(message: WebMessage) { self.message = message }
+}
+private struct McpStreamingRenderFixture: View {
+  let state: McpStreamingRenderState
+  let part: McpAppPart
+  let store: ConsoleStore
+  let pool: McpHostPool
+  var body: some View {
+    ScrollView { McpAppPartView(part: part, message: state.message, store: store) }
+      .environment(\.mcpHostPool, pool)
   }
 }
