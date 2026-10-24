@@ -12,6 +12,8 @@
     case uncertain = "store-uncertain"
     case fidelityChat = "fidelity-chat"
     case conversationActions = "conversation-actions"
+    case organizeLong = "organize-long"
+    case organizeArchivedSearch = "organize-archived-search"
     case projectPage = "project-page"
     case projectSettings = "project-settings"
     case wakeNew = "wake-new"
@@ -66,11 +68,12 @@
     var isTranscript: Bool {
       rawValue.hasPrefix("conversation-") || self == .fidelityChat || self == .conversationActions
         || self == .tagMenu || self == .tagSettings || rawValue.hasPrefix("wake-")
+        || self == .organizeLong
     }
     var isOrganize: Bool {
       [
         .conversationActions, .projectPage, .projectSettings, .tagMenu, .tagSettings, .wakeNew,
-        .wakeOnce, .wakeWeekly, .wakeConflict,
+        .wakeOnce, .wakeWeekly, .wakeConflict, .organizeLong, .organizeArchivedSearch,
       ].contains(self)
     }
     var isFidelity: Bool {

@@ -112,7 +112,8 @@ import Testing
               .text == ComposerFixture.draftText)
         }
       case .fidelityChat, .fidelityDashboard, .conversationActions, .projectPage, .projectSettings,
-        .tagMenu, .tagSettings, .wakeNew, .wakeOnce, .wakeWeekly, .wakeConflict:
+        .tagMenu, .tagSettings, .wakeNew, .wakeOnce, .wakeWeekly, .wakeConflict, .organizeLong,
+        .organizeArchivedSearch:
         #expect(store.agents.map(\.label) == ["Atlas", "Grove"])
         #expect(
           store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.map(\.title) == [

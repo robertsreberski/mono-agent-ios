@@ -100,6 +100,13 @@
           catalogSection("Conversation rows") { RowSpecimens() }
           catalogSection("Section headers") {
             VStack(alignment: .leading, spacing: DesignSpacing.md) {
+              Section("Long organize menus") {
+                OrganizeMenuScroll(maximumHeight: 220) {
+                  ForEach(1...30, id: \.self) { value in
+                    OrganizeMenuRow("Label \(value)", systemImage: "tag") {}
+                  }
+                }
+              }
               Section("Wake schedules") {
                 WakeSummaryView(
                   state: "Active", sentence: "Every weekday at 09:00",

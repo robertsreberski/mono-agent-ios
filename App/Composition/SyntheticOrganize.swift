@@ -23,6 +23,49 @@
     }
     func response(_ request: URLRequest, theme: String) throws -> HTTPResponse {
       if thread == nil { thread = try ScreenFixture.bootstrap(theme: theme).threads[0] }
+      if wakeScenario == "organize-long", tags == nil {
+        let sample = try ScreenFixture.bootstrap(theme: theme)
+        tags = (1...30).map { index in
+          var value = sample.tags[0]
+          value.id = "label-\(index)"
+          value.name = String(format: "Label %02d", index)
+          return value
+        }
+        projects = (1...12).map { index in
+          var value = sample.projects[0]
+          value.id = "collection-\(index)"
+          value.name = String(format: "Collection %02d", index)
+          return value
+        }
+        thread?.tagIds = []
+        thread?.projectId = nil
+        thread?.projectName = nil
+      }
+      if wakeScenario == "organize-archived-search" {
+        var cold = thread!
+        cold.id = "cold-archived"
+        cold.title = "Archived cold note"
+        cold.archivedAt = ScreenFixture.stamp
+        if request.url?.path == "/api/v1/threads/search" {
+          let value: JSONValue = .object([
+            "hits": .array([
+              .object([
+                "thread": try TranscriptFixture.json(cold), "messageMatches": .number(0),
+                "titleMatch": .bool(true),
+              ])
+            ]), "truncated": .bool(false),
+          ])
+          return HTTPResponse(data: try JSONEncoder().encode(value))
+        }
+        if request.url?.path == "/api/v1/threads/cold-archived" {
+          let value: JSONValue = .object([
+            "thread": try TranscriptFixture.json(cold),
+            "messages": try TranscriptFixture.json(ScreenFixture.messages()),
+            "messagesNextCursor": .null,
+          ])
+          return HTTPResponse(data: try JSONEncoder().encode(value))
+        }
+      }
       if !wakeInitialized {
         wakeInitialized = true
         if let wakeScenario, wakeScenario.hasPrefix("wake-"), wakeScenario != "wake-new" {

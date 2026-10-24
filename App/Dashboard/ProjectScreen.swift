@@ -8,6 +8,7 @@ struct ProjectScreen: View {
   let store: ConsoleStore
   let sourceID: String
   let projectID: String
+  var selectable = false
   let navigate: (AppRoute?) -> Void
   @Environment(\.consoleTheme) private var theme
   @State private var editor: ProjectEditorRequest?
@@ -101,6 +102,7 @@ struct ProjectScreen: View {
             }
             LazyVStack(spacing: 0) {
               ForEach(page.threads, id: \.id) { thread in
+                let selected = selectable && store.selectedThreadID == thread.id
                 Button {
                   navigate(
                     .conversation(
@@ -111,8 +113,21 @@ struct ProjectScreen: View {
                     DashboardRows.recent(
                       thread, unread: store.isUnread(thread),
                       confirmed: store.isRunningConfirmed(threadID: thread.id),
-                      projects: store.projects, tags: store.tags, now: Date()))
-                }.buttonStyle(WebRowButtonStyle()).accessibilityIdentifier(
+                      projects: store.projects, tags: store.tags, now: Date())
+                  )
+                  .background {
+                    if selected {
+                      RoundedRectangle(cornerRadius: WebRadius.row).fill(
+                        WebColor.surfaceRaised.color
+                      ).webShadow(.small)
+                        .overlay(
+                          RoundedRectangle(cornerRadius: WebRadius.row).strokeBorder(
+                            WebColor.line.color, lineWidth: 1))
+                    }
+                  }
+                }.buttonStyle(WebRowButtonStyle()).accessibilityAddTraits(
+                  selected ? .isSelected : []
+                ).accessibilityIdentifier(
                   "project-member-\(thread.id)")
                 Rectangle().fill(WebColor.line.color).frame(height: 1)
               }

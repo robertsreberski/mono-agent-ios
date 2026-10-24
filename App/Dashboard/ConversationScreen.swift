@@ -143,9 +143,22 @@ struct ConversationScreen: View {
     } message: { request in
       Text(request.action.confirmation)
     }
-    .onChange(of: thread?.archivedAt) { old, new in if old != new { navigate(nil) } }
+    .onChange(of: archiveObservation) { old, new in
+      if let old, let new, old.threadID == new.threadID, old.archived != new.archived {
+        navigate(nil)
+      }
+    }
     .onChange(of: thread?.id) { old, new in if old != nil && new == nil { navigate(nil) } }
     .onChange(of: store.selectedBucket) { applyVisibility() }
+  }
+
+  private struct ArchiveObservation: Equatable {
+    let threadID: String
+    let archived: Bool
+  }
+  private var archiveObservation: ArchiveObservation? {
+    guard let threadID, let resolved = store.conversations[threadID]?.thread else { return nil }
+    return .init(threadID: resolved.id, archived: resolved.archivedAt != nil)
   }
 
   /// A conversation opens in its own bucket; a new conversation keeps the shelf on screen.
@@ -313,33 +326,39 @@ struct ConversationScreen: View {
       VStack(spacing: 0) {
         if let thread {
           if projectPicker {
-            OrganizeMenuRow("Projects", systemImage: "chevron.left") { projectPicker = false }
-            ForEach(
-              store.projects.filter { $0.sourceId == thread.sourceId && $0.archivedAt == nil },
-              id: \.id
-            ) { project in
-              OrganizeMenuRow(
-                project.name, systemImage: thread.projectId == project.id ? "checkmark" : "folder"
-              ) {
-                store.setConversationProject(threadID: thread.id, projectID: project.id)
-                actionsOpen = false
-              }.accessibilityIdentifier("assign-project-\(project.id)")
-            }
+            OrganizeMenuScroll {
+              OrganizeMenuRow("Projects", systemImage: "chevron.left") { projectPicker = false }
+              ForEach(
+                store.projects.filter { $0.sourceId == thread.sourceId && $0.archivedAt == nil },
+                id: \.id
+              ) { project in
+                OrganizeMenuRow(
+                  project.name, systemImage: thread.projectId == project.id ? "checkmark" : "folder"
+                ) {
+                  store.setConversationProject(threadID: thread.id, projectID: project.id)
+                  actionsOpen = false
+                }.accessibilityIdentifier("assign-project-\(project.id)")
+              }
+            }.accessibilityIdentifier("project-picker-scroll").disabled(
+              store.pendingConversationActions[thread.id] != nil)
           } else {
             OrganizeMenuRow(
               thread.projectId == nil ? "Add to project" : "Move to project", systemImage: "folder",
               detail: thread.projectId.flatMap { id in store.projects.first { $0.id == id }?.name }
             ) { projectPicker = true }
-            .accessibilityIdentifier("action-project")
+            .accessibilityIdentifier("action-project").disabled(
+              store.pendingConversationActions[thread.id] != nil)
             OrganizeMenuRow("New project from this chat", systemImage: "plus") {
               pendingProjectEditor = .init(sourceID: thread.sourceId, threadID: thread.id)
               actionsOpen = false
-            }.accessibilityIdentifier("action-new-project")
+            }.accessibilityIdentifier("action-new-project").disabled(
+              store.pendingConversationActions[thread.id] != nil)
             if thread.projectId != nil {
               OrganizeMenuRow("Remove from project", systemImage: "xmark") {
                 store.setConversationProject(threadID: thread.id, projectID: nil)
                 actionsOpen = false
-              }.accessibilityIdentifier("action-remove-project")
+              }.accessibilityIdentifier("action-remove-project").disabled(
+                store.pendingConversationActions[thread.id] != nil)
             }
 
             if thread.trigger == nil {
@@ -350,7 +369,8 @@ struct ConversationScreen: View {
               ) {
                 pendingWake = true
                 actionsOpen = false
-              }.accessibilityIdentifier("action-wake")
+              }.accessibilityIdentifier("action-wake").disabled(
+                store.pendingConversationActions[thread.id] != nil)
             }
             OrganizeMenuRow(
               thread.archivedAt == nil ? "Archive conversation" : "Restore conversation",
@@ -363,24 +383,25 @@ struct ConversationScreen: View {
                 store.restoreConversation(threadID: thread.id)
               }
             }
-            .accessibilityIdentifier("action-archive")
+            .accessibilityIdentifier("action-archive").disabled(
+              store.pendingConversationActions[thread.id] != nil)
             if store.canDeleteConversation(thread) {
               OrganizeMenuRow("Permanently delete", systemImage: "trash", destructive: true) {
                 actionsOpen = false
                 pendingAction = .delete
               }
-              .accessibilityIdentifier("action-delete")
+              .accessibilityIdentifier("action-delete").disabled(
+                store.conversationDeletionPending(thread.id))
             }
           }
         }
       }
-      .disabled(
-        !store.canOrganize || threadID.flatMap { store.pendingConversationActions[$0] } != nil
-      )
+      .disabled(!store.canOrganize)
       .padding(4)
-      .frame(idealWidth: 280)
+      .frame(width: 280)
 
       .presentationCompactAdaptation(.popover)
+      .task { if let thread { await store.refreshOrganizeLabels(sourceID: thread.sourceId) } }
       .onDisappear {
         // Present only after the toolbar popover releases its presentation owner (iPad).
         if pendingWake, let threadID {

@@ -97,7 +97,9 @@ struct DashboardShell: View {
 
   @ViewBuilder private func dashboard(selectable: Bool) -> some View {
     if selectable, case .project(_, let source, let id) = projectDestination ?? route {
-      ProjectScreen(store: store, sourceID: source, projectID: id, navigate: navigateFromProject)
+      ProjectScreen(
+        store: store, sourceID: source, projectID: id, selectable: true,
+        navigate: navigateFromProject)
     } else {
       DashboardView(
         model: model, store: store, route: $route, selectable: selectable,

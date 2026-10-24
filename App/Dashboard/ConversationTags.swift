@@ -37,7 +37,7 @@ struct ConversationTags: View {
       )
       .accessibilityIdentifier("conversation-tags")
       .popover(isPresented: $open, arrowEdge: .top) {
-        VStack(spacing: 0) {
+        OrganizeMenuScroll {
           if editing {
             OrganizeMenuRow("Edit tags", systemImage: "chevron.left") { editing = false }
           }
@@ -85,8 +85,9 @@ struct ConversationTags: View {
             }
           }
         }
+        .accessibilityIdentifier("tag-picker-scroll")
         .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
-        .padding(4).frame(idealWidth: 260)
+        .padding(4).frame(width: 280)
         .presentationCompactAdaptation(.popover)
         .task { await store.refreshOrganizeLabels(sourceID: thread.sourceId) }
         .onDisappear {

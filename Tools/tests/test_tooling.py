@@ -152,7 +152,7 @@ class ToolingTests(unittest.TestCase):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
         connection = {(s, a) for s, a, v in keys
-                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-"))
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-"))
                       and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
@@ -160,6 +160,13 @@ class ToolingTests(unittest.TestCase):
                 self.assertIn((f"design-catalog-{theme}", appearance, None), keys)
         self.assertTrue(any(entry["textSize"] != "standard" and entry["scenario"].startswith("design-catalog") for entry in MATRIX))
         self.assertTrue(any(entry["transparency"] != "system" for entry in MATRIX))
+
+    def test_export_classifies_organize_surfaces(self):
+        index = self.export(family="iPhone")
+        for prefix, surface in (("project-", "project"), ("tag-", "tag"), ("wake-", "wake schedule"), ("organize-", "conversation")):
+            rows = [item for item in index if item["scenario"].startswith(prefix)]
+            self.assertTrue(rows)
+            self.assertTrue(all(item["surface"] == surface for item in rows))
 
     def test_matrix_covers_organize_surfaces(self):
         keys = {(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX}

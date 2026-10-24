@@ -1260,6 +1260,38 @@
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "organize-long",
+      "appearance": "light",
+      "variant": "tagsax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "organize-long",
+      "appearance": "light",
+      "variant": "projectsax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "organize-long",
+      "appearance": "dark",
+      "variant": "tagsax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "organize-long",
+      "appearance": "dark",
+      "variant": "projectsax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

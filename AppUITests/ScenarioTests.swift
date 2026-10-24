@@ -4,6 +4,81 @@ import XCTest
 
 @MainActor
 final class ScenarioTests: XCTestCase {
+  private func swipePicker(_ app: XCUIApplication, _ id: String) {
+    let menu = element(app, id)
+    XCTAssertGreaterThan(menu.frame.width, 0)
+    XCTAssertGreaterThan(menu.frame.height, 0)
+    // Popover UIScrollViews report an empty AX visible-frame on this runtime.
+    // A real finger drag inside the measured viewport still exercises native scrolling.
+    menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).press(
+      forDuration: 0.05,
+      thenDragTo: menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+  }
+
+  func testArchivedSearchResultOpensColdWithoutNavigatingAway() {
+    let app = launch("organize-archived-search")
+    let search = app.textFields["search-field"]
+    XCTAssertTrue(search.waitForExistence(timeout: 5))
+    search.tap()
+    search.typeText("Archived cold note")
+    let hit = app.buttons["search-row-cold-archived"]
+    XCTAssertTrue(hit.waitForExistence(timeout: 5))
+    hit.tap()
+    let title = app.buttons["rename-conversation"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    XCTAssertEqual(title.label, "Archived cold note")
+    app.buttons["conversation-actions"].tap()
+    XCTAssertTrue(app.buttons["action-archive"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["action-archive"].label, "Restore conversation")
+  }
+  func testLongTagAndProjectPickersAtAccessibilitySize() {
+    let app = launch("organize-long", accessibilityText: true)
+    func reach(_ id: String, in menu: String) -> XCUIElement {
+      let target = app.buttons[id]
+      for _ in 0..<18 where !target.isHittable { self.swipePicker(app, menu) }
+      XCTAssertTrue(target.isHittable)
+      return target
+    }
+    app.buttons["conversation-tags"].tap()
+    reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
+    XCTAssertEqual(app.buttons["conversation-tags"].value as? String, "Label 30")
+    app.buttons["conversation-tags"].tap()
+    reach("edit-tags", in: "tag-picker-scroll").tap()
+    reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
+    XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+    app.buttons["Cancel"].tap()
+    app.buttons["conversation-tags"].tap()
+    reach("new-tag", in: "tag-picker-scroll").tap()
+    XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+    app.buttons["Cancel"].tap()
+    app.buttons["conversation-actions"].tap()
+    app.buttons["action-project"].tap()
+    reach("assign-project-collection-12", in: "project-picker-scroll").tap()
+    XCTAssertTrue(app.staticTexts["Collection 12"].waitForExistence(timeout: 5))
+  }
+
+  func testTagLongMenuLight() { captureLongRegistry("light", projects: false) }
+  func testTagLongMenuDark() { captureLongRegistry("dark", projects: false) }
+  func testProjectLongPickerLight() { captureLongRegistry("light", projects: true) }
+  func testProjectLongPickerDark() { captureLongRegistry("dark", projects: true) }
+  private func captureLongRegistry(_ appearance: String, projects: Bool) {
+    capture(
+      "organize-long", appearance, accessibilityText: true, expect: ["conversation-actions"],
+      variant: projects ? "projectsax3" : "tagsax3"
+    ) { app in
+      if projects {
+        app.buttons["conversation-actions"].tap()
+        app.buttons["action-project"].tap()
+      } else {
+        app.buttons["conversation-tags"].tap()
+      }
+      let target = app.buttons[projects ? "assign-project-collection-12" : "new-tag"]
+      let menu = projects ? "project-picker-scroll" : "tag-picker-scroll"
+      for _ in 0..<18 where !target.isHittable { self.swipePicker(app, menu) }
+      XCTAssertTrue(target.isHittable)
+    }
+  }
+
   func testWakeNewLight() { captureWake("wake-new", "light") }
   func testWakeNewDark() { captureWake("wake-new", "dark") }
   func testWakeOnceLight() { captureWake("wake-once", "light") }
@@ -67,6 +142,7 @@ final class ScenarioTests: XCTestCase {
     scrollWake(app, to: compact)
     compact.tap()
     saveWake(app)
+    XCTAssertTrue(element(app, "wake-editor").waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
     openWake(app)
     let toggle = app.buttons["wake-toggle"]
@@ -84,6 +160,14 @@ final class ScenarioTests: XCTestCase {
     delete.tap()
     app.alerts.buttons["Delete"].tap()
     XCTAssertTrue(app.buttons["conversation-actions"].waitForExistence(timeout: 5))
+    XCTAssertTrue(element(app, "wake-editor").waitForNonExistence(timeout: 5))
+    openWake(app)
+    XCTAssertTrue(
+      app.descendants(matching: .any).matching(
+        NSPredicate(format: "label BEGINSWITH %@", "New schedule")
+      ).firstMatch.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["delete-wake"].exists)
+    XCTAssertFalse(app.buttons["wake-toggle"].exists)
   }
   func testWakeChangedElsewhereLoadsLatestAndKeepsEditorOpen() {
     let app = launch("wake-conflict")
@@ -132,11 +216,15 @@ final class ScenarioTests: XCTestCase {
     title.tap()
     let previous = title.value as? String ?? ""
     title.typeText(
-      String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count) + "Research")
+      String(repeating: XCUIKeyboardKey.delete.rawValue, count: previous.count)
+        + "Orchard outline updated")
     app.alerts.buttons["Save"].tap()
     XCTAssertTrue(
-      app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Research")).firstMatch
-        .waitForExistence(timeout: 5))
+      app.buttons.matching(
+        NSPredicate(
+          format: "identifier == %@ AND label == %@", "rename-conversation",
+          "Orchard outline updated")
+      ).firstMatch.waitForExistence(timeout: 5))
     app.buttons["context-display"].tap()
     XCTAssertTrue(app.buttons["compact-context"].waitForExistence(timeout: 5))
     app.buttons["compact-context"].tap()
@@ -188,7 +276,19 @@ final class ScenarioTests: XCTestCase {
         XCTAssertTrue(self.scrollTo(app, "project-row-garden"))
         app.buttons["project-row-garden"].tap()
         XCTAssertTrue(self.element(app, "project-page").waitForExistence(timeout: 5))
-        if settings { app.buttons["project-settings-button"].tap() }
+        if settings {
+          app.buttons["project-settings-button"].tap()
+        } else if UIDevice.current.userInterfaceIdiom == .pad {
+          let row = app.buttons["project-member-t-atlas-launch"]
+          XCTAssertTrue(row.waitForExistence(timeout: 5))
+          row.tap()
+          XCTAssertEqual(
+            XCTWaiter.wait(
+              for: [
+                XCTNSPredicateExpectation(
+                  predicate: NSPredicate(format: "selected == true"), object: row)
+              ], timeout: 5), .completed)
+        }
       }
       if settings || create {
         XCTAssertTrue(app.textFields["project-name"].waitForExistence(timeout: 5))
@@ -205,6 +305,12 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(element(app, "conversation-header").waitForExistence(timeout: 5))
     if UIDevice.current.userInterfaceIdiom == .pad {
       XCTAssertTrue(app.buttons["project-settings-button"].exists)
+      XCTAssertEqual(
+        XCTWaiter.wait(
+          for: [
+            XCTNSPredicateExpectation(
+              predicate: NSPredicate(format: "selected == true"), object: row)
+          ], timeout: 5), .completed)
     } else {
       app.buttons["conversation-back"].tap()
       XCTAssertTrue(app.buttons["project-settings-button"].waitForExistence(timeout: 5))
@@ -243,7 +349,10 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(name.exists)
     app.buttons["delete-project"].tap()
     app.alerts.buttons["Delete project"].tap()
+    XCTAssertTrue(self.element(app, "project-settings").waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["new-project"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["project-row-project-created-1"].exists)
+    XCTAssertTrue(app.buttons["project-row-garden"].exists)
   }
 
   func testTagMenuLight() { captureTags("light") }
@@ -329,7 +438,12 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(name.exists)
     app.buttons["delete-tag"].tap()
     app.alerts.buttons["Delete tag"].tap()
+    XCTAssertTrue(self.element(app, "tag-settings").waitForNonExistence(timeout: 5))
     XCTAssertTrue(trigger.waitForExistence(timeout: 5))
+    XCTAssertEqual(trigger.value as? String, "Research")
+    trigger.tap()
+    XCTAssertTrue(app.buttons["new-tag"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["tag-menu-tag-created-1"].exists)
   }
 
   func testFidelityChatLight() {
@@ -525,12 +639,17 @@ final class ScenarioTests: XCTestCase {
     app.descendants(matching: .any)[id].firstMatch
   }
 
-  private func launch(_ scenario: String) -> XCUIApplication {
+  private func launch(_ scenario: String, accessibilityText: Bool = false) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = [
       "--scenario", scenario, "--reset-test-data", "-AppleLanguages", "(en)", "-AppleLocale",
       "en_US",
     ]
+    if accessibilityText {
+      app.launchArguments += [
+        "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+      ]
+    }
     app.launch()
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 15))
     return app
