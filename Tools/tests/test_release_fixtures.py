@@ -34,6 +34,13 @@ class ReleaseFixtureTests(unittest.TestCase):
     def test_clean_binary_requires_both_symbol_and_string_checks(self):
         self.check()
 
+    def test_performance_probe_markers_are_rejected(self):
+        for tool in ("nm", "strings"):
+            for leak in (b"--performance-probe", b"--performance-streaming", b"--performance-dashboard-refresh",
+                         b"PERF_WINDOW", b"PerformanceProbe", b"mainCPU="):
+                with self.subTest(tool=tool, leak=leak), self.assertRaises(SystemExit):
+                    self.check(tool, leak)
+
     def test_fixture_symbol_is_rejected(self):
         with self.assertRaises(SystemExit):
             self.check("nm")
