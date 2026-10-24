@@ -8,8 +8,41 @@
     var thread: WebThread?
     var deleted = false
     var projects: [WebProject]?
+    var tags: [WebTag]?
     func response(_ request: URLRequest, theme: String) throws -> HTTPResponse {
       if thread == nil { thread = try ScreenFixture.bootstrap(theme: theme).threads[0] }
+      if tags == nil { tags = try ScreenFixture.bootstrap(theme: theme).tags }
+      if request.url?.path == "/api/v1/tags", request.httpMethod == "POST",
+        let data = request.httpBody
+      {
+        let input = try JSONDecoder().decode(ApiCreateTag.self, from: data)
+        var value = try ScreenFixture.bootstrap(theme: theme).tags[0]
+        value.id = "tag-created-\(tags!.count)"
+        value.name = input.name
+        value.sourceId = input.sourceId
+        value.color = input.color ?? "default"
+        tags?.append(value)
+        return HTTPResponse(data: try JSONEncoder().encode(["tag": value]), status: 201)
+      }
+      if let path = request.url?.path, path.hasPrefix("/api/v1/tags/"),
+        let index = tags?.firstIndex(where: { $0.id == request.url?.lastPathComponent })
+      {
+        if request.httpMethod == "DELETE" {
+          let value = tags!.remove(at: index)
+          thread?.tagIds.removeAll { $0 == value.id }
+          return HTTPResponse(data: Data(), status: 204)
+        }
+        if request.httpMethod == "PATCH", let data = request.httpBody {
+          let input = try JSONDecoder().decode(ApiPatchTag.self, from: data)
+          if let name = input.name { tags?[index].name = name }
+          if let color = input.color { tags?[index].color = color }
+          tags?[index].revision += 1
+          return HTTPResponse(data: try JSONEncoder().encode(["tag": tags![index]]))
+        }
+      }
+      if request.url?.path == "/api/v1/tags" {
+        return HTTPResponse(data: try JSONEncoder().encode(["tags": tags!]))
+      }
       if projects == nil { projects = try ScreenFixture.bootstrap(theme: theme).projects }
       if request.url?.path == "/api/v1/projects", request.httpMethod == "POST",
         let data = request.httpBody
@@ -97,6 +130,7 @@
         if request.httpMethod == "PATCH", let data = request.httpBody {
           let patch = try JSONDecoder().decode(ApiPatchThread.self, from: data)
           if let title = patch.title { thread?.title = title }
+          if let ids = patch.tagIds { thread?.tagIds = ids }
           switch patch.projectId {
           case .omitted: break
           case .null:

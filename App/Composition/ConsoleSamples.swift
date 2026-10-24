@@ -14,6 +14,8 @@
     case conversationActions = "conversation-actions"
     case projectPage = "project-page"
     case projectSettings = "project-settings"
+    case tagMenu = "tag-menu"
+    case tagSettings = "tag-settings"
     case fidelityDashboard = "fidelity-dashboard"
     case dashboardPopulated = "dashboard-populated"
     case dashboardEmpty = "dashboard-empty"
@@ -59,8 +61,11 @@
 
     var isTranscript: Bool {
       rawValue.hasPrefix("conversation-") || self == .fidelityChat || self == .conversationActions
+        || self == .tagMenu || self == .tagSettings
     }
-    var isOrganize: Bool { [.conversationActions, .projectPage, .projectSettings].contains(self) }
+    var isOrganize: Bool {
+      [.conversationActions, .projectPage, .projectSettings, .tagMenu, .tagSettings].contains(self)
+    }
     var isFidelity: Bool {
       self == .fidelityChat || self == .fidelityDashboard || isOrganize
     }

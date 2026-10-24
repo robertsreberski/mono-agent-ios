@@ -136,7 +136,7 @@ struct ProjectScreen: View {
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("project-page")
     .task(id: projectID) {
-      await store.select(sourceID: sourceID)
+      if store.selectedBucket?.sourceID != sourceID { await store.select(sourceID: sourceID) }
       await store.loadProjectMembers(id: projectID)
     }
     .sheet(item: $editor) { ProjectSettings(store: store, request: $0) }

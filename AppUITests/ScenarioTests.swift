@@ -95,6 +95,21 @@ final class ScenarioTests: XCTestCase {
     }
   }
 
+  func testProjectMemberKeepsProjectNavigation() {
+    let app = launch("project-page")
+    app.buttons["project-row-garden"].tap()
+    let row = app.buttons["project-member-t-atlas-launch"]
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    row.tap()
+    XCTAssertTrue(element(app, "conversation-header").waitForExistence(timeout: 5))
+    if UIDevice.current.userInterfaceIdiom == .pad {
+      XCTAssertTrue(app.buttons["project-settings-button"].exists)
+    } else {
+      app.buttons["conversation-back"].tap()
+      XCTAssertTrue(app.buttons["project-settings-button"].waitForExistence(timeout: 5))
+    }
+  }
+
   func testProjectCreateEditAndDeleteCancelConfirm() {
     let app = launch("project-settings")
     app.buttons["new-project"].tap()
@@ -128,6 +143,92 @@ final class ScenarioTests: XCTestCase {
     app.buttons["delete-project"].tap()
     app.alerts.buttons["Delete project"].tap()
     XCTAssertTrue(app.buttons["new-project"].waitForExistence(timeout: 5))
+  }
+
+  func testTagMenuLight() { captureTags("light") }
+  func testTagMenuDark() { captureTags("dark") }
+  func testTagSettingsLight() { captureTags("light", settings: true) }
+  func testTagSettingsDark() { captureTags("dark", settings: true) }
+  func testTagCreateLight() { captureTags("light", create: true) }
+  func testTagCreateDark() { captureTags("dark", create: true) }
+  private func captureTags(_ appearance: String, settings: Bool = false, create: Bool = false) {
+    capture(
+      create || settings ? "tag-settings" : "tag-menu", appearance,
+      expect: ["conversation-tags"], variant: create ? "create" : settings ? "edit" : nil
+    ) { app in
+      app.buttons["conversation-tags"].tap()
+      XCTAssertTrue(app.buttons["tag-menu-research"].waitForExistence(timeout: 5))
+      if create { app.buttons["new-tag"].tap() }
+      if settings {
+        app.buttons["edit-tags"].tap()
+        app.buttons["tag-menu-research"].tap()
+      }
+      if settings || create {
+        XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+      }
+    }
+  }
+
+  func testDashboardTagMenuEntry() {
+    let app = launch("tag-menu")
+    returnToDashboard(app)
+    let row = app.buttons["recent-row-t-atlas-launch"]
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    row.press(forDuration: 1)
+    let tags = app.buttons.matching(
+      NSPredicate(
+        format: "label == %@ AND identifier != %@", "Conversation tags", "conversation-tags")
+    ).firstMatch
+    XCTAssertTrue(tags.waitForExistence(timeout: 5))
+    tags.tap()
+    app.buttons["New tag…"].tap()
+    XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
+  }
+
+  func testTagToggleCreateEditAndDeleteCancelConfirm() {
+    let app = launch("tag-menu")
+    let trigger = app.buttons["conversation-tags"]
+    trigger.tap()
+    app.buttons["tag-menu-research"].tap()
+    let noTags = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "No tags"), object: trigger)
+    XCTAssertEqual(XCTWaiter.wait(for: [noTags], timeout: 5), .completed)
+    trigger.tap()
+    app.buttons["tag-menu-research"].tap()
+    let research = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "Research"), object: trigger)
+    XCTAssertEqual(XCTWaiter.wait(for: [research], timeout: 5), .completed)
+    trigger.tap()
+    app.buttons["new-tag"].tap()
+    let name = app.textFields["tag-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText("Planning")
+    app.buttons["Blue tag color"].tap()
+    app.buttons["organize-save"].tap()
+    XCTAssertTrue(trigger.waitForExistence(timeout: 5))
+    trigger.tap()
+    app.buttons["edit-tags"].tap()
+    XCTAssertTrue(app.buttons["tag-menu-tag-created-1"].waitForExistence(timeout: 5))
+    app.buttons["tag-menu-tag-created-1"].tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.tap()
+    name.typeText(" notes")
+    app.buttons["organize-save"].tap()
+    trigger.tap()
+    app.buttons["edit-tags"].tap()
+    app.buttons["tag-menu-tag-created-1"].tap()
+    XCTAssertTrue(app.buttons["delete-tag"].waitForExistence(timeout: 5))
+    app.buttons["delete-tag"].tap()
+    XCTAssertTrue(
+      app.alerts.staticTexts[
+        "Delete this tag from all conversations? Conversations are kept. This cannot be undone."
+      ].exists)
+    app.alerts.buttons["Cancel"].tap()
+    XCTAssertTrue(name.exists)
+    app.buttons["delete-tag"].tap()
+    app.alerts.buttons["Delete tag"].tap()
+    XCTAssertTrue(trigger.waitForExistence(timeout: 5))
   }
 
   func testFidelityChatLight() {

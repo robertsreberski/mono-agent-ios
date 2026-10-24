@@ -224,23 +224,33 @@ extension ConsoleStore {
   }
   func refreshRegistries() async {
     guard let source = selectedBucket?.sourceID else { return }
+    await refreshOrganizeLabels(sourceID: source)
+  }
+  public func refreshOrganizeLabels(sourceID: String) async {
+    guard canOrganize else { return }
     let generation = epoch
+    let selected = selection
     do {
       let tagsBegan = observation
-      let tagResult = try await api.tags(query: .init(sourceId: source), etag: nil)
-      guard epoch == generation, source == selectedBucket?.sourceID, !Task.isCancelled else {
-        return
+      let tagResult = try await api.tags(query: .init(sourceId: sourceID), etag: nil)
+      try checkOrganizeResponse(epoch: generation, selection: selected)
+      if observation == tagsBegan, case .modified(let value, _) = tagResult {
+        tags =
+          tags.filter { $0.sourceId != sourceID } + value.tags.filter { $0.sourceId == sourceID }
       }
-      if observation == tagsBegan, case .modified(let value, _) = tagResult { tags = value.tags }
       let projectsBegan = observation
-      let projectResult = try await api.projects(query: .init(sourceId: source), etag: nil)
-      guard epoch == generation, source == selectedBucket?.sourceID, !Task.isCancelled else {
-        return
-      }
+      let projectResult = try await api.projects(query: .init(sourceId: sourceID), etag: nil)
+      try checkOrganizeResponse(epoch: generation, selection: selected)
       if observation == projectsBegan, case .modified(let value, _) = projectResult {
-        projects = value.projects
+        projects =
+          projects.filter { $0.sourceId != sourceID }
+          + value.projects.filter { $0.sourceId == sourceID }
       }
-    } catch { if epoch == generation { errorMessage = "Tags and projects may be stale." } }
+    } catch {
+      if canOrganize, epoch == generation, selection == selected, !(error is CancellationError) {
+        errorMessage = "Tags and projects may be stale."
+      }
+    }
   }
   func patchSummary(_ incoming: WebThread, listed: Bool = false) {
     guard acceptSummary(incoming) else { return }

@@ -35,7 +35,8 @@ public enum ManualCompactionState: Sendable, Equatable {
   case failed
   case rejected
 
-  public var text: String {
+  public var text: String { statusText(measuredModel: nil) }
+  public func statusText(measuredModel: String?) -> String {
     switch self {
     case .rejected: "Compaction failed."
     case .pending: "Summarizing earlier turns…"
@@ -50,7 +51,7 @@ public enum ManualCompactionState: Sendable, Equatable {
         }
       case "skipped":
         result.reason == "model_changed"
-          ? "Switch back to this conversation's model to compact this session."
+          ? "Switch back to \(measuredModel ?? "this conversation's model") to compact this session."
           : "Nothing to compact yet."
       default: "Compaction failed."
       }
@@ -76,11 +77,12 @@ extension ConsoleStore {
   }
 
   public func canCompactConversation(_ thread: WebThread) -> Bool {
-    canOrganize && thread.archivedAt == nil && thread.trigger == nil
-      && thread.runState.status != "running" && thread.runState.status != "queued"
+    canOrganize && thread.archivedAt == nil && thread.trigger?.kind != "cron" && thread.canSend
+      && thread.runState.status != "running"
       && thread.compaction?.status != "running"
       && manualCompactions[thread.id] != .pending
       && agents.first(where: { $0.sourceId == thread.sourceId })?.supportsManualCompaction == true
+      && agents.first(where: { $0.sourceId == thread.sourceId })?.status != "offline"
   }
 
   public func requestConversationAction(_ action: ConversationAction, threadID: String) {
@@ -193,6 +195,11 @@ extension ConsoleStore {
         }
       }
       store.scheduleCache()
+      if body.archived != nil, store.selectedThreadID == threadID {
+        store.selectedThreadID = nil
+        store.selection &+= 1
+        store.visible = false
+      }
     }
   }
 

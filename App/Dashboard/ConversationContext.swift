@@ -50,6 +50,7 @@ struct ConversationContextView: View {
     }
     return content
   }
+  @Environment(\.consoleTheme) private var theme
   @State private var loading = false
   @State private var failed = false
   var body: some View {
@@ -73,10 +74,13 @@ struct ConversationContextView: View {
             || state.thread.compaction?.status == "running"
           HStack(spacing: 12) {
             Text(
-              store.manualCompactions[state.thread.id]?.text
-                ?? (busy
-                  ? "Summarizing earlier turns…"
-                  : !store.canCompactConversation(state.thread)
+              busy
+                ? "Summarizing earlier turns…"
+                : store.manualCompactions[state.thread.id]?.statusText(
+                  measuredModel: UsagePresentation.context(
+                    messages: state.messages, thread: state.thread
+                  ).model)
+                  ?? (!store.canCompactConversation(state.thread)
                     ? "Available when this turn finishes."
                     : "Summarizes earlier turns to free space.")
             )
@@ -85,7 +89,8 @@ struct ConversationContextView: View {
             Button(busy ? "Compacting…" : "Compact") {
               store.compactConversation(threadID: state.thread.id)
             }
-            .webQuietPill().disabled(!store.canCompactConversation(state.thread) || busy)
+            .buttonStyle(.glassProminent).tint(theme.palette.accent.color)
+            .disabled(!store.canCompactConversation(state.thread) || busy)
             .accessibilityIdentifier("compact-context")
           }
         }

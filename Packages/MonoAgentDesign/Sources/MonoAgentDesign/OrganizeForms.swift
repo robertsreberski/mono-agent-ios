@@ -6,6 +6,7 @@ public struct OrganizeSheetHeader: View {
   let saving: Bool
   let canSave: Bool
   let cancel: () -> Void
+  @Environment(\.consoleTheme) private var theme
   let save: () -> Void
   public init(
     _ title: String, saving: Bool, canSave: Bool, cancel: @escaping () -> Void,
@@ -19,11 +20,13 @@ public struct OrganizeSheetHeader: View {
   }
   public var body: some View {
     HStack(spacing: 12) {
-      Button("Cancel", action: cancel).foregroundStyle(WebColor.textSoft.color)
+      Button("Cancel", action: cancel).buttonStyle(.glass).foregroundStyle(WebColor.textSoft.color)
       Spacer(minLength: 0)
       Text(title).webFont(.sheetTitle).accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)
-      Button(saving ? "Saving…" : "Save", action: save).disabled(!canSave || saving)
+      Button(saving ? "Saving…" : "Save", action: save)
+        .buttonStyle(.glassProminent).tint(theme.palette.accent.color)
+        .foregroundStyle(theme.palette.onAccent.color).disabled(!canSave || saving)
         .accessibilityIdentifier("organize-save")
     }
     .webFont(.system).frame(minHeight: 52).padding(.horizontal, 17)
@@ -52,7 +55,7 @@ public struct LabelPalette: View {
       Button {
         selection = color
       } label: {
-        RoundedRectangle(cornerRadius: 8).fill(color.tint(in: theme).color)
+        RoundedRectangle(cornerRadius: 8).fill(color.tint(in: theme).color.opacity(0.5))
           .overlay {
             if color == selection {
               Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold))
@@ -82,7 +85,7 @@ public struct LabelPalette: View {
         LabelPalette(
           selection: .constant(.blue), colors: [.standard, .blue, .purple, .amber, .rose],
           kind: "project")
-      }.background(WebColor.surfaceRaised.color)
+      }
     }
   }
 #endif

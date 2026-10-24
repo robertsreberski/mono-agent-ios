@@ -1142,6 +1142,52 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "create"
+    },
+    {
+      "scenario": "tag-menu",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "tag-menu",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "tag-settings",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "edit"
+    },
+    {
+      "scenario": "tag-settings",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "edit"
+    },
+    {
+      "scenario": "tag-settings",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "create"
+    },
+    {
+      "scenario": "tag-settings",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "create"
     }
   ]
 }

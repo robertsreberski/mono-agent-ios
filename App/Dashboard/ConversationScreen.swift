@@ -255,15 +255,10 @@ struct ConversationScreen: View {
       if let project {
         ProjectBadge(project.name, color: LabelColor(serverValue: project.color))
       }
-      if project != nil && !tags.isEmpty {
+      if project != nil {
         Text("·").webFont(.breadcrumb).foregroundStyle(WebColor.textMuted.color)
       }
-      ForEach(tags.prefix(2), id: \.id) { tag in
-        TagBadge(tag.name, color: LabelColor(serverValue: tag.color))
-          .padding(.horizontal, 8)
-          .frame(minHeight: 20)
-          .background(WebColor.surfaceHover.color, in: Capsule())
-      }
+      if let thread { ConversationTags(store: store, thread: thread) }
       // The last reported route (model · effort) the old header carried, quietly.
       if let route = knownRoute {
         if project != nil || !tags.isEmpty {
@@ -369,7 +364,7 @@ struct ConversationScreen: View {
       )
       .padding(4)
       .frame(idealWidth: 280)
-      .background(WebColor.surfaceRaised.color)
+
       .presentationCompactAdaptation(.popover)
       .onDisappear {
         // Present only after the toolbar popover releases its presentation owner (iPad).

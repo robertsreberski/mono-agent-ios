@@ -50,7 +50,7 @@ struct ProjectSettings: View {
               TextField("Project name", text: $name).accessibilityIdentifier("project-name")
                 .disabled(created != nil)
                 .padding(12).background(
-                  WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 8))
+                  WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
             }
             VStack(alignment: .leading, spacing: 8) {
               Eyebrow("Color")
@@ -70,7 +70,9 @@ struct ProjectSettings: View {
                 axis: .vertical
               )
               .lineLimit(5...10).padding(12)
-              .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 8))
+              .background(
+                WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8)
+              )
               .accessibilityLabel("Project context").accessibilityIdentifier("project-context")
               Text(
                 "Prepended to every conversation in this project. Existing conversations pick it up on their next turn."
@@ -87,7 +89,8 @@ struct ProjectSettings: View {
                   destructive: true
                 ) { store.requestProjectConfirmation(id: project.id) }
                 .accessibilityIdentifier("delete-project")
-              }.background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 8))
+              }.background(
+                WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
               Text(
                 "Created \(createdLabel(project.createdAt)) · \(store.agents.first { $0.sourceId == request.sourceID }?.label ?? "agent")"
               )
@@ -102,7 +105,8 @@ struct ProjectSettings: View {
         .webFont(.system).padding(17).disabled(saving)
       }
     }
-    .background(WebColor.surfaceRaised.color).presentationDragIndicator(.visible)
+    .presentationDragIndicator(.visible)
+    .presentationDetents([.height(editing ? 680 : 540), .large])
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("project-settings")
     .onAppear {

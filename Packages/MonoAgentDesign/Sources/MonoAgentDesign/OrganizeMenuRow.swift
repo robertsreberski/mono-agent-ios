@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import SwiftUI
 
-/// Web conversation/tag/project menu row. Opaque content, never a glass card.
+/// Web conversation/tag/project menu row. The system popover owns its material.
 public struct OrganizeMenuRow: View {
   let title: String
   let systemImage: String
@@ -50,7 +50,7 @@ public struct OrganizeMenuRow: View {
         OrganizeMenuRow("Archive conversation", systemImage: "archivebox") {}
         OrganizeMenuRow("Permanently delete", systemImage: "trash", destructive: true) {}
       }
-      .padding(4).background(WebColor.surfaceRaised.color)
+      .padding(4)
     }
   }
 #endif

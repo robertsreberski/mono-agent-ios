@@ -93,7 +93,8 @@ import Testing
             store.draft(sourceID: DashboardFixture.atlas, threadID: DashboardFixture.openThreadID)?
               .text == ComposerFixture.draftText)
         }
-      case .fidelityChat, .fidelityDashboard, .conversationActions, .projectPage, .projectSettings:
+      case .fidelityChat, .fidelityDashboard, .conversationActions, .projectPage, .projectSettings,
+        .tagMenu, .tagSettings:
         #expect(store.agents.map(\.label) == ["Atlas", "Grove"])
         #expect(
           store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.map(\.title) == [
