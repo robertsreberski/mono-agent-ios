@@ -313,12 +313,12 @@ public struct JobRowDisclosure<Glyph: View, Title: View, Meta: View, Content: Vi
               .fixedSize(horizontal: false, vertical: true)
             meta
               .webFont(.jobMeta)
-              .foregroundStyle(WebColor.textMuted.color)
+              .foregroundStyle(WebGlass.textMuted.color)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
           Image(systemName: "chevron.down")
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(WebColor.textMuted.color)
+            .foregroundStyle(WebGlass.textMuted.color)
             .rotationEffect(.degrees(expanded ? 180 : 0))
             .frame(width: 14, height: 18)
             .accessibilityHidden(true)
@@ -347,31 +347,32 @@ public struct JobRowDisclosure<Glyph: View, Title: View, Meta: View, Content: Vi
     }
     .background {
       if expanded {
-        shape.fill(openFill ?? WebColor.surfaceSubtle.color.opacity(0.8))
+        // The shelf is glass: an open row takes the quiet group ink, never a solid surface.
+        shape.fill(openFill ?? WebGlass.groupFill.color)
       }
     }
   }
 }
 
-/// Job row press feedback: `--surface-hover` at 60% (web hover), never a system highlight.
+/// Job row press feedback: the translucent selection ink (web hover), never a system highlight.
 struct JobRowPressStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label.background {
       if configuration.isPressed {
         RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
-          .fill(WebColor.surfaceHover.color.opacity(0.6))
+          .fill(WebGlass.selectedFill.color)
       }
     }
   }
 }
 
 /// `.process-job-output` / `.process-job-response`: mono 11/1.55 soft text in a bounded, scrolling
-/// box (app-bg 55% into surface, 1 px line, radius 8).
+/// box (radius 8). It lives in the glass job shelf, so the web app-bg/surface fill becomes the
+/// translucent group ink with a hairline edge.
 public struct JobOutputBox: View {
   private let text: String
   private let maxHeight: CGFloat
   private let prose: Bool
-  @Environment(\.consoleTheme) private var theme
 
   public init(_ text: String, maxHeight: CGFloat = 168, prose: Bool = false) {
     self.text = text
@@ -393,12 +394,8 @@ public struct JobOutputBox: View {
     .scrollBounceBehavior(.basedOnSize)
     .frame(maxHeight: maxHeight)
     .fixedSize(horizontal: false, vertical: true)
-    .background(
-      prose
-        ? WebColor.surface.color : theme.palette.canvas.mixed(55, with: WebColor.surface).color,
-      in: shape
-    )
-    .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+    .background(WebGlass.groupFill.color, in: shape)
+    .overlay(shape.strokeBorder(WebGlass.hairline.color, lineWidth: 1))
   }
 }
 
@@ -446,7 +443,7 @@ public struct JobHistoryToggleStyle: ButtonStyle {
         .background(WebColor.text.color.opacity(0.08), in: Capsule())
       Image(systemName: "chevron.down")
         .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(WebColor.textMuted.color)
+        .foregroundStyle(WebGlass.textMuted.color)
         .rotationEffect(.degrees(open ? 180 : 0))
     }
     .foregroundStyle(open ? WebColor.text.color : WebColor.textSoft.color)
@@ -455,16 +452,17 @@ public struct JobHistoryToggleStyle: ButtonStyle {
     .background(
       Capsule().fill(
         configuration.isPressed
-          ? WebColor.surfaceHover.color : open ? WebColor.surfaceSubtle.color : .clear)
+          ? WebGlass.selectedFill.color : open ? WebGlass.groupFill.color : .clear)
     )
-    .overlay(Capsule().strokeBorder(WebColor.line.color, lineWidth: 1))
+    .overlay(Capsule().strokeBorder(WebGlass.hairline.color, lineWidth: 1))
     .frame(minHeight: DesignMetrics.minimumHitTarget)
     .contentShape(Rectangle())
   }
 }
 
-/// The small settings-family button (`.settings-button`): 32 pt, radius 9, surface fill with a
-/// 1 px strong line, soft 11.5/650 text. Used for in-card actions such as Refresh and Answer.
+/// The small settings-family button (`.settings-button`): 32 pt, radius 9, soft 11.5/650 text.
+/// Used for in-row actions such as Refresh and Answer inside the glass job shelf, so the web
+/// surface fill becomes translucent ink with a hairline (accent: a translucent accent wash).
 public struct WebSmallButtonStyle: ButtonStyle {
   public enum Tone: Sendable { case standard, accent }
   private let tone: Tone
@@ -478,20 +476,22 @@ public struct WebSmallButtonStyle: ButtonStyle {
       .webFont(.jobOutputHead)
       .foregroundStyle(
         tone == .accent
-          ? palette.accent.color
-          : configuration.isPressed ? WebColor.text.color : WebColor.textSoft.color
+          ? WebGlass.accentText(palette).color
+          : configuration.isPressed ? WebColor.text.color : WebGlass.textSoft.color
       )
       .padding(.horizontal, 12)
       .frame(minHeight: WebMetrics.quietControl)
       .background(
         shape.fill(
           tone == .accent
-            ? palette.accentSoft.color
-            : configuration.isPressed ? WebColor.surfaceHover.color : WebColor.surface.color)
+            ? palette.accent.color(
+              lightOpacity: configuration.isPressed ? 0.16 : 0.10,
+              darkOpacity: configuration.isPressed ? 0.22 : 0.16)
+            : configuration.isPressed ? WebGlass.selectedFill.color : WebGlass.groupFill.color)
       )
       .overlay(
         shape.strokeBorder(
-          tone == .accent ? palette.accent.color.opacity(0.24) : WebColor.lineStrong.color,
+          tone == .accent ? palette.accent.color.opacity(0.24) : WebGlass.hairline.color,
           lineWidth: 1)
       )
       .opacity(enabled ? 1 : 0.45)
@@ -503,7 +503,6 @@ public struct WebSmallButtonStyle: ButtonStyle {
 #if DEBUG
   private struct JobComponentsPreview: View {
     @State private var open = true
-    @Environment(\.consoleTheme) private var theme
     var body: some View {
       VStack(alignment: .leading, spacing: 12) {
         HStack(spacing: 8) {
@@ -535,7 +534,7 @@ public struct WebSmallButtonStyle: ButtonStyle {
         Button("History") {}.buttonStyle(JobHistoryToggleStyle(open: false, count: 3))
       }
       .padding(6)
-      .background(theme.palette.jobStackBackground.color)
+      .floatingGlass(in: RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous))
     }
   }
 

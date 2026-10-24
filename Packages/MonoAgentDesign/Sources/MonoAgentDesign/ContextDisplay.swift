@@ -47,6 +47,8 @@ public struct ContextDisplayContent: Sendable, Equatable {
 
 /// Value-only context/cost disclosure. May be placed in a header, toolbar popover or composer.
 /// Unknown values arrive as words, never as an invented zero-width progress measurement.
+/// It has no fill of its own: in the app it sits on the sheet/popover material (glass rules),
+/// so its sections are hairline-separated and its meter track is translucent ink.
 public struct ContextDisplay: View {
   private let content: ContextDisplayContent
   @Binding private var expanded: Bool
@@ -74,8 +76,7 @@ public struct ContextDisplay: View {
   }
   private var details: some View {
     VStack(alignment: .leading, spacing: 0) {
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Context window").webFont(.contextEyebrow).foregroundStyle(WebColor.textMuted.color)
+      WebSheetSection("Context window", divider: false) {
         let figure = content.figure.components(separatedBy: " / ")
         let figureLayout =
           typeSize.isAccessibilitySize
@@ -87,19 +88,19 @@ public struct ContextDisplay: View {
               .webFont(sizeClass == .regular ? .contextFigureRegular : .contextFigure)
               .foregroundStyle(WebColor.text.color)
             if figure.count == 2 {
-              Text("/ " + figure[1]).webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+              Text("/ " + figure[1]).webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color)
             }
           }
           .frame(maxWidth: .infinity, alignment: .leading)
           if content.percent != nil {
             Text(content.badge).webFont(.optionID).fontWeight(.bold)
-              .foregroundStyle(theme.palette.accent.color).fixedSize()
+              .foregroundStyle(WebGlass.accentText(theme.palette).color).fixedSize()
           }
         }.textSelection(.enabled)
-        Text(content.status).webFont(.contextTrigger).foregroundStyle(WebColor.textMuted.color)
+        Text(content.status).webFont(.contextTrigger).foregroundStyle(WebGlass.textMuted.color)
         if let percent = content.percent, percent.isFinite {
           GeometryReader { proxy in
-            Capsule().fill(WebColor.surfaceSubtle.color)
+            Capsule().fill(WebGlass.track.color)
               .overlay(alignment: .leading) {
                 Capsule().fill(percent >= 85 ? WebColor.danger.color : theme.palette.accent.color)
                   .frame(width: proxy.size.width * min(1, max(0, percent / 100)))
@@ -109,12 +110,11 @@ public struct ContextDisplay: View {
             .accessibilityValue(content.figure + ", " + content.badge)
         }
         if let note = content.note {
-          Text(note).webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+          Text(note).webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color)
         }
       }
-      .padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 12)
       if !content.tokens.isEmpty {
-        section("Tokens processed") {
+        WebSheetSection("Tokens processed") {
           if typeSize.isAccessibilitySize {
             ForEach(content.tokens) { row in
               VStack(alignment: .leading, spacing: 3) {
@@ -132,10 +132,10 @@ public struct ContextDisplay: View {
                   "Input including cache writes")
                 Text("Cached").frame(maxWidth: .infinity, alignment: .trailing)
                 Text("Output").frame(maxWidth: .infinity, alignment: .trailing)
-              }.webFont(.sheetSubtitle).foregroundStyle(WebColor.textMuted.color)
+              }.webFont(.sheetSubtitle).foregroundStyle(WebGlass.textMuted.color)
               ForEach(content.tokens) { row in
                 ContextTokenColumns {
-                  Text(row.label).webFont(.contextNote).foregroundStyle(WebColor.textSoft.color)
+                  Text(row.label).webFont(.contextNote).foregroundStyle(WebGlass.textSoft.color)
                   Text(row.input).webFont(.optionID).frame(
                     maxWidth: .infinity, alignment: .trailing)
                   Text(row.cached).webFont(.optionID).frame(
@@ -147,27 +147,15 @@ public struct ContextDisplay: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
           }
         }
-        section("Estimated cost") {
+        WebSheetSection("Estimated cost") {
           ForEach(content.costs) { row in contextRow(row) }
         }
       } else if !content.rows.isEmpty {
-        section("Usage and cost") {
+        WebSheetSection("Usage and cost") {
           ForEach(content.rows) { row in contextRow(row) }
         }
       }
-
-    }.background(WebColor.surfaceRaised.color)
-  }
-  private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content)
-    -> some View
-  {
-    VStack(alignment: .leading, spacing: 6) {
-      Text(title).webFont(.contextEyebrow).foregroundStyle(WebColor.textMuted.color)
-      content()
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 12)
-    .overlay(alignment: .top) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
   }
   @ViewBuilder private func contextRow(_ row: ContextDisplayContent.Row) -> some View {
     Group {
@@ -179,7 +167,7 @@ public struct ContextDisplay: View {
     }.accessibilityElement(children: .combine)
   }
   @ViewBuilder private func rowValues(_ row: ContextDisplayContent.Row) -> some View {
-    Text(row.label).webFont(.contextNote).foregroundStyle(WebColor.textSoft.color)
+    Text(row.label).webFont(.contextNote).foregroundStyle(WebGlass.textSoft.color)
     if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
     Text(row.value).webFont(.optionID).foregroundStyle(WebColor.text.color)
       .fixedSize(horizontal: false, vertical: true)

@@ -159,10 +159,14 @@
             }
           }
           catalogSection("Context and cost") {
-            ContextDisplay(
-              .init(
-                badge: "—", figure: "Context size not reported", status: "Not reported",
-                rows: [.init("Estimated cost", "Unknown")]), expanded: .constant(true))
+            SheetMaterialSpecimen {
+              WebSheetHeader("Context and cost") {}
+              ContextDisplay(
+                .init(
+                  badge: "42%", figure: "84k / 200k tokens", status: "Current · sample:large",
+                  percent: 42, rows: [.init("Estimated cost", "Unknown · Known cost $0.42")]),
+                expanded: .constant(true), detailOnly: true)
+            }
           }
           catalogSection("Route badge") {
             RouteBadge(
@@ -179,13 +183,31 @@
               Button("Tell me more") {}.buttonStyle(WebReplyButtonStyle())
             }.webFormCard()
           }
-          catalogSection("Sheet parts") {
-            VStack(spacing: 0) {
+          catalogSection("Sheets on glass") {
+            SheetMaterialSpecimen {
               WebSheetHeader("Run settings", subtitle: "Choose the next turn's route") {}
               WebSearchField("Search models", text: .constant(""))
-              WebModelRow("Sample Large", detail: "sample:large", selected: true)
-              Button("High") {}.buttonStyle(WebEffortButtonStyle(selected: true))
-            }.background(WebColor.surfaceRaised.color)
+              WebModelRow("Sample Large", detail: "sample:large", selected: true).padding(6)
+              WebSheetSection("Thinking") {
+                HStack {
+                  Button("Low") {}.buttonStyle(WebEffortButtonStyle(selected: false))
+                  Button("High") {}.buttonStyle(WebEffortButtonStyle(selected: true))
+                }
+              }
+              WebSheetSection("Arguments", detail: "tools/call") {
+                Text("{ \"beds\": 3 }").webFont(.optionID).padding(10)
+                  .frame(maxWidth: .infinity, alignment: .leading).webGlassGroup()
+              }
+              WebSheetSection {
+                GlassEffectContainer(spacing: 8) {
+                  HStack {
+                    Spacer()
+                    Button("Cancel") {}.designButtonStyle(.secondary, placement: .floating)
+                    Button("Allow once") {}.designButtonStyle(.primary, placement: .floating)
+                  }
+                }.controlSize(.large)
+              }
+            }
           }
           catalogSection("Job rows and outcomes") { JobSpecimens() }
           catalogSection("Activity disclosure") {
@@ -415,6 +437,20 @@
         }
       }
       .controlSize(.large)
+    }
+  }
+
+  /// A catalog stand-in for the system sheet/popover material (the app's sheets use the system
+  /// presentation background): one glass surface over sample content, nothing solid inside.
+  private struct SheetMaterialSpecimen<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+      GlassBackdrop {
+        VStack(spacing: 0) { content() }
+          .floatingGlass(
+            in: RoundedRectangle(cornerRadius: 28, style: .continuous),
+            opaqueFill: DesignColor.opaqueControlSurface.color)
+      }
     }
   }
 

@@ -35,12 +35,15 @@ extension View {
   ///
   /// `opaqueFill` is the Reduce Transparency replacement (defaults to `tint`, then the opaque
   /// control surface), so web-styled controls keep their web fill when glass is off.
+  /// `opaqueStroke` outlines only that opaque replacement (glass draws its own edge).
   public func floatingGlass<S: Shape>(
-    in shape: S, tint: Color? = nil, interactive: Bool = false, opaqueFill: Color? = nil
+    in shape: S, tint: Color? = nil, interactive: Bool = false, opaqueFill: Color? = nil,
+    opaqueStroke: Color? = nil
   ) -> some View {
     modifier(
       FloatingGlassModifier(
-        shape: shape, tint: tint, interactive: interactive, opaqueFill: opaqueFill))
+        shape: shape, tint: tint, interactive: interactive, opaqueFill: opaqueFill,
+        opaqueStroke: opaqueStroke))
   }
 
   /// Applies the themed button treatment for a prominence and placement.
@@ -62,6 +65,7 @@ struct FloatingGlassModifier<S: Shape>: ViewModifier {
   let tint: Color?
   let interactive: Bool
   var opaqueFill: Color? = nil
+  var opaqueStroke: Color? = nil
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.prefersOpaqueSurfaces) private var prefersOpaque
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -89,6 +93,8 @@ struct FloatingGlassModifier<S: Shape>: ViewModifier {
             shape.stroke(
               increased ? Color.primary.opacity(0.6) : DesignColor.separator,
               lineWidth: increased ? 1 : 0.5)
+          } else if let opaqueStroke {
+            shape.stroke(opaqueStroke, lineWidth: 1)
           }
         }
     }
