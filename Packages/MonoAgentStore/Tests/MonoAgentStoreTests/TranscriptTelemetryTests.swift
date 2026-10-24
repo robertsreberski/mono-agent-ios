@@ -61,8 +61,16 @@ struct TranscriptTelemetryTests {
     #expect(run.details.count == 2)
     data["silent"] = .bool(true)
     #expect(TranscriptTelemetry.presentation(try part("cron_run", .object(data))) == .hidden)
-    data["hasVisibleContent"] = .bool(true)
-    #expect(TranscriptTelemetry.presentation(try part("cron_run", .object(data))) != .hidden)
+    let cron = WebMessagePart.telemetry(try part("cron_run", .object(data)))
+    var message = try sampleMessage()
+    message.status = "complete"
+    message.parts = [cron, .text(.init(text: "Completed silently (no message was reported)."))]
+    #expect(TranscriptTelemetry.isLegacySilentCronMessage(message))
+    #expect(!TranscriptTelemetry.visible(message))
+    message.parts = [cron, .text(.init(text: "A real delivered summary"))]
+    #expect(!TranscriptTelemetry.isLegacySilentCronMessage(message))
+    #expect(TranscriptTelemetry.visible(cron, in: message))
+    #expect(TranscriptTelemetry.visible(message))
     #expect(TranscriptTelemetry.presentation(try part("cron_run")) == .hidden)
   }
   @MainActor @Test func hiddenOnlyMessageHasNoRowButTelemetryRemainsStored() throws {

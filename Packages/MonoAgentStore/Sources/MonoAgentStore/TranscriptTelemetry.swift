@@ -17,7 +17,7 @@ public enum TranscriptTelemetry: Sendable, Equatable {
     public var details: [String]
   }
 
-  public static func presentation(_ part: TelemetryPart) -> Self {
+  public static func presentation(_ part: TelemetryPart, hasVisibleContent: Bool = false) -> Self {
     if part.event == "runtime_warning", case .object(let warning) = part.data,
       warning["warningKind"] == .string("degraded_native_context"),
       case .string(let message) = warning["message"],
@@ -37,7 +37,7 @@ public enum TranscriptTelemetry: Sendable, Equatable {
     guard part.event == "cron_run", case .object(let data) = part.data,
       let runID = text(data["runId"]),
       !(data["status"] == .string("succeeded") && data["silent"] == .bool(true)
-        && data["hasVisibleContent"] != .bool(true))
+        && !hasVisibleContent)
     else { return .hidden }
     let status = text(data["status"]) ?? "unknown"
     let state =
@@ -88,13 +88,37 @@ public enum TranscriptTelemetry: Sendable, Equatable {
     if case .string(let text) = value { return text }
     return nil
   }
+  /// Matches the web message-level legacy silent-cron filter, not a server data field.
+  public static func isLegacySilentCronMessage(_ message: WebMessage) -> Bool {
+    message.role == "assistant" && message.status == "complete" && message.attachments.isEmpty
+      && message.parts.contains { part in
+        guard case .telemetry(let value) = part, value.event == "cron_run",
+          case .object(let data) = value.data
+        else { return false }
+        return data["status"] == .string("succeeded") && data["silent"] == .bool(true)
+      }
+      && message.parts.allSatisfy { part in
+        switch part {
+        case .telemetry(let value): value.event == "cron_run"
+        case .text(let value):
+          value.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || value.text == "Completed silently (no message was reported)."
+        default: false
+        }
+      }
+  }
+  public static func visible(_ part: WebMessagePart, in message: WebMessage) -> Bool {
+    guard case .telemetry(let value) = part else { return true }
+    return presentation(value, hasVisibleContent: !isLegacySilentCronMessage(message)) != .hidden
+  }
   public static func visible(_ part: WebMessagePart) -> Bool {
     guard case .telemetry(let value) = part else { return true }
     return presentation(value) != .hidden
   }
   /// Do not create empty transcript rows, action bars, attribution or lazy-stack spacing.
   public static func visible(_ message: WebMessage) -> Bool {
-    message.parts.isEmpty || !message.attachments.isEmpty || message.quote != nil
-      || message.parts.contains(where: visible)
+    guard !isLegacySilentCronMessage(message) else { return false }
+    return message.parts.isEmpty || !message.attachments.isEmpty || message.quote != nil
+      || message.parts.contains { visible($0, in: message) }
   }
 }

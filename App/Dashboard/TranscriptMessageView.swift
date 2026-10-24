@@ -80,7 +80,8 @@ struct TranscriptMessageView: View {
 
         }
         ForEach(
-          TranscriptPresentation.activityBands(message.parts.filter(TranscriptTelemetry.visible))
+          TranscriptPresentation.activityBands(
+            message.parts.filter { TranscriptTelemetry.visible($0, in: message) })
         ) { band in
           if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
             TranscriptActivityBand(parts: band.parts, message: message, store: store)
@@ -237,7 +238,9 @@ struct TranscriptPartView: View {
         }
       }
     case .telemetry(let value):
-      switch TranscriptTelemetry.presentation(value) {
+      switch TranscriptTelemetry.presentation(
+        value, hasVisibleContent: !TranscriptTelemetry.isLegacySilentCronMessage(message))
+      {
       case .hidden: EmptyView()
       case .note(let text):
         Text(text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
