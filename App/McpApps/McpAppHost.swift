@@ -119,6 +119,7 @@ final class McpAppHost: NSObject {
     isRetired = true
     webView.policy.isClosed = true
     retirementReason = reason
+    delegate?.mcpAppHostDidRetire(self)
     webView.stopLoading()
     webView.evaluateJavaScript(
       "window.mcpRetire?.()", in: nil, in: McpAppBridgeListener.world,

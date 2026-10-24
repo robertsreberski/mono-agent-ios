@@ -15,6 +15,7 @@ public final class McpAppAccess {
   public internal(set) var resource: ApiMcpAppResource?
   public internal(set) var retryRequiresConsent = false
   public internal(set) var isClosed = false
+  @ObservationIgnored public var onClose: (@MainActor () -> Void)?
   let published: McpAppPart
   let epoch: UInt64
   let selection: UInt64
@@ -29,7 +30,10 @@ public final class McpAppAccess {
   ) {
     self.profileID = profileID
     self.reference = reference
-    self.published = published
+    var identity = published
+    identity.resourceUrl = nil
+    identity.bridgeUrl = nil
+    self.published = identity
     self.epoch = epoch
     self.selection = selection
     self.conversation = conversation
@@ -51,6 +55,7 @@ public final class McpAppAccess {
     }
   }
   func close() {
+    guard !isClosed else { return }
     for cancel in cancellations.values { cancel() }
     cancellations.removeAll()
     isClosed = true
@@ -58,6 +63,9 @@ public final class McpAppAccess {
     resource = nil
     retryRequiresConsent = false
     revision &+= 1
+    let notify = onClose
+    onClose = nil
+    notify?()
   }
 }
 

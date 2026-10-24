@@ -60,7 +60,11 @@ struct McpAppAccessTests {
     #expect(session.resource?.app.resourceUrl == nil && session.resource?.app.bridgeUrl == nil)
     #expect(await h.transport.count(base + "/access", method: "POST") == 1)
     #expect(await h.transport.count(base, method: "GET") == 1)
+    var closed = 0
+    session.onClose = { closed += 1 }
     h.store.closeMcpApp(session)
+    h.store.closeMcpApp(session)
+    #expect(closed == 1)
     #expect(session.resource == nil && session.current == nil && session.isClosed)
     await h.store.stop()
   }

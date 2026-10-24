@@ -6,6 +6,11 @@ import WebKit
 protocol McpAppEnvelopeDelegate: AnyObject {
   /// Validated transport only. JSON-RPC method semantics and effects belong to the next layer.
   func mcpAppHost(_ host: McpAppHost, didReceiveEnvelope envelope: Data)
+  func mcpAppHostDidRetire(_ host: McpAppHost)
+}
+
+extension McpAppEnvelopeDelegate {
+  func mcpAppHostDidRetire(_ host: McpAppHost) {}
 }
 
 @MainActor
