@@ -18,19 +18,23 @@
       guard enabled else { return }
       counts.record(name)
     }
-    static func measure() async {
+    static func measure(refresh: @MainActor () async -> Void = {}) async {
       guard enabled else { return }
       // Exclude initial composition, then measure a fixed idle/streaming window.
       do { try await Task.sleep(for: .seconds(3)) } catch { return }
       counts.reset()
       let start = mainCPU()
+      let started = ContinuousClock.now
+      if ProcessInfo.processInfo.arguments.contains("--performance-dashboard-refresh") {
+        await refresh()
+      }
       do { try await Task.sleep(for: .seconds(15)) } catch { return }
       let cpu = mainCPU() - start
       let values = counts.values.keys.sorted().map { "\($0)=\(counts.values[$0, default: 0])" }
         .joined(
           separator: ",")
       logger.notice(
-        "PERF_WINDOW seconds=15 mainCPU=\(cpu, privacy: .public) bodies=\(values, privacy: .public)"
+        "PERF_WINDOW seconds=\(started.duration(to: .now).description, privacy: .public) mainCPU=\(cpu, privacy: .public) bodies=\(values, privacy: .public)"
       )
     }
     private static func mainCPU() -> Double {

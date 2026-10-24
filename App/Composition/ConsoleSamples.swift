@@ -290,12 +290,18 @@
       }
       if scenario == .conversationStreaming, thread == DashboardFixture.openThreadID {
         script = Task {
-          for index in 1...8 {
-            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+          let stress = ProcessInfo.processInfo.arguments.contains("--performance-streaming")
+          let count = stress ? 600 : 8
+          for index in 1...count {
+            do { try await Task.sleep(for: .seconds(stress ? 1.0 / 40 : 1)) } catch { return }
             guard !Task.isCancelled else { return }
-            if let event = try? TranscriptFixture.delta(index) {
+            let timestamp =
+              stress
+              ? DashboardFixture.now.addingTimeInterval(Double(index) / 40).formatted(.iso8601)
+              : "2030-01-02T12:00:00Z"
+            if let event = try? TranscriptFixture.delta(index, total: count, timestamp: timestamp) {
               pair.continuation.yield(.event(generation: 1, gap: .initial, event))
-              if index == 8, let terminal = try? TranscriptFixture.terminalTurn() {
+              if index == count, let terminal = try? TranscriptFixture.terminalTurn() {
                 pair.continuation.yield(.event(generation: 1, gap: .initial, terminal))
               }
             }
