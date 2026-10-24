@@ -136,6 +136,9 @@ struct DashboardView: View {
   /// Web dashboard column: fixed header, agent strip and search, then the scrolling sections
   /// and the quiet footer. At accessibility sizes the strip and search scroll with the list.
   @ViewBuilder private func content(now: Date) -> some View {
+    #if DEBUG
+      let _ = PerformanceProbe.body("DashboardView.content")
+    #endif
     VStack(spacing: 0) {
       header
       if !typeSize.isAccessibilitySize {
