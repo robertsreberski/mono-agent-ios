@@ -8,6 +8,7 @@ import Testing
 @Suite("Glass sheet tokens")
 struct GlassSheetTests {
   private let schemes: [ColorScheme] = [.light, .dark]
+  private let contrasts: [ColorSchemeContrast] = [.standard, .increased]
 
   @Test func textRolesPassAAOnTheMaterial() {
     for scheme in schemes {
@@ -49,46 +50,54 @@ struct GlassSheetTests {
     }
   }
 
-  /// The sheet veil is the lowest opacity that keeps muted (and soft, primary) text AA over
-  /// the busiest sampled bleed; the consent veil also keeps accent text AA there.
+  /// Every reading role passes on the veil, selected ink, and the peer form's compounded
+  /// Form-row / CodeDocumentView group inks. Resolve both foreground and ink under Increase Contrast.
   @Test(arguments: ConsoleTheme.allCases)
   func sheetVeilsKeepAAOverBleed(_ theme: ConsoleTheme) {
     for scheme in schemes {
-      let bleed = WebGlass.sampledBleed(scheme)
-      let sheet = WebGlass.sheetVeil.composited(over: bleed, scheme)
-      let grounds = [
-        sheet, WebGlass.groupFill.composited(over: sheet, scheme),
-        WebGlass.selectedFill.composited(over: sheet, scheme),
-      ]
-      for ground in grounds {
-        for role in [WebColor.text, WebGlass.textSoft, WebGlass.textMuted] {
-          let ratio = role.resolved(scheme).contrastRatio(with: ground)
-          #expect(ratio >= 4.5, "\(scheme) \(role.resolved(scheme)) on \(ground): \(ratio)")
+      for contrast in contrasts {
+        let bleed = WebGlass.sampledBleed(scheme)
+        let sheet = WebGlass.sheetVeil.composited(over: bleed, scheme, contrast: contrast)
+        let group = WebGlass.groupFill.composited(over: sheet, scheme, contrast: contrast)
+        let grounds = [
+          sheet, group,
+          WebGlass.selectedFill.composited(over: sheet, scheme, contrast: contrast),
+          WebGlass.groupFill.composited(over: group, scheme, contrast: contrast),
+        ]
+        for ground in grounds {
+          for role in [WebColor.text, WebGlass.textSoft, WebGlass.textMuted] {
+            let ratio = role.resolved(scheme, contrast: contrast).contrastRatio(with: ground)
+            #expect(ratio >= 4.5, "\(scheme) \(contrast) \(role) on \(ground): \(ratio)")
+          }
         }
-      }
-      let consent = WebGlass.consentVeil.composited(over: bleed, scheme)
-      for role in [
-        WebColor.text, WebGlass.textSoft, WebGlass.textMuted, WebGlass.accentText(theme.palette),
-      ] {
-        let ratio = role.resolved(scheme).contrastRatio(with: consent)
-        #expect(ratio >= 4.5, "\(theme) \(scheme) \(role.resolved(scheme)) on \(consent)")
+        // Context figures and composer accent labels sit directly on the standard veil.
+        let accent = WebGlass.accentText(theme.palette).resolved(scheme, contrast: contrast)
+        #expect(accent.contrastRatio(with: sheet) >= 4.5, "\(theme) \(scheme) \(contrast)")
+        let consent = WebGlass.consentVeil.composited(over: bleed, scheme, contrast: contrast)
+        for role in [
+          WebColor.text, WebGlass.textSoft, WebGlass.textMuted, WebGlass.accentText(theme.palette),
+        ] {
+          let ratio = role.resolved(scheme, contrast: contrast).contrastRatio(with: consent)
+          #expect(ratio >= 4.5, "\(theme) \(scheme) \(contrast) \(role) on \(consent): \(ratio)")
+        }
       }
     }
   }
 
-  /// Minimal: one step (1%) less veil no longer keeps muted text AA over the bleed.
   @Test func consentVeilIsAtLeastAsStrongAsStandard() {
     #expect(WebGlass.consentVeil.lightOpacity >= WebGlass.sheetVeil.lightOpacity)
     #expect(WebGlass.consentVeil.darkOpacity >= WebGlass.sheetVeil.darkOpacity)
   }
 
+  /// One step (1%) less veil fails muted AA on the compounded peer form ink.
   @Test func sheetVeilIsTheMinimum() {
     for scheme in schemes {
       let veil = WebGlass.sheetVeil
       let lower = GlassInk(
         veil.base, light: veil.lightOpacity - 0.01, dark: veil.darkOpacity - 0.01)
       let sheet = lower.composited(over: WebGlass.sampledBleed(scheme), scheme)
-      let ground = WebGlass.selectedFill.composited(over: sheet, scheme)
+      let group = WebGlass.groupFill.composited(over: sheet, scheme)
+      let ground = WebGlass.groupFill.composited(over: group, scheme)
       #expect(WebGlass.textMuted.resolved(scheme).contrastRatio(with: ground) < 4.5)
     }
   }
@@ -104,6 +113,18 @@ struct GlassSheetTests {
       }
       if scheme == .light {
         #expect(WebGlass.textMuted.light.contrastRatio(with: shelfBleed) < 4.5)
+      }
+    }
+  }
+
+  @Test func increasedContrastResolvesGlassRoles() {
+    #expect(WebGlass.textMuted.resolved(.light, contrast: .increased) == WebColor.text.light)
+    #expect(WebGlass.textMuted.resolved(.dark, contrast: .increased) == WebColor.textSoft.dark)
+    for theme in ConsoleTheme.allCases {
+      for scheme in schemes {
+        #expect(
+          WebGlass.accentText(theme.palette).resolved(scheme, contrast: .increased)
+            == theme.palette.accentStrong.resolved(scheme))
       }
     }
   }

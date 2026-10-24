@@ -81,15 +81,15 @@ The medium-detent glass lets strong content show through. Measured on the iOS 27
 No text colour fixes this, and vibrancy measured worse in the common case (see below). So
 every text-carrying sheet lays the web raised surface over the material. Its opacity is the
 lowest that keeps `WebGlass.textMuted` ≥ 4.5:1 over those two bleeds, including the
-quiet group and selected-row inks (not just the bare veil):
+quiet group, selected-row and compounded form-row/code-preview inks (not just the bare veil):
 
 | Veil | Light | Dark | Guarantee | Test |
 |---|---|---|---|---|
-| `WebGlass.sheetVeil` | 69% | 80% | Muted, soft and primary text AA, including selected ink (4.52:1 light, 4.53:1 dark). A 1% lower veil fails AA on selected ink. | `GlassSheetTests.sheetVeilsKeepAAOverBleed`, `sheetVeilIsTheMinimum` |
-| `WebGlass.consentVeil` | 75% | 80% | Accent text AA as well; never weaker than standard | same |
+| `WebGlass.sheetVeil` | 71% | 84% | Muted, soft and primary text AA, including two group inks (4.52:1 light, 4.50:1 dark). A 1% lower veil fails AA on compounded ink. | `GlassSheetTests.sheetVeilsKeepAAOverBleed`, `sheetVeilIsTheMinimum` |
+| `WebGlass.consentVeil` | 75% | 84% | Accent text AA as well; never weaker than standard | same |
 
 The Markdown dark capture alone needs no veil (6.16:1). The dark value is bound by the
-brighter MCP-frame bleed. Accent text is lighter than muted text in dark mode and passes
+brighter MCP-frame bleed and the peer form’s two group inks. Accent text is lighter than muted text in dark mode and passes
 on the standard veil too. Consent, where the accent names the tool method, uses at least
 the standard veil in each scheme (stronger in light mode).
 This mirrors the web: its sheets are opaque raised surfaces, and its MCP confirmation is
@@ -106,14 +106,15 @@ This mirrors the web: its sheets are opaque raised surfaces, and its MCP confirm
 | `WebGlass.textSoft` | web `--text-soft` | Passes AA everywhere (≥ 4.98:1) |
 | `WebGlass.textMuted` | light `--text-soft`; dark muted lifted 60% toward soft | The web muted is **4.34:1** on light glass (`#e3e3e0`) and 3.9:1 on the dark group ink. Both are adjusted. |
 | `WebGlass.accentText` | light `--accent-strong`; dark `--accent` | The light `--accent` is 4.48:1 on light glass |
-| `WebGlass.sheetVeil` | `--surface-raised` 69% light / 80% dark | Every text-carrying sheet and popover |
-| `WebGlass.consentVeil` | `--surface-raised` 75% light / 80% dark | Consent prompts |
+| `WebGlass.sheetVeil` | `--surface-raised` 71% light / 84% dark | Every text-carrying sheet and popover |
+| `WebGlass.consentVeil` | `--surface-raised` 75% light / 84% dark | Consent prompts |
 | `palette.accentInk` | `--accent` 12% / 20% | `--accent-soft` icon tiles and selections as ink |
 
 Reference backdrops (`WebGlass.referenceBackdrops`) were sampled from simulator screenshots.
 Large detent: `#ffffff` / `#1c1c1e`. Medium detent over plain and busy Markdown transcripts:
 light `#e3e3e0`–`#dddddb`, dark `#292c2a`–`#353736`. `GlassSheetTests` holds every text role
-to AA on all of them, bare and on the group ink.
+to AA on all of them, bare and on the group ink. Veiled-bleed checks also cover
+standard-veil accent text (all themes), compounded groups and Increase Contrast resolution.
 
 The expanded job shelf over the tall synthetic code fixture samples `#a0a3a1` in light
 mode: glass muted text is only 2.7:1 there. It therefore carries the same veil inside its

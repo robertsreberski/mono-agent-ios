@@ -23,8 +23,10 @@ public struct GlassInk: Hashable, Sendable {
   public var color: Color { base.color(lightOpacity: lightOpacity, darkOpacity: darkOpacity) }
 
   /// The ink as it appears over an opaque backdrop (for contrast checks).
-  public func composited(over backdrop: RGBColor, _ scheme: ColorScheme) -> RGBColor {
-    base.resolved(scheme).composited(
+  public func composited(
+    over backdrop: RGBColor, _ scheme: ColorScheme, contrast: ColorSchemeContrast = .standard
+  ) -> RGBColor {
+    base.resolved(scheme, contrast: contrast).composited(
       over: backdrop, opacity: scheme == .dark ? darkOpacity : lightOpacity)
   }
 }
@@ -54,11 +56,11 @@ public enum WebGlass {
   /// The frosted veil every text-carrying sheet and popover lays over the system material
   /// (`webSheetVeil()`): the web raised surface at the lowest opacity that keeps
   /// `textMuted` AA over the busiest sampled bleed — light glass over a dark code block
-  /// (`#9b9e9b`) and dark glass over a light app frame (`#6a706d`), including selection ink.
-  public static let sheetVeil = GlassInk(WebColor.surfaceRaised, light: 0.69, dark: 0.80)
+  /// (`#9b9e9b`) and dark glass over a light app frame (`#6a706d`), including two compounded group inks.
+  public static let sheetVeil = GlassInk(WebColor.surfaceRaised, light: 0.71, dark: 0.84)
   /// The stronger consent veil (`webSheetVeil(.consent)`): every role, accent included,
   /// keeps AA over the sampled third-party content bleed.
-  public static let consentVeil = GlassInk(WebColor.surfaceRaised, light: 0.75, dark: 0.80)
+  public static let consentVeil = GlassInk(WebColor.surfaceRaised, light: 0.75, dark: 0.84)
   /// The busiest bleed sampled through the medium-detent glass (light: a dark code block
   /// behind; dark: a light MCP app frame behind).
   public static func sampledBleed(_ scheme: ColorScheme) -> RGBColor {
