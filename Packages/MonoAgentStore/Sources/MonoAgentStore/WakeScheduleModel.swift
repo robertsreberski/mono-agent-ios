@@ -48,7 +48,24 @@ public enum WakeScheduleModel {
     let zone = zone.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !zone.isEmpty, zone.count <= 128 else { return nil }
     if ["utc", "etc/utc", "gmt", "etc/gmt"].contains(zone.lowercased()) { return "UTC" }
-    return TimeZone.knownTimeZoneIdentifiers.first { $0.lowercased() == zone.lowercased() }
+    let known = TimeZone.knownTimeZoneIdentifiers
+    if let canonical = known.first(where: { $0.lowercased() == zone.lowercased() }) {
+      return canonical
+    }
+    // Foundation's picker list excludes valid IANA links and fixed Etc zones.
+    // Keep accepting those identifiers; compare their rule data to known canonical names.
+    let cased = zone.split(separator: "/").map { part in
+      if part.lowercased() == "us" { return "US" }
+      if part.lowercased().hasPrefix("gmt") { return "GMT" + part.dropFirst(3) }
+      return part.capitalized
+    }.joined(separator: "/")
+    guard
+      let alias = NSTimeZone(name: zone) ?? NSTimeZone(name: cased)
+        ?? NSTimeZone(name: zone.uppercased()),
+      !alias.name.hasPrefix("GMT+") && !alias.name.hasPrefix("GMT-")
+    else { return nil }
+    if alias.name.hasPrefix("Etc/GMT") { return alias.name }
+    return known.first { NSTimeZone(name: $0)?.data == alias.data } ?? alias.name
   }
   public static func validTime(_ time: String) -> Bool {
     time.range(of: "^([01][0-9]|2[0-3]):[0-5][0-9]$", options: .regularExpression) != nil

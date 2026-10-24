@@ -47,6 +47,19 @@ struct WakeModelTests {
     d.timezone = "Nowhere/Else"
     #expect(WakeScheduleModel.validate(d).timezone != nil)
   }
+  @Test func acceptsIanaLinksAndFixedEtcZonesOutsidePickerList() {
+    #expect(WakeScheduleModel.normalizeTimeZone("US/Eastern") == "America/New_York")
+    #expect(WakeScheduleModel.normalizeTimeZone("us/eastern") == "America/New_York")
+    #expect(WakeScheduleModel.normalizeTimeZone("Etc/GMT+5") == "Etc/GMT+5")
+    #expect(WakeScheduleModel.normalizeTimeZone("etc/gmt+5") == "Etc/GMT+5")
+    #expect(WakeScheduleModel.normalizeTimeZone("GMT+0200") == nil)
+    var d = weekly
+    d.timezone = "US/Eastern"
+    var baseline = WakeScheduleModel.definition(from: d)
+    baseline.timezone = "America/New_York"
+    #expect(!WakeScheduleModel.isDirty(d, baseline: baseline))
+  }
+
   @Test func hourlySlots() {
     for (times, next) in [
       (["09:00", "14:30"], "15:30"), (["23:15"], "00:15"), (["09:00", "10:00", "11:00"], "12:00"),
