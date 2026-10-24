@@ -14,13 +14,20 @@ struct RunningTimeline<Content: View>: View {
     if running {
       TimelineView(.periodic(from: .now, by: 1)) { context in
         #if DEBUG
-          content(referenceDate ?? context.date.addingTimeInterval(offset()))
+          content(
+            TranscriptClock.elapsedDate(
+              running: running,
+              serverDate: TranscriptClock.ageDate(
+                wall: context.date, offset: offset(), fixture: referenceDate)))
         #else
-          content(context.date.addingTimeInterval(offset()))
+          content(
+            TranscriptClock.elapsedDate(
+              running: running,
+              serverDate: TranscriptClock.ageDate(wall: context.date, offset: offset())))
         #endif
       }
     } else {
-      content(.distantPast)
+      content(TranscriptClock.elapsedDate(running: running, serverDate: .distantPast))
     }
   }
 }

@@ -8,10 +8,12 @@ struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
   @State private var gallery = ReplyMessageGallery()
+  @Environment(\.transcriptMinuteDate) private var minuteDate
   #if DEBUG
     @Environment(\.fixtureReferenceDate) private var referenceDate
   #endif
   private var actionDate: Date {
+    if let minuteDate { return minuteDate }
     #if DEBUG
       if let referenceDate { return referenceDate }
     #endif
