@@ -334,11 +334,18 @@ struct PeerQuestionAnswerSheet: View {
     NavigationStack {
       Form {
         Section {
-          LabeledContent("State", value: PeerQuestionForm.stateLabel(question.state))
-          LabeledContent("Peer", value: question.peer + " / " + question.thread)
+          LabeledContent("State") {
+            Text(PeerQuestionForm.stateLabel(question.state)).foregroundStyle(
+              WebGlass.textMuted.color)
+          }
+          LabeledContent("Peer") {
+            Text(question.peer + " / " + question.thread).foregroundStyle(WebGlass.textMuted.color)
+          }
           if let expires = TranscriptPresentation.date(question.expiresAt) {
-            LabeledContent(
-              "Expires", value: expires.formatted(date: .abbreviated, time: .shortened))
+            LabeledContent("Expires") {
+              Text(expires.formatted(date: .abbreviated, time: .shortened))
+                .foregroundStyle(WebGlass.textMuted.color)
+            }
           }
           Text(question.message).textSelection(.enabled)
         } footer: {

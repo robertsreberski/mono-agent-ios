@@ -328,6 +328,11 @@ public struct JobRowDisclosure<Glyph: View, Title: View, Meta: View, Content: Vi
         .frame(minHeight: 52, alignment: .top)
         .contentShape(shape)
       }
+      // Ink belongs to the header only. Filling an expanded subtree compounds through
+      // nested job rows and peer cards, washing out dark-mode text on the single material.
+      .background {
+        if expanded { shape.fill(openFill ?? WebGlass.groupFill.color) }
+      }
       .buttonStyle(JobRowPressStyle())
       .fixedSize(horizontal: false, vertical: true)
       .accessibilityElement(children: .ignore)
@@ -343,12 +348,6 @@ public struct JobRowDisclosure<Glyph: View, Title: View, Meta: View, Content: Vi
           .padding(.trailing, compact ? 8 : 10)
           .padding(.bottom, 12)
           .fixedSize(horizontal: false, vertical: true)
-      }
-    }
-    .background {
-      if expanded {
-        // The shelf is glass: an open row takes the quiet group ink, never a solid surface.
-        shape.fill(openFill ?? WebGlass.groupFill.color)
       }
     }
   }
@@ -474,9 +473,10 @@ public struct WebSmallButtonStyle: ButtonStyle {
     let shape = RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
     configuration.label
       .webFont(.jobOutputHead)
+      // Accent washes carry primary ink: accent-coloured small text fails AA on dark glass.
       .foregroundStyle(
         tone == .accent
-          ? WebGlass.accentText(palette).color
+          ? WebColor.text.color
           : configuration.isPressed ? WebColor.text.color : WebGlass.textSoft.color
       )
       .padding(.horizontal, 12)

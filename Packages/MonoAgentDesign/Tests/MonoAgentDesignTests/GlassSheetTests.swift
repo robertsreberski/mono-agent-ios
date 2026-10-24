@@ -93,6 +93,18 @@ struct GlassSheetTests {
     #expect(WebMaterial.glass.textMuted == WebGlass.textMuted)
   }
 
+  @Test(arguments: ConsoleTheme.allCases)
+  func jobActionTextPassesOnGroupedMaterial(_ theme: ConsoleTheme) {
+    for scheme in schemes {
+      for backdrop in WebGlass.referenceBackdrops(scheme) {
+        let group = WebGlass.groupFill.composited(over: backdrop, scheme)
+        let wash = GlassInk(theme.palette.accent, light: 0.16, dark: 0.22)
+        let button = wash.composited(over: group, scheme)
+        #expect(WebColor.text.resolved(scheme).contrastRatio(with: button) >= 4.5)
+      }
+    }
+  }
+
   @Test func inksStayTranslucentAndQuiet() {
     for scheme in schemes {
       for backdrop in WebGlass.referenceBackdrops(scheme) {

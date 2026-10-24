@@ -43,7 +43,8 @@ There are two kinds of floating surface:
    and a hairline below.
 6. **Sections are separated by hairlines** (`WebSheetSection`, `WebHairline`). Where grouping
    needs it (an argument preview, an open job row, a form row), use at most the quiet
-   translucent ink (`.webGlassGroup()`, `WebGlass.groupFill`).
+   translucent ink (`.webGlassGroup()`, `WebGlass.groupFill`). Expanded job rows tint only
+   their headers, never an entire nested subtree: compounded inks can wash out dark text.
 7. **Layer-aware components.** `.webSheetVeil()` and `.webGlassContent()` set
    `EnvironmentValues.webMaterial = .glass`. `SettingsGroup`, `.settingsField()`,
    `.webInput()`, `ChoiceRow`, `QuotePreview`, `AttachmentChip` and `SuggestionRow` then
