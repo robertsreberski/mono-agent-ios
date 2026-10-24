@@ -73,7 +73,7 @@ struct ConnectionEditor: View {
         .frame(maxWidth: 674)
         .frame(maxWidth: .infinity)
       }
-      .background(theme.palette.panel.color)
+      .webPanelBackground(theme.palette.panel)
       .navigationTitle(console == nil ? "Add console" : "Edit console")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

@@ -168,6 +168,22 @@
       "theme": "evergreen"
     },
     {
+      "scenario": "dashboard-populated",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "consoles"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "consoles"
+    },
+    {
       "scenario": "dashboard-empty",
       "appearance": "light",
       "textSize": "standard",

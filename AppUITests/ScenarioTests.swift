@@ -632,6 +632,18 @@ final class ScenarioTests: XCTestCase {
     app.terminate()
   }
 
+  func testConsoleManagerSheetLight() { captureConsoles("light") }
+  func testConsoleManagerSheetDark() { captureConsoles("dark") }
+  /// The console list as a sheet over the dashboard (a floating, text-carrying surface).
+  private func captureConsoles(_ appearance: String) {
+    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "consoles") {
+      app in
+      app.descendants(matching: .any)["consoles-button"].firstMatch.tap()
+      XCTAssertTrue(
+        app.descendants(matching: .any)["add-console"].firstMatch.waitForExistence(timeout: 10))
+    }
+  }
+
   func testOfflineEmptyAndSearchScenarios() {
     var app = launch("dashboard-offline")
     XCTAssertTrue(element(app, "banner-offline").waitForExistence(timeout: 10))
