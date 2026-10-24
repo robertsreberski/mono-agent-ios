@@ -7,6 +7,7 @@ public enum RepositorySaveResult: Sendable, Equatable {
   case superseded(revision: UInt64)
 }
 
+/// Cache reads return bounded, capability-sanitized values; Store must not re-sanitize on MainActor.
 public protocol ConsoleRepository: Sendable {
   func loadCache(_ namespace: ConsoleNamespace) async throws -> CacheRecord
   func loadAuthored(_ namespace: ConsoleNamespace) async throws -> AuthoredRecord
@@ -151,7 +152,9 @@ public actor FileConsoleRepository: ConsoleRepository {
     return .saved
   }
   private func bounded(_ input: CacheRecord) throws -> CacheRecord {
-    var record = try CacheSanitizer.sanitize(input)
+    var record = input
+    record.bootstrap = try input.bootstrap.map(CacheSanitizer.sanitize)
+    record.buckets = try input.buckets.map(CacheSanitizer.sanitize)
     record.tombstones = CacheMerge.prune(record.tombstones, now: now())
     let cutoff = now().addingTimeInterval(-ConsoleBounds.maxAge)
     record.conversations = try record.conversations.filter {
@@ -159,16 +162,28 @@ public actor FileConsoleRepository: ConsoleRepository {
     }
     .sorted { $0.savedAt > $1.savedAt }.prefix(ConsoleBounds.diskConversations).map(
       CacheSanitizer.conversation)
+    let encoder = JSONEncoder()
     for index in record.conversations.indices {
-      while try JSONEncoder().encode(record.conversations[index]).count
-        > ConsoleBounds.conversationBytes,
-        !record.conversations[index].messages.isEmpty
-      {
-        record.conversations[index].messages.removeFirst()
-        record.conversations[index].truncated = true
-        // The ordinary cursor may skip pruned rows: require a fresh detail before paging.
-        record.conversations[index].nextCursor = nil
+      let entry = record.conversations[index]
+      guard try encoder.encode(entry).count > ConsoleBounds.conversationBytes else { continue }
+      // Find the smallest retained suffix in logarithmic encoding passes, not one whole
+      // conversation re-encode for every removed row.
+      var base = entry
+      base.truncated = true
+      base.nextCursor = nil
+      var lower = 0
+      var upper = entry.messages.count
+      while lower < upper {
+        let removed = (lower + upper) / 2
+        base.messages = Array(entry.messages.dropFirst(removed))
+        if try encoder.encode(base).count <= ConsoleBounds.conversationBytes {
+          upper = removed
+        } else {
+          lower = removed + 1
+        }
       }
+      base.messages = Array(entry.messages.dropFirst(lower))
+      record.conversations[index] = base
     }
     let sanitized = Dictionary(
       record.conversations.map { ($0.thread.id, $0.thread) },

@@ -231,6 +231,9 @@ public struct ConsoleBounds: Sendable {
 
 /// Sanitization is applied on both write and hydrate, including opaque extension objects.
 public enum CacheSanitizer {
+  private static let capabilityLink = try! NSRegularExpression(
+    pattern: #"(?:https?://[^\s\"<>]+)?/api/v1/[^\s\"<>]*[?&](?:token|expires)=[^\s\"<>]*"#)
+
   public static func scrub(_ value: JSONValue) -> JSONValue {
     switch value {
     case .object(let fields):
@@ -244,16 +247,19 @@ public enum CacheSanitizer {
       }
       let isTool = fields["type"] == .string("tool-call") || fields["type"] == .string("subagent")
       return .object(
-        stripped.mapValues(scrub).merging(
-          isTool ? fields.filter { ["args", "result", "structuredResult"].contains($0.key) } : [:],
-          uniquingKeysWith: { _, opaque in opaque }))
+        Dictionary(
+          uniqueKeysWithValues: stripped.map { key, value in
+            // Opaque tool payloads were restored after scrubbing before; do not traverse them twice.
+            let opaque = isTool && ["args", "result", "structuredResult"].contains(key)
+            return (key, opaque ? value : scrub(value))
+          }))
     case .array(let items): return .array(items.map(scrub))
     case .string(let text):
       // Capability URLs can also be embedded in authored text/opaque tool output.
       return .string(
-        text.replacingOccurrences(
-          of: #"(?:https?://[^\s\"<>]+)?/api/v1/[^\s\"<>]*[?&](?:token|expires)=[^\s\"<>]*"#,
-          with: "[local capability removed]", options: .regularExpression))
+        capabilityLink.stringByReplacingMatches(
+          in: text, range: NSRange(text.startIndex..., in: text),
+          withTemplate: "[local capability removed]"))
     default: return value
     }
   }

@@ -207,7 +207,7 @@ public final class ConsoleStore {
       guard epoch == generation else { return }
       cacheRevision = cache.revision
       tombstones = cache.tombstones
-      bootstrap = try cache.bootstrap.map(CacheSanitizer.sanitize)
+      bootstrap = cache.bootstrap
       if let bootstrap {
         tags = bootstrap.tags
         projects = bootstrap.projects
@@ -215,7 +215,7 @@ public final class ConsoleStore {
       }
       for bucket in cache.buckets { buckets[bucket.key] = bucket }
       for entry in cache.conversations.sorted(by: { $0.savedAt < $1.savedAt }) {
-        hold(try CacheSanitizer.conversation(entry), fromDevice: true)
+        hold(entry, fromDevice: true)
       }
     } catch {
       storage = .memoryOnly
@@ -269,7 +269,7 @@ public final class ConsoleStore {
         let cache = try await repository.loadCache(namespace)
         guard epoch == generation, selection == selected else { return }
         if let entry = cache.conversations.first(where: { $0.thread.id == threadID }) {
-          hold(try CacheSanitizer.conversation(entry), fromDevice: true)
+          hold(entry, fromDevice: true)
         }
       } catch { errorMessage = "This conversation's offline cache could not be restored." }
     }
@@ -328,7 +328,7 @@ public final class ConsoleStore {
     observedOrder.removeAll { $0 == id }
     observedOrder.append(id)
     while observedOrder.count > 256 { observations[observedOrder.removeFirst()] = nil }
-    conversations[id]?.freshness = .stale
+    if conversations[id]?.freshness != .stale { conversations[id]?.freshness = .stale }
   }
   func noteSummary(_ thread: WebThread) {
     confirmedSummaryIDs.insert(thread.id)
