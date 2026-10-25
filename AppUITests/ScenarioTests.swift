@@ -735,7 +735,11 @@ final class ScenarioTests: XCTestCase {
           "Checking console")
       )
       .firstMatch
-      if !row.isHittable { app.navigationBars.buttons.element(boundBy: 0).tap() }
+      if UIDevice.current.userInterfaceIdiom == .phone {
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        XCTAssertTrue(self.waitUntilHittable(back))
+        back.tap()
+      }
       XCTAssertTrue(self.waitUntilHittable(row))
       row.tap()
       XCTAssertTrue(self.element(app, "connection-checking").waitForExistence(timeout: 10))
