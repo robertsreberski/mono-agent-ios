@@ -32,10 +32,17 @@ struct ConnectionEditor: View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 18) {
-          SettingsGroup("Console") {
+          VStack(alignment: .leading, spacing: 8) {
+            Eyebrow("Name")
             TextField("Display name (optional)", text: $name).settingsField()
+              .accessibilityLabel("Name")
+              .accessibilityIdentifier("console-name")
+          }
+          VStack(alignment: .leading, spacing: 8) {
+            Eyebrow("Address")
             TextField("http:// or https:// root URL", text: $address).settingsField()
               .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+              .accessibilityLabel("Address")
               .accessibilityIdentifier("console-url")
             Text(
               "Use a hostname or IP and optional port, with no path prefix. No request is made until you tap Connect."
@@ -43,27 +50,32 @@ struct ConnectionEditor: View {
             .webFont(.notice).foregroundStyle(material.textMuted.color)
           }
           if let endpoint, endpoint.isInsecure {
-            SettingsGroup("Insecure HTTP") {
-              StatusIndicator(
-                .insecure,
-                label:
-                  "HTTP traffic is not encrypted and can be read or changed by others on the network."
+            VStack(alignment: .leading, spacing: 10) {
+              Label("Insecure HTTP", systemImage: "lock.open")
+                .webFont(.rowTitle).foregroundStyle(DesignColor.warning.color)
+              Text(
+                "HTTP traffic is not encrypted and can be read or changed by others on the network."
               )
+              .webFont(.notice).foregroundStyle(material.textMuted.color)
               if !endpoint.isLocalHost {
                 Toggle(
                   "I understand the risk of plaintext HTTP to this non-local host",
-                  isOn: $acknowledged)
+                  isOn: $acknowledged
+                )
+                .accessibilityIdentifier("console-http-acknowledgement")
               }
             }
+            .padding(.vertical, 10)
           }
-          SettingsGroup {
+          VStack(alignment: .leading, spacing: 10) {
             Text(
               "Use only a trusted network or secure private tunnel. The console has no application login and grants powerful access to its agents."
-            ).webFont(.notice).foregroundStyle(material.textMuted.color)
+            )
             Text(
               "On a physical device, localhost and loopback point to that device. Use your computer's LAN IP or Tailscale HTTPS URL instead."
-            ).webFont(.notice).foregroundStyle(material.textMuted.color)
+            )
           }
+          .webFont(.notice).foregroundStyle(material.textMuted.color)
           if let error {
             SettingsGroup("Could not save") { StatusIndicator(.failed, label: error) }
           }
@@ -78,7 +90,16 @@ struct ConnectionEditor: View {
       .navigationTitle(console == nil ? "Add console" : "Edit console")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) {
+          Button {
+            dismiss()
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Cancel")
+        }
+        .sharedBackgroundVisibility(.hidden)
         // System toolbars supply Liquid Glass; the confirmation action is prominent.
         ToolbarItem(placement: .confirmationAction) {
           Button(saving ? "Saving…" : "Connect") { save() }

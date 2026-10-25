@@ -5,6 +5,10 @@ import SwiftUI
 private struct StateLayout<Icon: View, Action: View>: View {
   let title: String
   let message: String?
+  var isEmpty = false
+  var isError = false
+  @Environment(\.consoleTheme) private var theme
+  @Environment(\.webMaterial) private var material
   @ViewBuilder let icon: () -> Icon
   @ViewBuilder let action: () -> Action
 
@@ -13,11 +17,22 @@ private struct StateLayout<Icon: View, Action: View>: View {
       icon()
         .font(.system(size: 24))
         .frame(width: 60, height: 60)
-        .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 20))
+        .background(
+          isError ? DesignColor.danger.color.opacity(0.1) : theme.palette.accentInk,
+          in: RoundedRectangle(cornerRadius: 20)
+        )
+        .overlay {
+          if isEmpty {
+            RoundedRectangle(cornerRadius: 20)
+              .stroke(theme.palette.accent.color.opacity(0.18), lineWidth: 1)
+              .rotationEffect(.degrees(-12))
+              .accessibilityHidden(true)
+          }
+        }
         .padding(.bottom, 14)
         .accessibilityHidden(true)
       Text(title)
-        .webFont(.stateTitle)
+        .webFont(isEmpty ? .stateTitle : .stateStatusTitle)
         .foregroundStyle(WebColor.text.color)
         .fixedSize(horizontal: false, vertical: true)
         .multilineTextAlignment(.center)
@@ -25,7 +40,7 @@ private struct StateLayout<Icon: View, Action: View>: View {
       if let message {
         Text(message)
           .webFont(.stateBody)
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(material.textMuted.color)
           .multilineTextAlignment(.center)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -57,11 +72,11 @@ public struct EmptyStateView: View {
   }
 
   public var body: some View {
-    StateLayout(title: title, message: message) {
+    StateLayout(title: title, message: message, isEmpty: true) {
       Image(systemName: systemImage).foregroundStyle(theme.palette.accent.color)
     } action: {
       if let actionTitle, let action {
-        Button(actionTitle, action: action).designButtonStyle(.primary).padding(.top)
+        Button(actionTitle, action: action).buttonStyle(WebStateActionStyle()).padding(.top, 12)
       }
     }
   }
@@ -84,12 +99,12 @@ public struct ErrorStateView: View {
   }
 
   public var body: some View {
-    StateLayout(title: title, message: message) {
+    StateLayout(title: title, message: message, isError: true) {
       Image(systemName: StatusKind.failed.systemImage)
         .foregroundStyle(DesignColor.danger.color)
     } action: {
       if let retryTitle, let retry {
-        Button(retryTitle, action: retry).designButtonStyle(.primary).padding(.top)
+        Button(retryTitle, action: retry).buttonStyle(WebStateActionStyle()).padding(.top, 12)
       }
     }
   }
@@ -97,16 +112,50 @@ public struct ErrorStateView: View {
 
 public struct LoadingStateView: View {
   private let title: String
+  @Environment(\.consoleTheme) private var theme
 
   public init(_ title: String) { self.title = title }
 
   public var body: some View {
     StateLayout(title: title, message: nil) {
-      ProgressView().controlSize(.large)
+      ProgressView().tint(WebGlass.accentText(theme.palette).color)
     } action: {
       EmptyView()
     }
     .accessibilityElement(children: .combine)
+  }
+}
+
+/// The web primary-button geometry for in-flow state actions. On a sheet, accent ink
+/// sits on the existing material: no solid panel or second glass surface.
+public struct WebStateActionStyle: ButtonStyle {
+  @Environment(\.consoleTheme) private var theme
+  @Environment(\.webMaterial) private var material
+  @Environment(\.isEnabled) private var isEnabled
+
+  public init() {}
+
+  public func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .webFont(.quickReply)
+      .fontWeight(.semibold)
+      .foregroundStyle(
+        material == .glass ? WebColor.text.color : theme.palette.onAccent.color
+      )
+      .padding(.horizontal, 18)
+      .padding(.vertical, 10)
+      .frame(minHeight: 44)
+      .background(
+        material == .glass ? theme.palette.accentInk : theme.palette.accentStrong.color,
+        in: RoundedRectangle(cornerRadius: WebRadius.tile)
+      )
+      .overlay {
+        if material == .glass {
+          RoundedRectangle(cornerRadius: WebRadius.tile)
+            .stroke(theme.palette.accent.color.opacity(0.3), lineWidth: 1)
+        }
+      }
+      .opacity(!isEnabled ? 0.5 : configuration.isPressed ? 0.8 : 1)
   }
 }
 
