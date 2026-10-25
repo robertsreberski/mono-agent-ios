@@ -87,7 +87,8 @@ struct ComposerSupportTests {
     await h.store.stop()
   }
 
-  @Test func stagingReportsProgressAndSingleChipRemovalDeletesOnlyThatFile() async throws {
+  @Test(arguments: [0, 1, 2, 3, 4])
+  func stagingReportsProgressAndSingleChipRemovalDeletesOnlyThatFile(transition: Int) async throws {
     let routes = RouteTransport()
     let transport = UploadRouteTransport(routes)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -131,8 +132,32 @@ struct ComposerSupportTests {
     #expect(
       store.uploadProgress.contains { $0.fraction == 0.5 },
       "intermediate progress is held until acceptance")
+    switch transition {
+    case 0: await store.select(sourceID: "agent-example")
+    case 1: await store.scenePhaseChanged(.background)
+    case 2: await store.stopEffects()  // A stream epoch change is not upload abandonment.
+    case 3: await store.discardStagedUploads()
+    default: await store.select(sourceID: "other-agent")
+    }
     await routes.release(try response(uploaded))
+    if transition >= 3 {
+      do {
+        try await staging.value
+        Issue.record("Abandoned uploads must reject late completion")
+      } catch is CancellationError {}
+      #expect(store.stagedAttachments.isEmpty && store.uploadProgress.isEmpty)
+      #expect(await routes.count("/api/v1/uploads/upload-example", method: "DELETE") == 1)
+      await store.stop()
+      try FileManager.default.removeItem(at: directory)
+      return
+    }
     try await staging.value
+    #expect(await routes.count("/api/v1/uploads", method: "POST") == 1)
+    #expect(await routes.count("/api/v1/uploads/upload-example/content", method: "PUT") == 1)
+    #expect(await routes.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    // Resume connectivity without creating another upload.
+    store.backgrounded = false
+    store.connection = .live
     #expect(store.uploadProgress.isEmpty, "finished rows leave the progress list")
     #expect(store.stagedAttachments.map(\.id) == ["upload-example"])
     var second = reserved

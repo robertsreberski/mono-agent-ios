@@ -3,6 +3,7 @@
   import Foundation
   import MonoAgentKit
   import MonoAgentStore
+  import SwiftUI
 
   /// Fictional composer scenarios (C8). Every value is synthetic; the console is never contacted.
   enum ComposerFixture {
@@ -547,6 +548,25 @@
       }
     }
 
+    /// Explicit deterministic run changes for draft-lifecycle tests; never submits a message.
+    func setRunning(_ running: Bool) throws {
+      let id = ComposerFixture.open
+      guard var thread = threads[id] else { return }
+      if running {
+        thread.runState = try ComposerFixture.decode(
+          #"{"id":"turn-lifecycle-\#(counter)","status":"running","startedAt":"2030-01-02T12:00:00Z"}"#
+        )
+      } else {
+        thread.runState.status = "complete"
+        thread.runState.finishedAt = stamp()
+      }
+      thread.revision += 1
+      threads[id] = thread
+      emit(
+        "turn.changed", thread: id,
+        payload: .object(["turn": try ComposerFixture.json(thread.runState)]))
+    }
+
     private func messageChanged(_ id: String) -> JSONValue {
       .object(["messageId": .string(id), "updatedAt": .string("2030-01-02T12:00:59.000Z")])
     }
@@ -561,6 +581,46 @@
         let value = try? JSONDecoder().decode(ApiEvent.self, from: data)
       else { return }
       continuation?.yield(.event(generation: 1, gap: .initial, value))
+    }
+  }
+
+  /// Opt-in controls only for synthetic automation; absent from ordinary scenarios and Release.
+  struct SyntheticDraftLifecycle: ViewModifier {
+    let model: AppModel
+    let store: ConsoleStore
+    @State private var revision = 0
+
+    func body(content: Content) -> some View {
+      content.overlay(alignment: .topTrailing) {
+        if ProcessInfo.processInfo.arguments.contains("--draft-lifecycle-controls"),
+          model.offersSampleAttachments, let script = model.composerScript
+        {
+          Menu("Synthetic lifecycle") {
+            Button("Toggle synthetic run") {
+              Task {
+                try? await script.setRunning(
+                  store.selectedConversation?.thread.runState.status != "running")
+                await store.reconcile()
+                revision += 1
+              }
+            }.accessibilityIdentifier("fixture-toggle-run")
+            Button("Refresh synthetic conversation") {
+              Task {
+                await store.reconcile()
+                revision += 1
+              }
+            }.accessibilityIdentifier("fixture-refresh")
+            Button("Reselect synthetic conversation") {
+              Task {
+                await store.select(sourceID: ComposerFixture.atlas, threadID: ComposerFixture.open)
+                revision += 1
+              }
+            }.accessibilityIdentifier("fixture-reselect")
+          }
+          .accessibilityIdentifier("fixture-lifecycle")
+          .accessibilityValue(String(revision))
+        }
+      }
     }
   }
 

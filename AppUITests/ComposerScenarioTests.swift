@@ -11,6 +11,10 @@ import XCTest
   func testDraftAttachmentsLight() { run("composer-draft-attachments", "light") }
   func testDraftAttachmentsDark() { run("composer-draft-attachments", "dark") }
   func testDraftAttachmentsPlumDark() { run("composer-draft-attachments", "dark", variant: "plum") }
+  func testDraftLifecycleLight() {
+    run("composer-draft-attachments", "light", variant: "lifecycle")
+  }
+  func testDraftLifecycleDark() { run("composer-draft-attachments", "dark", variant: "lifecycle") }
   func testSkillPickerLight() { run("composer-skill-picker", "light") }
   func testSkillPickerDark() { run("composer-skill-picker", "dark") }
   func testModelSelectorLight() { run("composer-model-selector", "light") }
@@ -37,7 +41,12 @@ import XCTest
     let capture = { self.capture(app, scenario, appearance, variant: variant) }
     switch scenario {
     case "composer-empty": newConversation(app, variant: variant, capture: capture)
-    case "composer-draft-attachments": draftAttachments(app, capture: capture)
+    case "composer-draft-attachments":
+      if variant == "lifecycle" {
+        draftLifecycle(app, capture: capture)
+      } else {
+        draftAttachments(app, capture: capture)
+      }
     case "composer-skill-picker":
       skillPicker(app, appearance: appearance, variant: variant, capture: capture)
     case "composer-model-selector": modelSelector(app, capture: capture)
@@ -103,6 +112,67 @@ import XCTest
     element(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "with 2 attachments"))
     XCTAssertFalse(element(app, "attachment-field-notes.txt").exists, "Admission clears chips")
+  }
+
+  private func draftLifecycle(_ app: XCUIApplication, capture: () -> Void) {
+    let message = element(app, "message-sample-assistant")
+    XCTAssertTrue(message.waitForExistence(timeout: 10))
+    message.press(forDuration: 1.2)
+    let quote = app.buttons["Quote"].firstMatch
+    XCTAssertTrue(quote.waitForExistence(timeout: 5))
+    quote.tap()
+    XCTAssertTrue(element(app, "quote-preview").waitForExistence(timeout: 5))
+    let field = composerField(app)
+    field.tap()
+    field.typeText(" Keep this draft.")
+    XCTAssertTrue(waitFor(app, "composer-field", containing: "Keep this draft."))
+    dismissKeyboard(app)
+    element(app, "composer-attach").tap()
+    XCTAssertTrue(element(app, "attach-samples").waitForExistence(timeout: 5))
+    element(app, "attach-samples").tap()
+
+    func retained() {
+      XCTAssertTrue(element(app, "attachment-sample-photo.png").waitForExistence(timeout: 10))
+      XCTAssertTrue(element(app, "attachment-field-notes.txt").waitForExistence(timeout: 10))
+      XCTAssertTrue(element(app, "quote-preview").waitForExistence(timeout: 5))
+      XCTAssertTrue(waitFor(app, "composer-field", containing: "Keep this draft."))
+    }
+    func transition(_ action: String, revision: Int, primary: String) {
+      let menu = element(app, "fixture-lifecycle")
+      XCTAssertTrue(menu.waitForExistence(timeout: 5))
+      menu.tap()
+      let button = element(app, action)
+      XCTAssertTrue(button.waitForExistence(timeout: 5))
+      button.tap()
+      let completed = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "value == %@", String(revision)), object: menu)
+      XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 15), .completed)
+      XCTAssertTrue(element(app, primary).waitForExistence(timeout: 10))
+      retained()
+    }
+    retained()
+    transition("fixture-toggle-run", revision: 1, primary: "composer-queue")
+    transition("fixture-toggle-run", revision: 2, primary: "composer-send")
+    transition("fixture-toggle-run", revision: 3, primary: "composer-queue")
+    transition("fixture-refresh", revision: 4, primary: "composer-queue")
+    transition("fixture-reselect", revision: 5, primary: "composer-queue")
+    XCUIDevice.shared.press(.home)
+    let backgrounded = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in app.state == .runningBackground }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [backgrounded], timeout: 10), .completed)
+    app.activate()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    retained()
+    capture()
+    transition("fixture-toggle-run", revision: 6, primary: "composer-send")
+    element(app, "composer-send").tap()
+    XCTAssertTrue(waitForText(app, "with 2 attachments"))
+    let cleared = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        !self.element(app, "attachment-sample-photo.png").exists
+          && !self.element(app, "quote-preview").exists && self.fieldText(app).isEmpty
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 10), .completed)
   }
 
   private func skillPicker(
@@ -308,6 +378,7 @@ import XCTest
       "--scenario", scenario, "--appearance", appearance, "--reset-test-data",
       "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
     ]
+    if variant == "lifecycle" { app.launchArguments += ["--draft-lifecycle-controls"] }
     if variant == "plum" { app.launchArguments += ["--fixture-theme", "plum"] }
     if variant == "ax3" {
       app.launchArguments += [

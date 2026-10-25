@@ -52,6 +52,7 @@ private struct ConversationComposerMount: ViewModifier {
   @Binding var createdThreadID: String?
   let sampleAttachments: Bool
   @State private var controller: ComposerController?
+  @State private var controllerRoute: AppRoute?
   @Environment(\.openNewConversation) private var openNewConversation
 
   func body(content: Content) -> some View {
@@ -64,11 +65,14 @@ private struct ConversationComposerMount: ViewModifier {
         }
       }
       .task(id: route) {
-        guard let source = route.sourceID else { return }
+        guard let source = route.sourceID, controller == nil || controllerRoute != route else {
+          return
+        }
         let next = ComposerController(store: store, sourceID: source, threadID: route.threadID)
         next.onCreate = { createdThreadID = $0 }
         next.onNewConversation = { openNewConversation.open?(source) }
         controller = next
+        controllerRoute = route
       }
       .onChange(of: store.hydrated) { _, hydrated in
         if hydrated, controller?.text.isEmpty == true { controller?.restoreDraft() }

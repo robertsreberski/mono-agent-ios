@@ -39,7 +39,6 @@ extension ConsoleStore {
   /// Uploads and reservations are visible-context memory only. Nothing here enters a disk record.
   public func stageUploads(_ files: [UploadFile]) async throws {
     guard let limits = bootstrap?.limits, canUpload else { throw SubmissionError.notReady }
-    let generation = epoch
     let selected = selection
     let service = UploadService(api: api)
     let existing = stagedAttachments
@@ -64,7 +63,9 @@ extension ConsoleStore {
     uploadTasks[id] = task
     defer { uploadTasks[id] = nil }
     let attachments = try await task.value
-    guard epoch == generation, selection == selected, !backgrounded else {
+    // Upload ownership follows the composer context, not the stream/scene epoch.
+    // Cancellation still rejects a late transport completion after explicit abandonment.
+    guard selection == selected, !task.isCancelled, !stopped, !stopping else {
       await service.discard(attachments)
       throw CancellationError()
     }
@@ -87,6 +88,7 @@ extension ConsoleStore {
   public func discardStagedUploads() async {
     for task in uploadTasks.values { task.cancel() }
     uploadTasks.removeAll()
+    uploadProgress.removeAll()
     let protected = protectedAttachmentIDs
     let abandoned = stagedAttachments.filter { !protected.contains($0.id) }
     stagedAttachments.removeAll { !protected.contains($0.id) }

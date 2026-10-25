@@ -188,6 +188,40 @@ import Testing
       await store.stop()
     }
 
+    @Test func draftTextQuoteAndPhotoSurviveRunRefreshAndBackgroundChanges() async throws {
+      let (model, store) = try await store(.composerDraftAttachments, select: open)
+      let script = try #require(model.composerScript)
+      let composer = ComposerController(store: store, sourceID: atlas, threadID: open)
+      composer.text = "Unsent sample draft"
+      let quote = WebQuote(text: "Sample quotation", messageId: "sample-assistant")
+      composer.setQuote(quote)
+      await composer.flushDraft()
+      let photo = try AttachmentAdapter.stage(
+        data: Data([0x89, 0x50, 0x4e, 0x47]), name: "sample-photo.png")
+      await composer.stage([photo])
+      let ids = store.stagedAttachments.map(\.id)
+      #expect(ids.count == 1)
+      for running in [true, false, true] {
+        try await script.setRunning(running)
+        try await until { composer.running == running }
+        await store.reconcile()
+        await store.select(sourceID: atlas, threadID: open)
+        #expect(composer.affordances.primary == (running ? .queue : .send))
+        #expect(store.stagedAttachments.map(\.id) == ids)
+        #expect(composer.text == "Unsent sample draft" && composer.quote == quote)
+      }
+      await store.scenePhaseChanged(.background)
+      #expect(store.stagedAttachments.map(\.id) == ids)
+      #expect(composer.text == "Unsent sample draft" && composer.quote == quote)
+      await store.scenePhaseChanged(.active)
+      try await until { store.connection == .live }
+      await store.reconcile()
+      #expect(store.stagedAttachments.map(\.id) == ids)
+      #expect(composer.text == "Unsent sample draft" && composer.quote == quote)
+      #expect(store.draft(sourceID: atlas, threadID: open)?.text == "Unsent sample draft")
+      await store.stop()
+    }
+
     @Test func attachmentsStageThroughTheStoreAndRespectLimits() async throws {
       let (_, store) = try await store(.composerDraftAttachments, select: open)
       let composer = ComposerController(store: store, sourceID: atlas, threadID: open)
