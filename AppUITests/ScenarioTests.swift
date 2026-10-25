@@ -590,9 +590,14 @@ final class ScenarioTests: XCTestCase {
         if last.isHittable && last.frame.maxY < footer.frame.minY { break }
         list.swipeUp()
       }
-      XCTAssertTrue(last.isHittable)
-      XCTAssertGreaterThanOrEqual(last.frame.minY, list.frame.minY)
-      XCTAssertLessThan(last.frame.maxY, footer.frame.minY, "Last row must clear footer pills")
+      let clearance = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in
+          last.isHittable && last.frame.minY >= list.frame.minY
+            && last.frame.maxY < footer.frame.minY
+        }, object: nil)
+      XCTAssertEqual(
+        XCTWaiter.wait(for: [clearance], timeout: 10), .completed,
+        "Last row must settle fully above footer pills")
     }
   }
 
