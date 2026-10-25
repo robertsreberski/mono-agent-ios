@@ -334,10 +334,10 @@ private struct ConsoleStatus: View {
   var body: some View {
     HStack(spacing: 4) {
       Image(systemName: "circle.fill").font(.system(size: 5))
-      Text(label.uppercased()).webFont(.chip)
+      Text(kind == .failed ? "FAILED" : label.uppercased()).webFont(.chip)
     }
     .foregroundStyle(kind.tone.color(in: theme).color)
-    .fixedSize(horizontal: true, vertical: false)
+    .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(label)
   }
