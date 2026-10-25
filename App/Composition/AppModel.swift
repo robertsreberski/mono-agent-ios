@@ -78,7 +78,8 @@ final class AppModel {
         directory = FileManager.default.temporaryDirectory
           .appendingPathComponent("SyntheticFixtures", isDirectory: true)
           .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        transport = ScriptedTransport(Self.steps(scenario, theme: configuration.fixtureTheme))
+        transport = ConsoleProbeFixture(
+          steps: Self.steps(scenario, theme: configuration.fixtureTheme))
         // Fixture storage is always fresh. Reset never deletes real profiles.
         UIView.setAnimationsEnabled(false)
       } else {
@@ -155,6 +156,9 @@ final class AppModel {
             name: "Flockbox", endpoint: Scenario.endpoint, httpAcknowledged: false
           )
           await registry.connect(id)
+          if ProcessInfo.processInfo.arguments.contains("--fixture-console-states") {
+            try await prepareConsoleVariants(selectedID: id)
+          }
         } catch { fatalError("Synthetic fixture setup failed: \(error)") }
       }
     #endif

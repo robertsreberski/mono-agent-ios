@@ -15,13 +15,16 @@ import XCTest
   func testPeerAX3() { review("peer-question-sheet", variant: "ax3") }
   func testPeerOpaque() { review("peer-question-sheet", variant: "opaque") }
   func testConnectionEditorAX3() { review("connection-empty", variant: "editorax3") }
+  func testConnectionEditorDarkAX3() {
+    review("connection-empty", variant: "editorax3", appearance: "dark")
+  }
   func testConnectionEditorOpaque() { review("connection-empty", variant: "editoropaque") }
 
-  private func review(_ scenario: String, variant: String) {
+  private func review(_ scenario: String, variant: String, appearance: String = "light") {
     let app = XCUIApplication()
     app.launchArguments = [
       "--scenario", scenario == "skill-browser" ? "composer-skill-picker" : scenario,
-      "--appearance", "light", "--reset-test-data", "-AppleLanguages", "(en)",
+      "--appearance", appearance, "--reset-test-data", "-AppleLanguages", "(en)",
       "-AppleLocale", "en_US",
     ]
     if variant.hasSuffix("ax3") {
@@ -78,7 +81,7 @@ import XCTest
       object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
     let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    attachment.name = "synthetic-fixture__\(scenario)__light__\(variant)"
+    attachment.name = "synthetic-fixture__\(scenario)__\(appearance)__\(variant)"
     attachment.lifetime = .keepAlways
     add(attachment)
   }

@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import pathlib
+import re
 import runpy
 import shutil
 import subprocess
@@ -87,7 +88,7 @@ class ToolingTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 runpy.run_path(str(ROOT / "Tools/select-simulators"), run_name="__main__")
 
-    def export(self, omit_last=False, extra=None, fail_family=None, family=None, focus=None, matrix=None):
+    def export(self, omit_last=False, extra=None, fail_family=None, family=None, focus=None, matrix=None, batch_size=None):
         matrix = MATRIX if matrix is None else matrix
         # Copy only the executable into an isolated root; no real Artifacts or simulator use.
         (ROOT / ".build").mkdir(exist_ok=True)
@@ -96,6 +97,10 @@ class ToolingTests(unittest.TestCase):
             (root / "Tools").mkdir()
             shutil.copyfile(ROOT / "Tools/screenshots", root / "Tools/screenshots")
             shutil.copyfile(ROOT / "Tools/screenshot-matrix.json", root / "Tools/screenshot-matrix.json")
+            if batch_size:
+                (root / "AppUITests").mkdir()
+                (root / "AppUITests/AccessibilityReviewTests.swift").write_text(
+                    "func testFirst() {}\nfunc testSecond() {}\nfunc testThird() {}\n")
             calls = []
 
             def fake_run(command, **kwargs):
@@ -115,6 +120,11 @@ class ToolingTests(unittest.TestCase):
                     destination.mkdir()
                     attachments = []
                     entries = matrix[:-1] if omit_last else matrix
+                    if batch_size:
+                        result = pathlib.Path(command[command.index("--path") + 1]).stem
+                        match = re.search(r"-batch-(\d+)$", result)
+                        number = int(match.group(1)) if match else 1
+                        entries = entries[number - 1::2]
                     for number, entry in enumerate(entries + ([extra] if extra else [])):
                         suffix = f"__{entry['variant']}" if entry.get("variant") else ""
                         label = f"synthetic-fixture__{entry['scenario']}__{entry['appearance']}{suffix}"
@@ -130,6 +140,8 @@ class ToolingTests(unittest.TestCase):
             argv = ["screenshots", "--iphone", "phone", "--ipad", "pad"] + (["--family", family] if family else [])
             if focus:
                 argv.append(focus)
+            if batch_size:
+                argv.extend(["--batch-size", str(batch_size)])
             index_name = f"index-{family}" if family else "index"
             with patch.object(sys, "argv", argv), patch("subprocess.run", side_effect=fake_run), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 try:
@@ -142,7 +154,7 @@ class ToolingTests(unittest.TestCase):
             count = 1 if family else 2
             self.assertEqual(len(index), count * len(matrix))
             self.assertTrue(all(item["label"] == "synthetic fixture" for item in index))
-            self.assertEqual(sum(command[0] == "xcodebuild" for command in calls), count)
+            self.assertEqual(sum(command[0] == "xcodebuild" for command in calls), count * (2 if batch_size else 1))
             self.assertEqual(sum(command[:3] == ("sips", "-Z", "2000") for command in calls), count * len(matrix))
             files = {item["file"] for item in index}
             if family != "iPad" and focus is None:
@@ -150,6 +162,18 @@ class ToolingTests(unittest.TestCase):
             if family != "iPhone" and focus is None:
                 self.assertIn("iPad__design-catalog-reduce-transparency__dark.png", files)
             return index
+
+    def test_review_batches_export_one_combined_exact_matrix(self):
+        matrix = [entry for entry in MATRIX if
+                  (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+                   and entry.get("variant") in {"ax3", "opaque"})
+                  or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
+        self.export(family="iPhone", focus="--accessibility-only", matrix=matrix, batch_size=2)
+        builds = [command for command in self.calls if command[0] == "xcodebuild"]
+        selectors = [arg for command in builds for arg in command if arg.startswith("-only-testing:")]
+        self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/AccessibilityReviewTests/testFirst",
+                                    "-only-testing:MonoAgentUITests/AccessibilityReviewTests/testSecond",
+                                    "-only-testing:MonoAgentUITests/AccessibilityReviewTests/testThird"])
 
     def test_matrix_keeps_connection_screens_and_covers_the_catalog(self):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
@@ -236,7 +260,7 @@ class ToolingTests(unittest.TestCase):
                   (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
                    and entry.get("variant") in {"ax3", "opaque"})
                   or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
-        self.assertEqual(len(matrix), 12)
+        self.assertEqual(len(matrix), 13)
         self.export(family="iPhone", focus="--accessibility-only", matrix=matrix)
         command = next(call for call in self.calls if call[0] == "xcodebuild")
         self.assertIn("-only-testing:MonoAgentUITests/AccessibilityReviewTests", command)

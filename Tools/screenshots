@@ -27,9 +27,9 @@ EXPECTED = {key(entry): entry for entry in MATRIX}
 if len(EXPECTED) != len(MATRIX):
     sys.exit("Duplicate entries in Tools/screenshot-matrix.json")
 
-def run(*command, capture=False):
+def run(*command, capture=False, timeout=None):
     return subprocess.run(command, cwd=ROOT, check=True, text=True,
-                          stdout=subprocess.PIPE if capture else None).stdout
+                          stdout=subprocess.PIPE if capture else None, timeout=timeout).stdout
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--iphone")
@@ -42,7 +42,10 @@ parser.add_argument("--accessibility-only", action="store_true", help="Additiona
 parser.add_argument("--scenario-only", action="store_true", help="Connection, dashboard, catalog and fidelity captures")
 parser.add_argument("--activity-only", action="store_true", help="Job, subagent and context captures")
 parser.add_argument("--mcp-only", action="store_true", help="Focused MCP UI scenarios and captures")
+parser.add_argument("--batch-size", type=int, default=0, help="Bound XCUI runs by test count; each batch has a 19 minute timeout")
 args = parser.parse_args()
+if args.batch_size < 0:
+    parser.error("--batch-size must be nonnegative")
 if sum((args.transcript_only, args.composer_only, args.replies_only, args.mcp_only, args.scenario_only, args.activity_only, args.accessibility_only)) > 1:
     parser.error("Choose at most one focused capture")
 def capture_suite(entry):
@@ -117,72 +120,99 @@ def surface(scenario):
     return "connection"
 
 
+def test_batches():
+    suites = {
+        "transcript": ["TranscriptScenarioTests"], "composer": ["ComposerScenarioTests"],
+        "replies": ["ReplyScenarioTests"], "mcp": ["McpScenarioTests"],
+        "scenario": ["ScenarioTests"], "activity": ["ActivityScenarioTests"],
+        "accessibility": ["AccessibilityReviewTests"],
+    }
+    selected = suites.get(focused_suite)
+    unit = focused_suite in (None, "transcript")
+    if not args.batch_size:
+        return [[*(f"MonoAgentUITests/{name}" for name in selected),
+                 *(["MonoAgentTests"] if unit else [])]] if selected else [[]]
+    sources = sorted((ROOT / "AppUITests").glob("*.swift"))
+    tests = []
+    for source in sources:
+        if selected is None or source.stem in selected:
+            tests.extend(f"MonoAgentUITests/{source.stem}/{name}" for name in
+                         re.findall(r"func (test\w+)\(", source.read_text()))
+    if not tests:
+        raise MatrixError("No XCUI tests discovered for batching")
+    batches = [tests[i:i + args.batch_size] for i in range(0, len(tests), args.batch_size)]
+    if unit:
+        batches.append(["MonoAgentTests"])
+    return batches
+
+
 def capture(family, device):
-    """Test one device and export its screenshots. Raises on any failure, after exporting
-    whatever attachments exist, so CI still uploads partial evidence."""
-    result = ARTIFACTS / f"{family}.xcresult"
+    """Run bounded batches and validate their combined, exact screenshot matrix."""
+    batches = test_batches()
+    results = [ARTIFACTS / (f"{family}.xcresult" if i == 0 else f"{family}-batch-{i + 1}.xcresult")
+               for i in range(len(batches))]
+    if any(result.exists() for result in results):
+        raise MatrixError(f"{family}: a batch result already exists")
     if device.get("state") != "Booted":
         run("xcrun", "simctl", "boot", device["udid"])
     run("xcrun", "simctl", "bootstatus", device["udid"], "-b")
     run("xcrun", "simctl", "status_bar", device["udid"], "override", "--time", "2001-01-01T09:41:00.000Z",
         "--batteryState", "charged", "--batteryLevel", "100", "--wifiMode", "active", "--wifiBars", "3")
-    test_failure = None
+    test_failures = []
     try:
-        # Verbose diagnostics (sysdiagnose) after a failure cost ~10 minutes and add nothing
-        # the xcresult does not already hold.
-        run("xcodebuild", "-project", "MonoAgent.xcodeproj", "-scheme", "MonoAgent",
-            "-destination", f"platform=iOS Simulator,id={device['udid']}",
-            "-derivedDataPath", ".build/Xcode", "-resultBundlePath", str(result),
-            "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never",
-            "CODE_SIGNING_ALLOWED=NO", "test",
-            *(["-only-testing:MonoAgentUITests/TranscriptScenarioTests", "-only-testing:MonoAgentTests"] if args.transcript_only else []),
-            *(["-only-testing:MonoAgentUITests/ComposerScenarioTests"] if args.composer_only else []),
-            *(["-only-testing:MonoAgentUITests/ReplyScenarioTests"] if args.replies_only else []),
-            *(["-only-testing:MonoAgentUITests/McpScenarioTests"] if args.mcp_only else []),
-            *(["-only-testing:MonoAgentUITests/ScenarioTests"] if args.scenario_only else []),
-            *(["-only-testing:MonoAgentUITests/ActivityScenarioTests"] if args.activity_only else []),
-            *(["-only-testing:MonoAgentUITests/AccessibilityReviewTests"] if args.accessibility_only else []))
-    except subprocess.CalledProcessError as error:
-        test_failure = error
+        for number, (result, tests) in enumerate(zip(results, batches), 1):
+            print(f"{family}: batch {number}/{len(batches)} ({len(tests)} selectors)", flush=True)
+            try:
+                run("xcodebuild", "-project", "MonoAgent.xcodeproj", "-scheme", "MonoAgent",
+                    "-destination", f"platform=iOS Simulator,id={device['udid']}",
+                    "-derivedDataPath", ".build/Xcode", "-resultBundlePath", str(result),
+                    "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never",
+                    "CODE_SIGNING_ALLOWED=NO", "test",
+                    *(f"-only-testing:{test}" for test in tests),
+                    timeout=19 * 60 if args.batch_size else None)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+                test_failures.append(f"{result.name}: {error}")
     finally:
         run("xcrun", "simctl", "status_bar", device["udid"], "clear")
-    if not result.exists():
-        raise MatrixError(f"{family}: xcodebuild test failed before producing a result bundle")
-    exported = ARTIFACTS / f"Attachments-{family}"
-    run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result),
-        "--output-path", str(exported))
-    manifest = json.loads((exported / "manifest.json").read_text())
     found = set()
-    for test in manifest:
-        for attachment in test["attachments"]:
-            match = re.match(r"synthetic-fixture__([a-z0-9-]+)__(light|dark)(?:__([a-z0-9]+))?(?:_\d+_[0-9A-Fa-f-]+)?(?:\.png)?$", attachment["suggestedHumanReadableName"])
-            if not match:
-                continue
-            scenario, appearance, variant = match.groups()
-            entry = EXPECTED.get((scenario, appearance, variant))
-            if entry is None:
-                raise MatrixError(f"Screenshot not in Tools/screenshot-matrix.json: {family} {match.group(0)}")
-            if key(entry) in found:
-                raise MatrixError(f"Duplicate screenshot: {family} {key(entry)}")
-            found.add(key(entry))
-            source = exported / attachment["exportedFileName"]
-            if source.suffix.lower() != ".png":
-                raise MatrixError("Expected PNG screenshot attachment")
-            name = f"{family}__{scenario}__{appearance}" + (f"__{variant}" if variant else "") + ".png"
-            target = output / name
-            shutil.copyfile(source, target)
-            run("sips", "-Z", "2000", str(target))
-            dimensions = list(map(int, re.findall(r"pixel(?:Width|Height): (\d+)", run("sips", "-g", "pixelWidth", "-g", "pixelHeight", str(target), capture=True))))
-            if len(dimensions) != 2 or not all(0 < dimension <= 2000 for dimension in dimensions):
-                raise MatrixError(f"Invalid screenshot dimensions: {name}")
-            index.append(dict(file=name, device=device["name"], runtime=device["runtime"],
-                              scenario=scenario, appearance=appearance, variant=variant,
-                              textSize=entry["textSize"],
-                              transparency=entry["transparency"], theme=entry["theme"],
-                              surface=surface(scenario),
-                              label="synthetic fixture", dimensions=dimensions))
-    if test_failure is not None:
-        raise MatrixError(f"{family}: xcodebuild test exited {test_failure.returncode}; see {result.name}")
+    for number, result in enumerate(results, 1):
+        if not result.exists():
+            test_failures.append(f"{result.name}: no result bundle")
+            continue
+        exported = ARTIFACTS / (f"Attachments-{family}" if number == 1 else f"Attachments-{family}-batch-{number}")
+        run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result),
+            "--output-path", str(exported))
+        manifest = json.loads((exported / "manifest.json").read_text())
+        for test in manifest:
+            for attachment in test["attachments"]:
+                match = re.match(r"synthetic-fixture__([a-z0-9-]+)__(light|dark)(?:__([a-z0-9]+))?(?:_\d+_[0-9A-Fa-f-]+)?(?:\.png)?$", attachment["suggestedHumanReadableName"])
+                if not match:
+                    continue
+                scenario, appearance, variant = match.groups()
+                entry = EXPECTED.get((scenario, appearance, variant))
+                if entry is None:
+                    raise MatrixError(f"Screenshot not in Tools/screenshot-matrix.json: {family} {match.group(0)}")
+                if key(entry) in found:
+                    raise MatrixError(f"Duplicate screenshot: {family} {key(entry)}")
+                found.add(key(entry))
+                source = exported / attachment["exportedFileName"]
+                if source.suffix.lower() != ".png":
+                    raise MatrixError("Expected PNG screenshot attachment")
+                name = f"{family}__{scenario}__{appearance}" + (f"__{variant}" if variant else "") + ".png"
+                target = output / name
+                shutil.copyfile(source, target)
+                run("sips", "-Z", "2000", str(target))
+                dimensions = list(map(int, re.findall(r"pixel(?:Width|Height): (\d+)", run("sips", "-g", "pixelWidth", "-g", "pixelHeight", str(target), capture=True))))
+                if len(dimensions) != 2 or not all(0 < dimension <= 2000 for dimension in dimensions):
+                    raise MatrixError(f"Invalid screenshot dimensions: {name}")
+                index.append(dict(file=name, device=device["name"], runtime=device["runtime"],
+                                  scenario=scenario, appearance=appearance, variant=variant,
+                                  textSize=entry["textSize"],
+                                  transparency=entry["transparency"], theme=entry["theme"],
+                                  surface=surface(scenario),
+                                  label="synthetic fixture", dimensions=dimensions))
+    if test_failures:
+        raise MatrixError(f"{family}: test batches failed: {'; '.join(test_failures)}")
     if found != set(EXPECTED):
         raise MatrixError(f"Incomplete screenshot matrix for {family}; missing {sorted(set(EXPECTED) - found, key=str)}")
 

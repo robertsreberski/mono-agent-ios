@@ -672,6 +672,121 @@ final class ScenarioTests: XCTestCase {
     }
   }
 
+  func testConsolesLargerTextLight() { captureConsoleVariants("light", larger: true) }
+  func testConsolesLargerTextDark() { captureConsoleVariants("dark", larger: true) }
+  func testConsolesLargerTextBottomLight() {
+    captureConsoleVariants("light", larger: true, bottom: true)
+  }
+  func testConsolesLargerTextBottomDark() {
+    captureConsoleVariants("dark", larger: true, bottom: true)
+  }
+  func testConsolesMixedStatesLight() { captureConsoleVariants("light") }
+  func testConsolesMixedStatesDark() { captureConsoleVariants("dark") }
+
+  private func captureConsoleVariants(
+    _ appearance: String, larger: Bool = false, bottom: Bool = false
+  ) {
+    capture(
+      "dashboard-populated", appearance, accessibilityText: larger,
+      expect: ["agent-strip"],
+      variant: bottom ? "consolesax3bottom" : larger ? "consolesax3" : "consolestates",
+      arguments: ["--fixture-console-states"]
+    ) { app in
+      self.element(app, "consoles-button").tap()
+      for label in ["Online", "Not connected", "Connection failed", "HTTP", "Checking…"] {
+        XCTAssertTrue(
+          app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", label)
+          ).firstMatch.waitForExistence(timeout: 10))
+      }
+      if bottom {
+        let row = app.buttons.matching(
+          NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "console-row-",
+            "Checking console")
+        )
+        .firstMatch
+        let list = app.scrollViews.matching(identifier: "scenario-ready").firstMatch
+        for _ in 0..<8 where !row.isHittable { list.swipeUp() }
+        XCTAssertTrue(self.waitUntilHittable(row))
+      }
+    }
+  }
+
+  func testConnectionEmptyLargerTextLight() {
+    capture("connection-empty", "light", accessibilityText: true)
+  }
+  func testConnectionEmptyLargerTextDark() {
+    capture("connection-empty", "dark", accessibilityText: true)
+  }
+  func testConnectionCheckingLight() { captureChecking("light") }
+  func testConnectionCheckingDark() { captureChecking("dark") }
+  private func captureChecking(_ appearance: String) {
+    capture(
+      "connection-failed", appearance, expect: ["connection-failed"], variant: "checking",
+      arguments: ["--fixture-console-states"]
+    ) { app in
+      // Return to the root list on compact width; split view already exposes it on iPad.
+      let row = app.buttons.matching(
+        NSPredicate(
+          format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "console-row-",
+          "Checking console")
+      )
+      .firstMatch
+      if !row.isHittable { app.navigationBars.buttons.element(boundBy: 0).tap() }
+      XCTAssertTrue(self.waitUntilHittable(row))
+      row.tap()
+      XCTAssertTrue(self.element(app, "connection-checking").waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["Checking console…"].waitForExistence(timeout: 10))
+    }
+  }
+
+  func testConsoleMenuLight() { captureConsoleMenu("light") }
+  func testConsoleMenuDark() { captureConsoleMenu("dark") }
+  private func captureConsoleMenu(_ appearance: String) {
+    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "consolesmenu") {
+      app in
+      self.element(app, "consoles-button").tap()
+      let actions = app.buttons.matching(NSPredicate(format: "label == %@", "Actions for Flockbox"))
+        .firstMatch
+      XCTAssertTrue(self.waitUntilHittable(actions))
+      actions.tap()
+      XCTAssertTrue(self.waitUntilHittable(app.buttons["Edit"]))
+      XCTAssertTrue(self.waitUntilHittable(app.buttons["Remove"]))
+    }
+  }
+
+  func testConsoleMenuEditsAndCancelsRemoval() {
+    let app = launch("dashboard-populated")
+    defer { app.terminate() }
+    self.element(app, "consoles-button").tap()
+    let actions = app.buttons.matching(NSPredicate(format: "label == %@", "Actions for Flockbox"))
+      .firstMatch
+    XCTAssertTrue(self.waitUntilHittable(actions))
+    actions.tap()
+    let edit = app.buttons["Edit"]
+    XCTAssertTrue(self.waitUntilHittable(edit))
+    edit.tap()
+    let name = app.textFields["console-name"]
+    assertEventually(name, NSPredicate(format: "value == %@", "Flockbox"))
+    assertEventually(
+      app.textFields["console-url"],
+      NSPredicate(
+        format: "value == %@", "https://console.example.ts.net"))
+    app.buttons["Cancel"].tap()
+    XCTAssertTrue(self.waitUntilHittable(actions))
+    actions.tap()
+    let remove = app.buttons["Remove"]
+    XCTAssertTrue(self.waitUntilHittable(remove))
+    remove.tap()
+    XCTAssertTrue(app.buttons["Remove console"].waitForExistence(timeout: 5))
+    // A native confirmation popover may omit its Cancel row. Tapping outside dismisses
+    // it on both families without invoking the destructive action.
+    app.navigationBars["Consoles"].tap()
+    XCTAssertTrue(app.buttons["Remove console"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(self.waitUntilHittable(actions))
+  }
+
   func testOfflineEmptyAndSearchScenarios() {
     var app = launch("dashboard-offline")
     XCTAssertTrue(element(app, "banner-offline").waitForExistence(timeout: 10))
