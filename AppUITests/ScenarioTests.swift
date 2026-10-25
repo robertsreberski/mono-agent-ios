@@ -497,7 +497,7 @@ final class ScenarioTests: XCTestCase {
       app.launchArguments = ["--scenario", scenario, "--reset-test-data"]
       app.launch()
       XCTAssertTrue(
-        app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 15))
+        app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 30))
       app.terminate()
     }
   }
@@ -704,7 +704,7 @@ final class ScenarioTests: XCTestCase {
       ]
     }
     app.launch()
-    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 15))
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 30))
     return app
   }
 
@@ -772,22 +772,27 @@ final class ScenarioTests: XCTestCase {
     app.launch()
     for identifier in expect ?? [scenario] {
       XCTAssertTrue(
-        app.descendants(matching: .any)[identifier].firstMatch.waitForExistence(timeout: 15),
+        app.descendants(matching: .any)[identifier].firstMatch.waitForExistence(timeout: 30),
         "missing \(identifier)")
     }
     XCTAssertTrue(
-      app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 15))
+      app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 30))
     XCTAssertFalse(app.staticTexts["Ready"].exists, "Test readiness must not add visible text")
     prepare?(app)
+    let checkSidebar = screenshotChecksSidebar(app)
     let rendered = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in screenshotHasContent(XCUIScreen.main.screenshot()) },
+      predicate: NSPredicate { _, _ in
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
+      },
       object: nil
     )
     XCTAssertEqual(
-      XCTWaiter.wait(for: [rendered], timeout: 10), .completed,
+      XCTWaiter.wait(for: [rendered], timeout: 30), .completed,
       "Accessibility is ready, but the screen has not rendered content")
     let screenshot = XCUIScreen.main.screenshot()
-    XCTAssertTrue(screenshotHasContent(screenshot), "Do not publish a blank startup frame")
+    XCTAssertTrue(
+      screenshotHasContent(screenshot, checkSidebar: checkSidebar),
+      "Do not publish a blank startup frame")
     let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name =
       "synthetic-fixture__\(scenario)__\(appearance)"
@@ -798,21 +803,25 @@ final class ScenarioTests: XCTestCase {
   }
 }
 
-/// A structural guard, not a pixel snapshot: ignore system bars and reject a flat blank frame.
-func screenshotHasContent(_ screenshot: XCUIScreenshot) -> Bool {
-  let app = XCUIApplication()
+/// Resolve split-view geometry once after preparing a capture, never inside its pixel poll.
+@MainActor func screenshotChecksSidebar(_ app: XCUIApplication) -> Bool {
   let window = app.windows.firstMatch.frame
-  if window.width > 900 {
-    let sidebarAction = app.buttons["new-conversation"].firstMatch
-    if sidebarAction.exists && sidebarAction.frame.midX < window.width * 0.4 {
-      guard let image = screenshot.image.cgImage,
-        let sidebar = image.cropping(
-          to: CGRect(
-            x: 0, y: Double(image.height) * 0.15,
-            width: Double(image.width) * 0.3, height: Double(image.height) * 0.7)),
-        screenshotRegionHasContent(sidebar)
-      else { return false }
-    }
+  guard window.width > 900 else { return false }
+  let sidebarAction = app.buttons["new-conversation"].firstMatch
+  return sidebarAction.exists && sidebarAction.frame.midX < window.width * 0.4
+}
+
+/// A structural guard, not a pixel snapshot: ignore system bars and reject a flat blank frame.
+/// Only image work belongs here; accessibility queries can exceed the poll's entire deadline.
+func screenshotHasContent(_ screenshot: XCUIScreenshot, checkSidebar: Bool) -> Bool {
+  if checkSidebar {
+    guard let image = screenshot.image.cgImage,
+      let sidebar = image.cropping(
+        to: CGRect(
+          x: 0, y: Double(image.height) * 0.15,
+          width: Double(image.width) * 0.3, height: Double(image.height) * 0.7)),
+      screenshotRegionHasContent(sidebar)
+    else { return false }
   }
   guard let image = screenshot.image.cgImage,
     let content = image.cropping(

@@ -73,10 +73,13 @@ import XCTest
     default:
       XCTAssertTrue(element(app, "quick-reply-Ship it").waitForExistence(timeout: 5))
     }
+    let checkSidebar = screenshotChecksSidebar(app)
     let rendered = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in screenshotHasContent(XCUIScreen.main.screenshot()) },
+      predicate: NSPredicate { _, _ in
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
+      },
       object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 30), .completed)
     let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
     attachment.name = "synthetic-fixture__\(scenario)__light__\(variant)"
     attachment.lifetime = .keepAlways
