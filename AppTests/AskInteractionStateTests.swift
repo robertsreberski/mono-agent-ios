@@ -36,14 +36,19 @@ import Testing
       let model = AppModel(scenario: .consoleOnline, storeScenario: .conversationAskForm)
       await model.start()
       let store = try #require(model.store)
+      // Stop live effects first: a fixture stream event would otherwise re-derive the offset
+      // from its own timestamp between setting it and reading the server time.
+      await store.stop()
       store.serverClockOffset = offset
+      // One server-time snapshot drives both the expiry and the normalization.
+      let serverNow = await store.serverNow()
+      #expect(store.serverClockOffset == offset, "the applied offset is the one under test")
       var pending = try ComposerFixture.askSnapshot()
-      let deviceNow = await store.serverNow().addingTimeInterval(-offset)
+      let deviceNow = serverNow.addingTimeInterval(-offset)
       pending.expiresAt = ISO8601DateFormatter().string(
         from: deviceNow.addingTimeInterval(offset / 2))
-      let normalized = AskForm.normalized(pending, now: await store.serverNow())
+      let normalized = AskForm.normalized(pending, now: serverNow)
       #expect(normalized.status == (offset > 0 ? "expired" : "pending"))
-      await store.stop()
     }
 
     @Test func untrustedIntegralEnumOutsideIntRangeNeverTraps() {
