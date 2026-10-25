@@ -258,12 +258,17 @@ private struct ConsoleRow: View {
   }
 
   @Environment(\.dynamicTypeSize) private var textSize
+  @State private var rowWidth: CGFloat = 0
+
+  // A regular-width split view can still have a narrow sidebar. Keep status below the
+  // title there, just as at Larger Text, instead of letting the fixed status crush names.
+  private var stacked: Bool { textSize.isAccessibilitySize || (rowWidth > 0 && rowWidth < 360) }
 
   var body: some View {
     HStack(spacing: 4) {
       Button(action: open) {
         HStack(spacing: 10) {
-          if !textSize.isAccessibilitySize {
+          if !stacked {
             Image(systemName: "network")
               .foregroundStyle(material.textMuted.color)
               .frame(width: 30, height: 30)
@@ -274,13 +279,14 @@ private struct ConsoleRow: View {
           }
           VStack(alignment: .leading, spacing: 5) {
             Text(title).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
+              .lineLimit(2)
             Text(console.endpoint.origin).webFont(.settingsAddress)
               .foregroundStyle(material.textMuted.color)
               .lineLimit(1).truncationMode(.middle)
-            if textSize.isAccessibilitySize { indicators }
+            if stacked { indicators }
           }
           .frame(maxWidth: .infinity, alignment: .leading)
-          if !textSize.isAccessibilitySize { indicators }
+          if !stacked { indicators }
           Image(systemName: "chevron.right")
             .webFont(.chip).foregroundStyle(material.textMuted.color)
             .accessibilityHidden(true)
@@ -303,6 +309,7 @@ private struct ConsoleRow: View {
       .accessibilityLabel("Actions for " + title)
       .accessibilityIdentifier("console-actions-" + console.id.uuidString)
     }
+    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: { rowWidth = $0 })
   }
 
   @ViewBuilder private var actions: some View {
