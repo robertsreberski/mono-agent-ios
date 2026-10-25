@@ -96,8 +96,10 @@ struct DashboardShell: View {
               store: store, sourceID: store.dashboardAgentID, target: settings.target,
               layout: .split, close: closeSettings
             )
-            .frame(width: detailFrame.width, height: detailFrame.height)
-            .offset(x: detailFrame.minX - splitFrame.minX, y: detailFrame.minY - splitFrame.minY)
+            // The column's width, the split view's full height: settings draws its own header
+            // under the status bar, where the covered stack's (hidden) bar would be.
+            .frame(width: detailFrame.width, height: splitFrame.height)
+            .offset(x: detailFrame.minX - splitFrame.minX)
           }
         }
       } else {
