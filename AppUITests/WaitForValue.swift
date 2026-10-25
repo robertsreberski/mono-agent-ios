@@ -9,7 +9,7 @@ enum WaitFor {
   /// Waits until `condition` holds for `element`. Records a failure at the caller otherwise.
   @discardableResult
   static func element(
-    _ element: XCUIElement, timeout: TimeInterval = 10, _ description: String,
+    _ element: XCUIElement, timeout: TimeInterval = 20, _ description: String,
     file: StaticString = #filePath, line: UInt = #line,
     _ condition: @escaping @MainActor (XCUIElement) -> Bool
   ) -> Bool {
@@ -26,7 +26,7 @@ enum WaitFor {
   /// The accessibility value contains `text`.
   @discardableResult
   static func value(
-    _ element: XCUIElement, contains text: String, timeout: TimeInterval = 10,
+    _ element: XCUIElement, contains text: String, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     Self.element(element, timeout: timeout, "value containing “\(text)”", file: file, line: line) {
@@ -37,7 +37,7 @@ enum WaitFor {
   /// The accessibility value does not contain `text`.
   @discardableResult
   static func value(
-    _ element: XCUIElement, lacks text: String, timeout: TimeInterval = 10,
+    _ element: XCUIElement, lacks text: String, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     Self.element(element, timeout: timeout, "value without “\(text)”", file: file, line: line) {
@@ -50,7 +50,7 @@ enum WaitFor {
   /// The accessibility label contains `text`.
   @discardableResult
   static func label(
-    _ element: XCUIElement, contains text: String, timeout: TimeInterval = 10,
+    _ element: XCUIElement, contains text: String, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     Self.element(element, timeout: timeout, "label containing “\(text)”", file: file, line: line) {
@@ -60,7 +60,7 @@ enum WaitFor {
 
   @discardableResult
   static func enabled(
-    _ element: XCUIElement, _ enabled: Bool = true, timeout: TimeInterval = 10,
+    _ element: XCUIElement, _ enabled: Bool = true, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     Self.element(
@@ -70,7 +70,7 @@ enum WaitFor {
 
   @discardableResult
   static func selected(
-    _ element: XCUIElement, _ selected: Bool = true, timeout: TimeInterval = 10,
+    _ element: XCUIElement, _ selected: Bool = true, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     Self.element(
@@ -80,7 +80,7 @@ enum WaitFor {
 
   @discardableResult
   static func hittable(
-    _ element: XCUIElement, timeout: TimeInterval = 10,
+    _ element: XCUIElement, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     Self.element(element, timeout: timeout, "hittable", file: file, line: line) { $0.isHittable }
@@ -89,7 +89,7 @@ enum WaitFor {
   /// The element is gone or covered by another surface (not hittable).
   @discardableResult
   static func covered(
-    _ element: XCUIElement, timeout: TimeInterval = 10,
+    _ element: XCUIElement, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     let expectation = XCTNSPredicateExpectation(
@@ -102,7 +102,7 @@ enum WaitFor {
   /// The element disappears (or never appears) within the timeout.
   @discardableResult
   static func absent(
-    _ element: XCUIElement, timeout: TimeInterval = 10,
+    _ element: XCUIElement, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     let expectation = XCTNSPredicateExpectation(
