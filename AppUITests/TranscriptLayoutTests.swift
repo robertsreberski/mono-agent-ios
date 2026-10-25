@@ -36,8 +36,9 @@ import XCTest
       let top = max(scroll.frame.minY, headerBottom)
       let aligned = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
-          notice.exists && notice.frame.midY >= top
-            && notice.frame.midY <= top + 80
+          // The row's top edge: a message row is taller than the notice it replaced.
+          notice.exists && notice.frame.minY >= top - 1
+            && notice.frame.minY <= top + 80
         }, object: nil)
       XCTAssertEqual(
         XCTWaiter.wait(for: [aligned], timeout: 10), .completed,
