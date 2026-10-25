@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import pathlib
+import re
 import runpy
 import shutil
 import subprocess
@@ -87,7 +88,7 @@ class ToolingTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 runpy.run_path(str(ROOT / "Tools/select-simulators"), run_name="__main__")
 
-    def export(self, omit_last=False, extra=None, fail_family=None, family=None, focus=None, matrix=None):
+    def export(self, omit_last=False, extra=None, fail_family=None, family=None, focus=None, matrix=None, batch_size=None, export_failure=None, timeout_first=False):
         matrix = MATRIX if matrix is None else matrix
         # Copy only the executable into an isolated root; no real Artifacts or simulator use.
         (ROOT / ".build").mkdir(exist_ok=True)
@@ -96,16 +97,24 @@ class ToolingTests(unittest.TestCase):
             (root / "Tools").mkdir()
             shutil.copyfile(ROOT / "Tools/screenshots", root / "Tools/screenshots")
             shutil.copyfile(ROOT / "Tools/screenshot-matrix.json", root / "Tools/screenshot-matrix.json")
+            if batch_size:
+                (root / "AppUITests").mkdir()
+                (root / "AppUITests/AccessibilityReviewTests.swift").write_text(
+                    "func testFirst() {}\nfunc testSecond() {}\nfunc testThird() {}\n")
             calls = []
+            run_options = []
 
             def fake_run(command, **kwargs):
                 calls.append(command)
+                run_options.append(kwargs)
                 stdout = ""
                 if command[0] == "xcodebuild":
                     bundle = pathlib.Path(command[command.index("-resultBundlePath") + 1])
                     bundle.mkdir(parents=True)
                     self.assertIn("-collect-test-diagnostics", command)
                     self.assertEqual(command[command.index("-collect-test-diagnostics") + 1], "never")
+                    if timeout_first and bundle.name == "iPhone.xcresult":
+                        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
                     if fail_family and bundle.name == f"{fail_family}.xcresult":
                         raise subprocess.CalledProcessError(65, command)
                 if command[:3] == ("xcrun", "simctl", "list"):
@@ -113,8 +122,16 @@ class ToolingTests(unittest.TestCase):
                 if command[:4] == ("xcrun", "xcresulttool", "export", "attachments"):
                     destination = pathlib.Path(command[command.index("--output-path") + 1])
                     destination.mkdir()
+                    first_bundle = pathlib.Path(command[command.index("--path") + 1]).name == "iPhone.xcresult"
+                    if first_bundle and export_failure == "command":
+                        raise subprocess.CalledProcessError(65, command)
                     attachments = []
                     entries = matrix[:-1] if omit_last else matrix
+                    if batch_size:
+                        result = pathlib.Path(command[command.index("--path") + 1]).stem
+                        match = re.search(r"-batch-(\d+)$", result)
+                        number = int(match.group(1)) if match else 1
+                        entries = entries[number - 1::2]
                     for number, entry in enumerate(entries + ([extra] if extra else [])):
                         suffix = f"__{entry['variant']}" if entry.get("variant") else ""
                         label = f"synthetic-fixture__{entry['scenario']}__{entry['appearance']}{suffix}"
@@ -122,7 +139,15 @@ class ToolingTests(unittest.TestCase):
                         (destination / name).write_bytes(b"synthetic export stub")
                         # xcresulttool appends an index and UUID to the attachment name.
                         attachments.append({"suggestedHumanReadableName": f"{label}_0_0F0E0D0C-0000-4000-8000-00000000000{number % 10}.png", "exportedFileName": name})
-                    (destination / "manifest.json").write_text(json.dumps([{"attachments": attachments}]))
+                    manifest = destination / "manifest.json"
+                    manifest.write_text(json.dumps([{"attachments": attachments}]))
+                    if first_bundle:
+                        if export_failure == "missing":
+                            manifest.unlink()
+                        elif export_failure == "json":
+                            manifest.write_text("not JSON")
+                        elif export_failure == "shape":
+                            manifest.write_text('[{"unexpected": []}]')
                 if command[0] == "sips" and "-g" in command:
                     stdout = "pixelWidth: 1000\npixelHeight: 2000\n"
                 return subprocess.CompletedProcess(command, 0, stdout=stdout)
@@ -130,19 +155,22 @@ class ToolingTests(unittest.TestCase):
             argv = ["screenshots", "--iphone", "phone", "--ipad", "pad"] + (["--family", family] if family else [])
             if focus:
                 argv.append(focus)
+            if batch_size:
+                argv.extend(["--batch-size", str(batch_size)])
             index_name = f"index-{family}" if family else "index"
             with patch.object(sys, "argv", argv), patch("subprocess.run", side_effect=fake_run), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 try:
                     runpy.run_path(str(root / "Tools/screenshots"), run_name="__main__")
                 finally:
                     self.calls = calls
+                    self.run_options = run_options
                     index_path = root / f"Artifacts/Screenshots/{index_name}.json"
                     self.partial_index = json.loads(index_path.read_text()) if index_path.exists() else None
             index = json.loads((root / f"Artifacts/Screenshots/{index_name}.json").read_text())
             count = 1 if family else 2
             self.assertEqual(len(index), count * len(matrix))
             self.assertTrue(all(item["label"] == "synthetic fixture" for item in index))
-            self.assertEqual(sum(command[0] == "xcodebuild" for command in calls), count)
+            self.assertEqual(sum(command[0] == "xcodebuild" for command in calls), count * (2 if batch_size else 1))
             self.assertEqual(sum(command[:3] == ("sips", "-Z", "2000") for command in calls), count * len(matrix))
             files = {item["file"] for item in index}
             if family != "iPad" and focus is None:
@@ -150,6 +178,54 @@ class ToolingTests(unittest.TestCase):
             if family != "iPhone" and focus is None:
                 self.assertIn("iPad__design-catalog-reduce-transparency__dark.png", files)
             return index
+
+    def test_review_batches_export_one_combined_exact_matrix(self):
+        matrix = [entry for entry in MATRIX if
+                  (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+                   and entry.get("variant") in {"ax3", "opaque"})
+                  or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
+        self.export(family="iPhone", focus="--accessibility-only", matrix=matrix, batch_size=2)
+        builds = [command for command in self.calls if command[0] == "xcodebuild"]
+        selectors = [arg for command in builds for arg in command if arg.startswith("-only-testing:")]
+        self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/AccessibilityReviewTests/testFirst",
+                                    "-only-testing:MonoAgentUITests/AccessibilityReviewTests/testSecond",
+                                    "-only-testing:MonoAgentUITests/AccessibilityReviewTests/testThird"])
+
+    def review_matrix(self):
+        return [entry for entry in MATRIX if
+                (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+                 and entry.get("variant") in {"ax3", "opaque"})
+                or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
+
+    def test_bad_early_export_or_manifest_preserves_and_validates_later_bundle(self):
+        matrix = self.review_matrix()
+        for failure in ("command", "missing", "json", "shape"):
+            with self.subTest(failure=failure), self.assertRaises(SystemExit) as raised:
+                self.export(family="iPhone", focus="--accessibility-only", matrix=matrix,
+                            batch_size=2, export_failure=failure)
+            self.assertIn("iPhone.xcresult: export/manifest validation failed", str(raised.exception))
+            self.assertEqual(len(self.partial_index), len(matrix[1::2]))
+            self.assertEqual({(row["scenario"], row["appearance"], row["variant"]) for row in self.partial_index},
+                             {(row["scenario"], row["appearance"], row.get("variant")) for row in matrix[1::2]})
+            resized = [call for call in self.calls if call[:3] == ("sips", "-Z", "2000")]
+            self.assertEqual(len(resized), len(matrix[1::2]))
+
+    def test_timeout_records_failure_and_runs_later_batches_with_bounded_timeout(self):
+        matrix = self.review_matrix()
+        with self.assertRaises(SystemExit) as raised:
+            self.export(family="iPhone", focus="--accessibility-only", matrix=matrix,
+                        batch_size=2, timeout_first=True)
+        self.assertIn("timed out after 1140 seconds", str(raised.exception))
+        builds = [(call, options) for call, options in zip(self.calls, self.run_options)
+                  if call[0] == "xcodebuild"]
+        self.assertEqual(len(builds), 2)
+        self.assertTrue(all(options["timeout"] == 19 * 60 for _, options in builds))
+        self.assertEqual(len(self.partial_index), len(matrix))
+        self.assertTrue(any("-only-testing:MonoAgentUITests/AccessibilityReviewTests/testThird" in call
+                            for call, _ in builds))
+        self.export(family="iPhone", focus="--accessibility-only", matrix=matrix)
+        self.assertTrue(all(options.get("timeout") is None for call, options in
+                            zip(self.calls, self.run_options) if call[0] == "xcodebuild"))
 
     def test_matrix_keeps_connection_screens_and_covers_the_catalog(self):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
@@ -163,6 +239,16 @@ class ToolingTests(unittest.TestCase):
                 self.assertIn((f"design-catalog-{theme}", appearance, None), keys)
         self.assertTrue(any(entry["textSize"] != "standard" and entry["scenario"].startswith("design-catalog") for entry in MATRIX))
         self.assertTrue(any(entry["transparency"] != "system" for entry in MATRIX))
+
+    def test_console_variants_have_connection_surface_and_variant_metadata(self):
+        rows = [row for row in self.export(family="iPhone")
+                if row["scenario"] == "dashboard-populated" and (row.get("variant") or "").startswith("consoles")]
+        self.assertEqual(len(rows), 10)
+        for row in rows:
+            self.assertEqual(row["surface"], "connection")
+            self.assertEqual(row["textSize"], "accessibility XL (AX3)" if "ax3" in row["variant"] else "standard")
+            self.assertEqual(row["theme"], "evergreen")
+            self.assertEqual(row["transparency"], "system")
 
     def test_export_classifies_organize_surfaces(self):
         index = self.export(family="iPhone")
@@ -226,7 +312,8 @@ class ToolingTests(unittest.TestCase):
 
     def test_activity_only_runs_exact_activity_matrix(self):
         matrix = [entry for entry in MATRIX if entry["scenario"] in {
-            "conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context", "peer-question"}]
+            "conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context", "peer-question"}
+            or (entry["scenario"] == "conversation-markdown" and entry.get("variant") == "context")]
         self.export(family="iPhone", focus="--activity-only", matrix=matrix)
         command = next(call for call in self.calls if call[0] == "xcodebuild")
         self.assertIn("-only-testing:MonoAgentUITests/ActivityScenarioTests", command)
@@ -236,7 +323,7 @@ class ToolingTests(unittest.TestCase):
                   (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
                    and entry.get("variant") in {"ax3", "opaque"})
                   or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
-        self.assertEqual(len(matrix), 12)
+        self.assertEqual(len(matrix), 13)
         self.export(family="iPhone", focus="--accessibility-only", matrix=matrix)
         command = next(call for call in self.calls if call[0] == "xcodebuild")
         self.assertIn("-only-testing:MonoAgentUITests/AccessibilityReviewTests", command)

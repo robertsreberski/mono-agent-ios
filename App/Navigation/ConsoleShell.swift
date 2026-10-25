@@ -64,6 +64,7 @@ struct ConsoleManager: View {
   let presentation: Presentation
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.webMaterial) private var material
   @State private var route: AppRoute?
   @State private var editor: EditorDestination?
   @State private var deleting: SavedConsole?
@@ -143,36 +144,35 @@ struct ConsoleManager: View {
               .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
           }
         }
-        Group {
-          ConnectionBanner(
-            .notice, title: "Connect only to a console you trust",
-            message:
-              "There is no login: anyone with network access may control its agents. Loopback on an iPhone or iPad means that device, not your computer."
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Saved consoles").webFont(.settingsSectionTitle).accessibilityAddTraits(.isHeader)
+          Text(
+            "Connect only to a console you trust. There is no login: anyone with network access may control its agents. Loopback on an iPhone or iPad means that device, not your computer."
           )
-          .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+          .webFont(.notice).foregroundStyle(material.textMuted.color)
+          .fixedSize(horizontal: false, vertical: true)
         }
-        SettingsGroup("Saved consoles") {
-          if model.registry.consoles.isEmpty {
-            EmptyStateView(
-              "No consoles yet", systemImage: "network",
-              message: "Add the root URL of your web console to begin.",
-              actionTitle: "Add console", action: { editor = EditorDestination(console: nil) }
-            )
-            .disabled(!model.registry.isLoaded)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("connection-empty")
-          }
-          ForEach(model.registry.consoles) { console in
-            ConsoleRow(
-              console: console, state: model.registry.states[console.id],
-              open: {
-                route = .console(console.id)
-                Task { await model.registry.select(console.id) }
-              },
-              edit: { editor = EditorDestination(console: console) },
-              remove: { deleting = console })
-            if console.id != model.registry.consoles.last?.id {
-              Rectangle().fill(WebColor.line.color).frame(height: 1)
+        if model.registry.consoles.isEmpty {
+          EmptyStateView(
+            "No consoles yet", systemImage: "network",
+            message: "Add the root URL of your web console to begin.",
+            actionTitle: "Add console", action: { editor = EditorDestination(console: nil) }
+          )
+          .disabled(!model.registry.isLoaded)
+          .accessibilityElement(children: .contain)
+          .accessibilityIdentifier("connection-empty")
+        } else {
+          SettingsGroup {
+            ForEach(model.registry.consoles) { console in
+              ConsoleRow(
+                console: console, state: model.registry.states[console.id],
+                open: {
+                  route = .console(console.id)
+                  Task { await model.registry.select(console.id) }
+                },
+                edit: { editor = EditorDestination(console: console) },
+                remove: { deleting = console })
+              if console.id != model.registry.consoles.last?.id { WebHairline() }
             }
           }
         }
@@ -189,9 +189,17 @@ struct ConsoleManager: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       if presentation == .sheet {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }.accessibilityIdentifier("consoles-done")
+        ToolbarItem(placement: .cancellationAction) {
+          Button {
+            dismiss()
+          } label: {
+            Image(systemName: "xmark")
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Done")
+          .accessibilityIdentifier("consoles-done")
         }
+        .sharedBackgroundVisibility(.hidden)
       }
       ToolbarItem(placement: .primaryAction) {
         Button("Add console", systemImage: "plus") { editor = EditorDestination(console: nil) }
@@ -249,39 +257,89 @@ private struct ConsoleRow: View {
       ? console.lastIdentity?.displayName ?? console.endpoint.origin : console.name
   }
 
+  @Environment(\.dynamicTypeSize) private var textSize
+  @State private var rowWidth: CGFloat = 0
+
+  // A regular-width split view can still have a narrow sidebar. Keep status below the
+  // title there, just as at Larger Text, instead of letting the fixed status crush names.
+  private var stacked: Bool { textSize.isAccessibilitySize || (rowWidth > 0 && rowWidth < 360) }
+
   var body: some View {
-    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
+    HStack(spacing: 4) {
       Button(action: open) {
-        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-          Text(title).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
-          // One line in the list; the detail screen shows the full, selectable address.
-          Text(console.endpoint.origin).webFont(.notice).foregroundStyle(material.textMuted.color)
-            .lineLimit(1).truncationMode(.middle)
-          ViewThatFits(in: .horizontal) {
-            HStack(spacing: DesignSpacing.md) { indicators }
-            VStack(alignment: .leading, spacing: DesignSpacing.xs) { indicators }
+        HStack(spacing: 10) {
+          if !stacked {
+            Image(systemName: "network")
+              .foregroundStyle(material.textMuted.color)
+              .frame(width: 30, height: 30)
+              .webLayeredSurface(
+                RoundedRectangle(cornerRadius: 8), fill: WebColor.surfaceSubtle.color
+              )
+              .accessibilityHidden(true)
           }
+          VStack(alignment: .leading, spacing: 5) {
+            Text(title).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
+              .lineLimit(2)
+            Text(console.endpoint.origin).webFont(.settingsAddress)
+              .foregroundStyle(material.textMuted.color)
+              .lineLimit(1).truncationMode(.middle)
+            if stacked { indicators }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          if !stacked { indicators }
+          Image(systemName: "chevron.right")
+            .webFont(.chip).foregroundStyle(material.textMuted.color)
+            .accessibilityHidden(true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: WebMetrics.rowHeight)
         .contentShape(Rectangle())
       }
-      // Plain keeps status colours and text hierarchy instead of tinting the whole label.
       .buttonStyle(.plain)
-      HStack(spacing: DesignSpacing.lg) {
-        Button("Edit", action: edit)
-        Button("Remove", role: .destructive, action: remove)
+      .accessibilityIdentifier("console-row-" + console.id.uuidString)
+      .contextMenu { actions }
+      Menu {
+        actions
+      } label: {
+        Image(systemName: "ellipsis")
+          .frame(width: 44, height: 44)
+          .contentShape(Rectangle())
       }
-      .buttonStyle(.borderless)
-      .webFont(.notice)
+      .buttonStyle(.plain)
+      .foregroundStyle(material.textMuted.color)
+      .accessibilityLabel("Actions for " + title)
+      .accessibilityIdentifier("console-actions-" + console.id.uuidString)
     }
-    .padding(.vertical, DesignSpacing.xs)
+    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }, action: { rowWidth = $0 })
+  }
+
+  @ViewBuilder private var actions: some View {
+    Button("Edit", systemImage: "pencil", action: edit)
+    Button("Remove", systemImage: "trash", role: .destructive, action: remove)
   }
 
   @ViewBuilder private var indicators: some View {
-    StatusIndicator(state.status.kind, label: state.status.label)
-    if console.endpoint.isInsecure {
-      StatusIndicator(.insecure)
+    VStack(alignment: .leading, spacing: 4) {
+      ConsoleStatus(kind: state.status.kind, label: state.status.label)
+      if console.endpoint.isInsecure { ConsoleStatus(kind: .insecure, label: "HTTP") }
     }
+  }
+}
+
+/// Web settings status: compact uppercase text, a dot and an explicit non-colour label.
+private struct ConsoleStatus: View {
+  let kind: StatusKind
+  let label: String
+  @Environment(\.consoleTheme) private var theme
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Image(systemName: "circle.fill").font(.system(size: 5))
+      Text(kind == .failed ? "FAILED" : label.uppercased()).webFont(.chip)
+    }
+    .foregroundStyle(kind.tone.color(in: theme).color)
+    .fixedSize(horizontal: false, vertical: true)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(label)
   }
 }
 
@@ -297,19 +355,27 @@ private struct ConsoleDetail: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+      VStack(alignment: .leading, spacing: 18) {
         if let error = registry.storageError {
           ConnectionBanner(.storage, title: "Storage warning", message: error)
         }
-        VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-          Text("Address").webFont(.notice).foregroundStyle(material.textMuted.color)
-          Text(console.endpoint.origin).webFont(.code).textSelection(.enabled)
-        }
-        .modifier(ConsoleSettingsSurface())
-        if console.endpoint.isInsecure {
-          ConnectionBanner(
-            .insecureHTTP, title: "Insecure HTTP",
-            message: "Traffic can be read or changed on the network.")
+        SettingsGroup {
+          VStack(alignment: .leading, spacing: 8) {
+            Eyebrow("Address")
+            Text(console.endpoint.origin).webFont(.code).textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          WebHairline()
+          HStack {
+            Eyebrow("Status")
+            Spacer()
+            ConsoleStatus(kind: Optional(state).status.kind, label: Optional(state).status.label)
+          }
+          if console.endpoint.isInsecure {
+            WebHairline()
+            Text("Insecure HTTP — traffic can be read or changed on the network.")
+              .webFont(.notice).foregroundStyle(material.textMuted.color)
+          }
         }
         status
       }
@@ -318,8 +384,6 @@ private struct ConsoleDetail: View {
       .frame(maxWidth: .infinity)
     }
     .webPanelBackground(theme.palette.panel)
-    .safeAreaBar(edge: .bottom) { actionBar }
-    .scrollEdgeEffectStyle(.hard, for: .bottom)
     .accessibilityIdentifier(ready ? "scenario-ready" : "connection-loading")
     .navigationTitle(console.name.isEmpty ? "Console" : console.name)
     .navigationBarTitleDisplayMode(.inline)
@@ -328,63 +392,41 @@ private struct ConsoleDetail: View {
   @ViewBuilder private var status: some View {
     switch state {
     case .disconnected:
-      VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-        StatusIndicator(.disconnected)
+      VStack(alignment: .leading, spacing: 12) {
         Text("A saved identity does not confirm connectivity.")
           .webFont(.notice).foregroundStyle(material.textMuted.color)
+        connectionAction("Connect")
       }
-      .modifier(ConsoleSettingsSurface())
     case .connecting:
-      LoadingStateView("Checking console…").modifier(ConsoleSettingsSurface())
+      LoadingStateView("Checking console…")
+        .accessibilityIdentifier("connection-checking")
     case .failed(let error):
-      ErrorStateView("Connection failed", message: error.localizedDescription)
-        .modifier(ConsoleSettingsSurface())
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("connection-failed")
+      ErrorStateView(
+        "Connection failed", message: error.localizedDescription,
+        retryTitle: "Retry", retry: { connect() }
+      )
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("connection-failed")
     case .connected(let identity):
-      VStack(alignment: .leading, spacing: DesignSpacing.md) {
-        StatusChip(.online, label: "Connected to \(identity.displayName)")
+      VStack(alignment: .leading, spacing: 12) {
+        ConsoleStatus(kind: .online, label: "Connected to \(identity.displayName)")
           .accessibilityIdentifier("console-online")
-        Text("Console ready").webFont(.settingsTitle)
         Text(
           dashboardOpen
             ? "Its agents and conversations are on the dashboard behind this sheet."
             : "Its dashboard opens as soon as this console is selected."
         )
         .webFont(.notice).foregroundStyle(material.textMuted.color)
+        connectionAction("Check connection again")
       }
-      .modifier(ConsoleSettingsSurface())
     }
   }
 
-  /// The detail's single action floats above content as an intentional glass control.
-  @ViewBuilder private var actionBar: some View {
-    let title: String? =
-      switch state {
-      case .disconnected: "Connect"
-      case .connecting: nil
-      case .failed: "Retry"
-      case .connected: "Check connection again"
-      }
-    if let title {
-      GlassEffectContainer {
-        Button {
-          Task { await registry.connect(console.id) }
-        } label: {
-          Text(title).frame(maxWidth: .infinity)
-        }
-        .designButtonStyle(.primary, placement: .floating)
-        .controlSize(.large)
-        .frame(maxWidth: 420)
-      }
-      .padding(.horizontal, DesignSpacing.lg)
-      .padding(.bottom, DesignSpacing.sm)
-    }
+  private func connectionAction(_ title: String) -> some View {
+    Button(title) { connect() }
+      .buttonStyle(WebStateActionStyle())
+      .frame(maxWidth: 320)
   }
-}
 
-private struct ConsoleSettingsSurface: ViewModifier {
-  func body(content: Content) -> some View {
-    SettingsGroup { content }
-  }
+  private func connect() { Task { await registry.connect(console.id) } }
 }

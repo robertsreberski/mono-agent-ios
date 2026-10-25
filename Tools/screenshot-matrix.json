@@ -1402,6 +1402,110 @@
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "light",
+      "variant": "consolestates",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "light",
+      "variant": "consolesax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "light",
+      "variant": "ax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-failed",
+      "appearance": "light",
+      "variant": "checking",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "dark",
+      "variant": "consolestates",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "dark",
+      "variant": "consolesax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "dark",
+      "variant": "ax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-failed",
+      "appearance": "dark",
+      "variant": "checking",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "connection-empty",
+      "appearance": "dark",
+      "variant": "editorax3",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "light",
+      "variant": "consolesax3bottom",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "light",
+      "variant": "consolesmenu",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "dark",
+      "variant": "consolesax3bottom",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "dark",
+      "variant": "consolesmenu",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
     }
   ]
 }

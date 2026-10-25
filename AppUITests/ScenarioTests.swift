@@ -402,9 +402,11 @@ final class ScenarioTests: XCTestCase {
       NSPredicate(
         format: "label == %@ AND identifier != %@", "Conversation tags", "conversation-tags")
     ).firstMatch
-    XCTAssertTrue(tags.waitForExistence(timeout: 5))
+    XCTAssertTrue(waitUntilHittable(tags))
     tags.tap()
-    app.buttons["New tag…"].tap()
+    let newTag = app.buttons["New tag…"]
+    XCTAssertTrue(waitUntilHittable(newTag))
+    newTag.tap()
     XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
   }
 
@@ -672,6 +674,193 @@ final class ScenarioTests: XCTestCase {
     }
   }
 
+  func testConsolesLargerTextLight() { captureConsoleVariants("light", larger: true) }
+  func testConsolesLargerTextDark() { captureConsoleVariants("dark", larger: true) }
+  func testConsolesLargerTextBottomLight() {
+    captureConsoleVariants("light", larger: true, bottom: true)
+  }
+  func testConsolesLargerTextBottomDark() {
+    captureConsoleVariants("dark", larger: true, bottom: true)
+  }
+  func testConsolesMixedStatesLight() { captureConsoleVariants("light") }
+  func testConsolesMixedStatesDark() { captureConsoleVariants("dark") }
+
+  private func captureConsoleVariants(
+    _ appearance: String, larger: Bool = false, bottom: Bool = false
+  ) {
+    capture(
+      "dashboard-populated", appearance, accessibilityText: larger,
+      expect: ["agent-strip"],
+      variant: bottom ? "consolesax3bottom" : larger ? "consolesax3" : "consolestates",
+      arguments: ["--fixture-console-states"]
+    ) { app in
+      self.element(app, "consoles-button").tap()
+      for label in ["Online", "Not connected", "Connection failed", "HTTP", "Checking…"] {
+        XCTAssertTrue(
+          app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", label)
+          ).firstMatch.waitForExistence(timeout: 10))
+      }
+      if bottom {
+        let row = app.buttons.matching(
+          NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "console-row-",
+            "Checking console")
+        )
+        .firstMatch
+        let list = app.scrollViews.matching(identifier: "scenario-ready").firstMatch
+        for _ in 0..<8 where !row.isHittable { list.swipeUp() }
+        XCTAssertTrue(self.waitUntilHittable(row))
+      }
+    }
+  }
+
+  func testConnectionEmptyLargerTextLight() {
+    capture("connection-empty", "light", accessibilityText: true)
+  }
+  func testConnectionEmptyLargerTextDark() {
+    capture("connection-empty", "dark", accessibilityText: true)
+  }
+  func testConnectionCheckingLight() { captureChecking("light") }
+  func testConnectionCheckingDark() { captureChecking("dark") }
+  private func captureChecking(_ appearance: String) {
+    capture(
+      "connection-failed", appearance, expect: ["connection-failed"], variant: "checking",
+      arguments: ["--fixture-console-states"]
+    ) { app in
+      // Return to the root list on compact width; split view already exposes it on iPad.
+      let row = app.buttons.matching(
+        NSPredicate(
+          format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "console-row-",
+          "Checking console")
+      )
+      .firstMatch
+      if UIDevice.current.userInterfaceIdiom == .phone {
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        XCTAssertTrue(self.waitUntilHittable(back))
+        back.tap()
+      }
+      XCTAssertTrue(self.waitUntilHittable(row))
+      row.tap()
+      XCTAssertTrue(self.element(app, "connection-checking").waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["Checking console…"].waitForExistence(timeout: 10))
+    }
+  }
+
+  func testConsoleMenuLight() { captureConsoleMenu("light") }
+  func testConsoleMenuDark() { captureConsoleMenu("dark") }
+  private func captureConsoleMenu(_ appearance: String) {
+    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "consolesmenu") {
+      app in
+      self.element(app, "consoles-button").tap()
+      let actions = app.buttons.matching(NSPredicate(format: "label == %@", "Actions for Flockbox"))
+        .firstMatch
+      XCTAssertTrue(self.waitUntilHittable(actions))
+      actions.tap()
+      XCTAssertTrue(self.waitUntilHittable(app.buttons["Edit"]))
+      XCTAssertTrue(self.waitUntilHittable(app.buttons["Remove"]))
+    }
+  }
+
+  func testConsoleMenuEditsAndCancelsRemoval() {
+    let app = launch("dashboard-populated")
+    defer { app.terminate() }
+    self.element(app, "consoles-button").tap()
+    let actions = app.buttons.matching(NSPredicate(format: "label == %@", "Actions for Flockbox"))
+      .firstMatch
+    XCTAssertTrue(self.waitUntilHittable(actions))
+    actions.tap()
+    let edit = app.buttons["Edit"]
+    XCTAssertTrue(self.waitUntilHittable(edit))
+    edit.tap()
+    let name = app.textFields["console-name"]
+    assertEventually(name, NSPredicate(format: "value == %@", "Flockbox"))
+    assertEventually(
+      app.textFields["console-url"],
+      NSPredicate(
+        format: "value == %@", "https://console.example.ts.net"))
+    app.buttons["Cancel"].tap()
+    XCTAssertTrue(self.waitUntilHittable(actions))
+    actions.tap()
+    let remove = app.buttons["Remove"]
+    XCTAssertTrue(self.waitUntilHittable(remove))
+    remove.tap()
+    XCTAssertTrue(app.buttons["Remove console"].waitForExistence(timeout: 5))
+    // A native confirmation popover may omit its Cancel row. Tapping outside dismisses
+    // it on both families without invoking the destructive action.
+    app.navigationBars["Consoles"].tap()
+    XCTAssertTrue(app.buttons["Remove console"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(self.waitUntilHittable(actions))
+  }
+
+  func testNonSelectedConsoleMenuEditAndRemovalStayScopedToThatConsole() {
+    let app = launch("dashboard-populated", arguments: ["--fixture-console-states"])
+    defer { app.terminate() }
+    let manage = element(app, "consoles-button")
+    XCTAssertTrue(waitUntilHittable(manage))
+    manage.tap()
+
+    func row(_ name: String) -> XCUIElement {
+      app.buttons.matching(
+        NSPredicate(
+          format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "console-row-", name)
+      ).firstMatch
+    }
+    let names = ["Flockbox", "Workroom", "Unavailable console", "Field notes", "Checking console"]
+    var identifiers: [String: String] = [:]
+    for name in names {
+      let console = row(name)
+      XCTAssertTrue(console.waitForExistence(timeout: 10))
+      identifiers[name] = console.identifier
+    }
+    let allRows = app.buttons.matching(
+      NSPredicate(format: "identifier BEGINSWITH %@", "console-row-"))
+    func waitForCount(_ count: Int) {
+      let settled = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in allRows.count == count }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
+    }
+    waitForCount(5)
+    let actions = app.buttons["Actions for Workroom"]
+    XCTAssertTrue(waitUntilHittable(actions))
+    actions.tap()
+    let edit = app.buttons["Edit"]
+    XCTAssertTrue(waitUntilHittable(edit))
+    edit.tap()
+    assertEventually(app.textFields["console-name"], NSPredicate(format: "value == %@", "Workroom"))
+    assertEventually(
+      app.textFields["console-url"],
+      NSPredicate(
+        format: "value == %@", "https://workroom.example"))
+    let cancel = app.buttons["Cancel"]
+    XCTAssertTrue(waitUntilHittable(cancel))
+    cancel.tap()
+    XCTAssertTrue(app.textFields["console-name"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(waitUntilHittable(actions))
+    actions.tap()
+    let remove = app.buttons["Remove"]
+    XCTAssertTrue(waitUntilHittable(remove))
+    remove.tap()
+    let confirm = app.buttons["Remove console"]
+    XCTAssertTrue(waitUntilHittable(confirm))
+    confirm.tap()
+    // Removal opens the retained selected console's detail, including in the stacked
+    // manager sheet on iPad. Return explicitly before checking the surviving list.
+    let back = app.navigationBars.buttons["BackButton"].firstMatch
+    XCTAssertTrue(waitUntilHittable(back))
+    back.tap()
+    waitForCount(4)
+    XCTAssertTrue(app.buttons[identifiers["Workroom"]!].waitForNonExistence(timeout: 10))
+    for name in names where name != "Workroom" {
+      XCTAssertTrue(app.buttons[identifiers[name]!].waitForExistence(timeout: 10), name)
+    }
+    assertEventually(row("Flockbox"), NSPredicate(format: "label CONTAINS %@", "Online"))
+    let done = app.buttons["consoles-done"]
+    XCTAssertTrue(waitUntilHittable(done))
+    done.tap()
+    XCTAssertTrue(element(app, "agent-strip").waitForExistence(timeout: 10))
+  }
+
   func testOfflineEmptyAndSearchScenarios() {
     var app = launch("dashboard-offline")
     XCTAssertTrue(element(app, "banner-offline").waitForExistence(timeout: 10))
@@ -692,12 +881,15 @@ final class ScenarioTests: XCTestCase {
     app.descendants(matching: .any)[id].firstMatch
   }
 
-  private func launch(_ scenario: String, accessibilityText: Bool = false) -> XCUIApplication {
+  private func launch(
+    _ scenario: String, accessibilityText: Bool = false, arguments: [String] = []
+  ) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = [
-      "--scenario", scenario, "--reset-test-data", "-AppleLanguages", "(en)", "-AppleLocale",
-      "en_US",
-    ]
+    app.launchArguments =
+      [
+        "--scenario", scenario, "--reset-test-data", "-AppleLanguages", "(en)", "-AppleLocale",
+        "en_US",
+      ] + arguments
     if accessibilityText {
       app.launchArguments += [
         "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
