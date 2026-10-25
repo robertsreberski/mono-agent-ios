@@ -215,7 +215,7 @@ public enum ProcessJobEvents {
     var items: [TranscriptEntry] = []
     for (index, part) in message.parts.enumerated() {
       func append(_ item: TranscriptItem, suffix: String = "") {
-        items.append(.init(id: "part-\(index)" + suffix, item: item))
+        items.append(.init(id: "part-\(index)" + suffix, sourcePartID: "part-\(index)", item: item))
       }
       switch part {
       case .processJob:
@@ -359,5 +359,8 @@ public enum TranscriptItem: Sendable, Equatable {
 /// terminal event is inserted. A band's disclosure key must not shift as a job settles.
 public struct TranscriptEntry: Sendable, Equatable, Identifiable {
   public var id: String
+  /// A disclosure band belongs to the stored source part, not to its current event phase.
+  /// In particular an ordinary launch may later fold into a started fact without user action.
+  public var sourcePartID: String
   public var item: TranscriptItem
 }

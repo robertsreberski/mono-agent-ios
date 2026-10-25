@@ -68,7 +68,7 @@ enum TranscriptPresentation {
       {
         bands[bands.count - 1].parts.append(item)
       } else {
-        bands.append(.init(id: entry.id, parts: [item]))
+        bands.append(.init(id: entry.sourcePartID, parts: [item]))
       }
     }
     return bands
