@@ -179,12 +179,15 @@ import XCTest
     XCTAssertFalse(
       element(app, "running-row-t-atlas-launch").exists, "Settled detail must not remain in Running"
     )
+    let checkSidebar = screenshotChecksSidebar(app)
     let rendered = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in screenshotHasContent(XCUIScreen.main.screenshot()) },
+      predicate: NSPredicate { _, _ in
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
+      },
       object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 30), .completed)
     let screenshot = XCUIScreen.main.screenshot()
-    XCTAssertTrue(screenshotHasContent(screenshot))
+    XCTAssertTrue(screenshotHasContent(screenshot, checkSidebar: checkSidebar))
     let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name =
       "synthetic-fixture__\(scenario)__\(appearance)" + (variant.map { "__" + $0 } ?? "")

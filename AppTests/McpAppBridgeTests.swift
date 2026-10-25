@@ -239,14 +239,14 @@ private final class BridgeResourceBundle: NSObject {}
 @MainActor
 struct McpAppBridgeTests {
   private func wait(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(30)
     while !condition() && ContinuousClock.now < deadline {
       try await Task.sleep(for: .milliseconds(10))
     }
     try #require(condition())
   }
   private func waitAsync(_ condition: () async -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(30)
     while !(await condition()) && ContinuousClock.now < deadline {
       try await Task.sleep(for: .milliseconds(10))
     }

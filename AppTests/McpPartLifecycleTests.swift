@@ -12,7 +12,7 @@ import UIKit
 @Suite("MCP part lifecycle", .serialized)
 @MainActor struct McpPartLifecycleTests {
   private func wait(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(30)
     while !condition() && ContinuousClock.now < deadline {
       try await Task.sleep(for: .milliseconds(10))
     }

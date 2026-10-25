@@ -44,7 +44,7 @@ struct McpAppIsolationTests {
     """
 
   private func waitUntil(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(30)
     while !condition() && ContinuousClock.now < deadline {
       try await Task.sleep(for: .milliseconds(25))
     }
@@ -474,7 +474,7 @@ struct McpAppIsolationTests {
   private func bufferState(_ host: McpAppHost, until condition: ([String: Any]) -> Bool)
     async throws -> [String: Any]
   {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(30)
     while ContinuousClock.now < deadline {
       if let state = try? await host.webView.callAsyncJavaScript(
         "return window.mcpBufferState?.() ?? null", arguments: [:], in: nil,

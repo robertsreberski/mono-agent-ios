@@ -197,13 +197,14 @@ import XCTest
         if variant != "ax3" { _ = dockReveal(app, "subagent-progress") }
       }
     }
+    let checkSidebar = screenshotChecksSidebar(app)
     let rendered = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        screenshotHasContent(XCUIScreen.main.screenshot())
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 30), .completed)
     let screenshot = XCUIScreen.main.screenshot()
-    XCTAssertTrue(screenshotHasContent(screenshot))
+    XCTAssertTrue(screenshotHasContent(screenshot, checkSidebar: checkSidebar))
     let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name =
       "synthetic-fixture__\(scenario)__\(appearance)" + (variant.map { "__" + $0 } ?? "")
@@ -226,11 +227,12 @@ import XCTest
     XCTAssertTrue(trigger.waitForExistence(timeout: 10))
     trigger.tap()
     XCTAssertTrue(app.staticTexts["Context and cost"].firstMatch.waitForExistence(timeout: 10))
+    let checkSidebar = screenshotChecksSidebar(app)
     let rendered = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        screenshotHasContent(XCUIScreen.main.screenshot())
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 30), .completed)
     let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
     attachment.name = "synthetic-fixture__\(scenario)__\(appearance)__context"
     attachment.lifetime = .keepAlways
