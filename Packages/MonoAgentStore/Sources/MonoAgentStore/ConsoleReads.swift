@@ -10,6 +10,7 @@ extension ConsoleStore {
     let began = observation
     let globalBegan = bootstrapClock
     let selected = selection
+    let writesBegan = agentWriteClock
     let fetchedAt = await clock.wallNow()
     do {
       let result = try await api.bootstrap(
@@ -19,9 +20,12 @@ extension ConsoleStore {
       guard epoch == generation, bootstrapRequest == request,
         !Task.isCancelled
       else { return }
-      if case .modified(let value, let etag) = result {
+      if case .modified(var value, let etag) = result {
+        // A pin or run-defaults write confirmed during this read is newer than its rows.
+        let patched = protectAgentWrites(&value, began: writesBegan)
         bootstrap = value
-        bootstrapETag = etag
+        bootstrapETag = patched ? nil : etag
+        reconcileRunDefaultsDrafts()
         if observation == began, selection == selected {
           tags = value.tags
           projects = value.projects
