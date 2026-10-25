@@ -7,6 +7,27 @@ import Testing
 @testable import MonoAgent
 
 struct JobEventPresentationTests {
+  @Test(arguments: ["queued", "starting", "running", "unknown", "future-state"])
+  func aWakeWithANonterminalOrUnknownProjectionIsNotAFailure(state: String) throws {
+    var job = try JobFixture.job("sample-wake", state: state)
+    job.timestamps.completedAt = nil
+    job.durationMs = nil
+    job.exitCode = nil
+    let wake = ProcessJobActivityEvent.terminal(job, toolCallId: "sample-delivery")
+    #expect(!TranscriptPresentation.failed(wake))
+    #expect(wake.occurredAt == nil)
+  }
+  @Test(arguments: [
+    "succeeded", "failed", "cancelled", "timed_out", "spawn_failed",
+    "queue_expired", "interrupted",
+  ])
+  func failureStylingRequiresATerminalOutcomeAndPhase(state: String) throws {
+    var event = ProcessJobActivityEvent.terminal(
+      try JobFixture.job("sample-terminal", state: state), toolCallId: "sample-delivery")
+    #expect(TranscriptPresentation.failed(event) == (state != "succeeded"))
+    event.phase = .started
+    #expect(!TranscriptPresentation.failed(event))
+  }
   @MainActor @Test func openBandSurvivesAnOrdinaryLaunchFoldingAfterAJobRefresh() throws {
     var job = try JobFixture.job("sample-transition", state: "queued")
     var source = try TranscriptFixture.message(id: "launch", role: "assistant", text: "")

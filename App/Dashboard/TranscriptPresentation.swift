@@ -19,6 +19,10 @@ enum TranscriptPresentation {
   static func failed(_ call: WebToolCall) -> Bool {
     ["failed", "error", "cancelled", "interrupted", "timeout", "timed_out"].contains(call.status)
   }
+  static func failed(_ event: ProcessJobActivityEvent) -> Bool {
+    event.phase == .terminal && JobPresentation.terminalStates.contains(event.state)
+      && event.state != "succeeded"
+  }
   static func clusters(_ parts: [WebMessagePart]) -> [Entry] {
     var rows: [Entry] = []
     for (index, part) in parts.enumerated() {

@@ -953,7 +953,7 @@ struct ProcessJobEventView: View {
   var body: some View {
     ActivityDisclosure(
       event.tool + " job " + outcome, summary: event.summary,
-      status: terminal && event.state != "succeeded" ? .failed : .disconnected,
+      status: TranscriptPresentation.failed(event) ? .failed : .disconnected,
       detail: detail,
       glyph: .job(agent: ["Agent", "AgentManage", "AgentSend"].contains(event.tool)),
       identifier: "job-event-" + event.jobId + "-" + event.phase.rawValue, expanded: $expanded
