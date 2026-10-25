@@ -88,7 +88,7 @@ struct TranscriptMessageView: View {
               }, message: message, store: store, gallery: gallery)
           } else if let part = band.parts.first {
             if message.role == "system", case .text(let value) = part {
-              Text(value.text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
+              Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)
                 .textSelection(.enabled)
             } else {
               TranscriptPartView(part: part, message: message, store: store)
