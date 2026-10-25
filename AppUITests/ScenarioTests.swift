@@ -793,6 +793,74 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(self.waitUntilHittable(actions))
   }
 
+  func testNonSelectedConsoleMenuEditAndRemovalStayScopedToThatConsole() {
+    let app = launch("dashboard-populated", arguments: ["--fixture-console-states"])
+    defer { app.terminate() }
+    let manage = element(app, "consoles-button")
+    XCTAssertTrue(waitUntilHittable(manage))
+    manage.tap()
+
+    func row(_ name: String) -> XCUIElement {
+      app.buttons.matching(
+        NSPredicate(
+          format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "console-row-", name)
+      ).firstMatch
+    }
+    let names = ["Flockbox", "Workroom", "Unavailable console", "Field notes", "Checking console"]
+    var identifiers: [String: String] = [:]
+    for name in names {
+      let console = row(name)
+      XCTAssertTrue(console.waitForExistence(timeout: 10))
+      identifiers[name] = console.identifier
+    }
+    let allRows = app.buttons.matching(
+      NSPredicate(format: "identifier BEGINSWITH %@", "console-row-"))
+    func waitForCount(_ count: Int) {
+      let settled = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in allRows.count == count }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
+    }
+    waitForCount(5)
+    let actions = app.buttons["Actions for Workroom"]
+    XCTAssertTrue(waitUntilHittable(actions))
+    actions.tap()
+    let edit = app.buttons["Edit"]
+    XCTAssertTrue(waitUntilHittable(edit))
+    edit.tap()
+    assertEventually(app.textFields["console-name"], NSPredicate(format: "value == %@", "Workroom"))
+    assertEventually(
+      app.textFields["console-url"],
+      NSPredicate(
+        format: "value == %@", "https://workroom.example"))
+    let cancel = app.buttons["Cancel"]
+    XCTAssertTrue(waitUntilHittable(cancel))
+    cancel.tap()
+    XCTAssertTrue(app.textFields["console-name"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(waitUntilHittable(actions))
+    actions.tap()
+    let remove = app.buttons["Remove"]
+    XCTAssertTrue(waitUntilHittable(remove))
+    remove.tap()
+    let confirm = app.buttons["Remove console"]
+    XCTAssertTrue(waitUntilHittable(confirm))
+    confirm.tap()
+    // Removal opens the retained selected console's detail, including in the stacked
+    // manager sheet on iPad. Return explicitly before checking the surviving list.
+    let back = app.navigationBars.buttons["BackButton"].firstMatch
+    XCTAssertTrue(waitUntilHittable(back))
+    back.tap()
+    waitForCount(4)
+    XCTAssertTrue(app.buttons[identifiers["Workroom"]!].waitForNonExistence(timeout: 10))
+    for name in names where name != "Workroom" {
+      XCTAssertTrue(app.buttons[identifiers[name]!].waitForExistence(timeout: 10), name)
+    }
+    assertEventually(row("Flockbox"), NSPredicate(format: "label CONTAINS %@", "Online"))
+    let done = app.buttons["consoles-done"]
+    XCTAssertTrue(waitUntilHittable(done))
+    done.tap()
+    XCTAssertTrue(element(app, "agent-strip").waitForExistence(timeout: 10))
+  }
+
   func testOfflineEmptyAndSearchScenarios() {
     var app = launch("dashboard-offline")
     XCTAssertTrue(element(app, "banner-offline").waitForExistence(timeout: 10))
@@ -813,12 +881,15 @@ final class ScenarioTests: XCTestCase {
     app.descendants(matching: .any)[id].firstMatch
   }
 
-  private func launch(_ scenario: String, accessibilityText: Bool = false) -> XCUIApplication {
+  private func launch(
+    _ scenario: String, accessibilityText: Bool = false, arguments: [String] = []
+  ) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = [
-      "--scenario", scenario, "--reset-test-data", "-AppleLanguages", "(en)", "-AppleLocale",
-      "en_US",
-    ]
+    app.launchArguments =
+      [
+        "--scenario", scenario, "--reset-test-data", "-AppleLanguages", "(en)", "-AppleLocale",
+        "en_US",
+      ] + arguments
     if accessibilityText {
       app.launchArguments += [
         "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
