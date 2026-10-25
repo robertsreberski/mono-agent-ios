@@ -191,6 +191,24 @@ struct TranscriptPresentationTests {
     #expect(TranscriptPresentation.failedLabel(2, clustered: true) == "2 failed")
   }
 
+  @MainActor @Test func bandChoicesOutliveRowsAndYieldToSettle() {
+    let disclosures = TranscriptDisclosures()
+    #expect(disclosures.isOpen("m#band-0", running: true))
+    #expect(!disclosures.isOpen("m#band-0", running: false))
+    // Collapsed while streaming, then the turn settles: still collapsed (web collapseOnSettle).
+    disclosures.choose("m#band-0", open: false, running: true)
+    #expect(!disclosures.isOpen("m#band-0", running: true))
+    // Opened while streaming: the settle collapses it.
+    disclosures.choose("m#band-0", open: true, running: true)
+    #expect(disclosures.isOpen("m#band-0", running: true))
+    #expect(!disclosures.isOpen("m#band-0", running: false))
+    // Reopened after settling: it stays open, independent of other bands.
+    disclosures.choose("m#band-0", open: true, running: false)
+    #expect(disclosures.isOpen("m#band-0", running: false))
+    #expect(!disclosures.isOpen("m#band-2", running: false))
+    #expect(!disclosures.isOpen("other#band-0", running: false))
+  }
+
   @Test func runningIndicatorFollowsTheLastShownPart() throws {
     let tool = WebMessagePart.toolCall(try TranscriptFixture.tool(1))
     #expect(!TranscriptPresentation.endsWithProse([]))

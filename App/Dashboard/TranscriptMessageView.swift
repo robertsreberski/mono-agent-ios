@@ -79,7 +79,8 @@ struct TranscriptMessageView: View {
         ForEach(bands) { band in
           if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
             TranscriptActivityBand(
-              parts: band.parts, message: message, store: store, timed: band.id == openBand)
+              parts: band.parts, message: message, store: store, bandID: band.id,
+              timed: band.id == openBand)
           } else if band.parts.allSatisfy(TranscriptPresentation.isReplyImage) {
             ReplyImagesView(
               parts: band.parts.compactMap {
@@ -290,36 +291,32 @@ struct TranscriptActivityBand: View {
   let parts: [WebMessagePart]
   let message: WebMessage
   let store: ConsoleStore
+  /// Stable within the message: the index of the band's first part.
+  var bandID = 0
   var timed = true
-  @State private var userOpen: Bool?
+  @Environment(\.transcriptDisclosures) private var disclosures
+  @State private var localOpen: Bool?
   private var running: Bool { message.status == "running" }
+  private var key: String { message.id + "#band-\(bandID)" }
   var body: some View {
     let steps = TranscriptPresentation.activityStepCount(parts)
     let count = "\(steps) \(steps == 1 ? "step" : "steps")"
-    let expanded = Binding(get: { userOpen ?? running }, set: { userOpen = $0 })
-    Group {
-      if timed {
-        RunningTimeline(
-          running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
-        ) {
-          store.serverClockOffset
-        } content: { date in
-          #if DEBUG
-            let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
-          #endif
-          band(
-            meta: count
-              + (TranscriptPresentation.elapsed(message, now: date).map { " · " + $0 } ?? ""),
-            expanded: expanded)
+    // The user's choice lives outside the recycled row (per conversation, keyed by message and
+    // band), so a band opened and scrolled away is still open on return.
+    let expanded = Binding(
+      get: { disclosures?.isOpen(key, running: running) ?? localOpen ?? running },
+      set: { open in
+        if let disclosures {
+          disclosures.choose(key, open: open, running: running)
+        } else {
+          localOpen = open
         }
-      } else {
-        band(meta: count, expanded: expanded)
-      }
-    }
-    .onChange(of: running) { _, now in if !now { userOpen = nil } }
-  }
-  private func band(meta: String, expanded: Binding<Bool>) -> some View {
-    ActivityBand(meta: meta, running: running, expanded: expanded) {
+      })
+    // Only the header leaf is conditional (clock or plain count); the content subtree keeps its
+    // identity when this band stops being the turn's last, so nested disclosures stay open.
+    ActivityBand(running: running, expanded: expanded) {
+      BandMeta(count: count, timed: timed, message: message, store: store)
+    } content: {
       ForEach(TranscriptPresentation.clusters(parts)) { entry in
         if entry.parts.count > 1 {
           ToolClusterView(
@@ -332,7 +329,56 @@ struct TranscriptActivityBand: View {
         }
       }
     }
+    .onChange(of: running) { _, now in if !now { localOpen = nil } }
   }
+}
+
+/// The band header's "N steps · elapsed": the only live leaf of a running band.
+private struct BandMeta: View {
+  let count: String
+  let timed: Bool
+  let message: WebMessage
+  let store: ConsoleStore
+  var body: some View {
+    if timed {
+      RunningTimeline(
+        running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
+      ) {
+        store.serverClockOffset
+      } content: { date in
+        #if DEBUG
+          let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
+        #endif
+        Text(
+          count + (TranscriptPresentation.elapsed(message, now: date).map { " · " + $0 } ?? ""))
+      }
+    } else {
+      Text(count)
+    }
+  }
+}
+
+/// Per-conversation disclosure choices for Activity bands (web `ReasoningRoot` user state), held
+/// by the transcript rather than the lazily recycled rows. A choice made while the turn streamed
+/// yields to the web's collapse-on-settle once it ends.
+@MainActor @Observable final class TranscriptDisclosures {
+  private struct Choice: Equatable {
+    var open: Bool
+    var whileRunning: Bool
+  }
+  private var choices: [String: Choice] = [:]
+  func isOpen(_ key: String, running: Bool) -> Bool {
+    guard let choice = choices[key] else { return running }
+    if choice.whileRunning && !running { return false }
+    return choice.open
+  }
+  func choose(_ key: String, open: Bool, running: Bool) {
+    choices[key] = .init(open: open, whileRunning: running)
+  }
+}
+
+extension EnvironmentValues {
+  @Entry var transcriptDisclosures: TranscriptDisclosures?
 }
 
 /// Web `variant="thinking"`: a muted bulb, no label, the thought's first 52 characters as the

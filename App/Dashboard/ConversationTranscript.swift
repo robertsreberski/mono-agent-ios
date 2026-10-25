@@ -19,6 +19,7 @@ struct ConversationTranscript<Header: View>: View {
   @State private var viewportWidth: CGFloat = 0
   @State private var viewportHeight: CGFloat = 0
   @State private var mcpPool = McpHostPool()
+  @State private var disclosures = TranscriptDisclosures()
   @Environment(\.scenePhase) private var scenePhase
   /// Web `--column-padding` plus whatever centres the 880 pt column on wide screens.
   private func inset(regular: Bool) -> CGFloat {
@@ -109,6 +110,7 @@ struct ConversationTranscript<Header: View>: View {
       viewportHeight = $0.height
     }
     .environment(\.mcpHostPool, mcpPool)
+    .environment(\.transcriptDisclosures, disclosures)
     .environment(\.mcpViewport, CGSize(width: viewportWidth, height: viewportHeight))
     .modifier(McpConsentPresentation(presenter: mcpPool.consent))
     .onChange(of: scenePhase) { _, phase in mcpPool.sceneChanged(phase) }

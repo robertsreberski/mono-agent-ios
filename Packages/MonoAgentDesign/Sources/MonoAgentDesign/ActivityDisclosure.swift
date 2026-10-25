@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import SwiftUI
+import UIKit
 
 /// What an activity row's glyph column shows (web `.activity-row` variants).
 public enum ActivityGlyph: Sendable, Equatable {
@@ -315,6 +316,7 @@ public struct ActivityPayloadBlock: View {
     self.text = text
   }
   private var display: String { String(decoding: text.utf8.prefix(16_384), as: UTF8.self) }
+  func copy() { UIPasteboard.general.string = text }
   public var body: some View {
     let shape = RoundedRectangle(cornerRadius: WebRadius.small, style: .continuous)
     VStack(alignment: .leading, spacing: 7) {
@@ -342,8 +344,14 @@ public struct ActivityPayloadBlock: View {
       )
       .accessibilityLabel(label + " payload")
       .accessibilityIdentifier("payload-" + label.lowercased())
+      // The panel caps at 280 pt and 16 KB; Copy always takes the complete value.
+      .contextMenu {
+        Button("Copy \(label.lowercased())", systemImage: "doc.on.doc") { copy() }
+      }
+      .accessibilityAction(named: "Copy \(label.lowercased())") { copy() }
       if text.utf8.count > 16_384 {
-        Text("Display limited to 16,384 UTF-8 bytes.").webFont(.messageAction)
+        Text("Display limited to 16,384 UTF-8 bytes. Copy includes all of it.")
+          .webFont(.messageAction)
           .foregroundStyle(material.textMuted.color)
       }
     }
@@ -452,22 +460,24 @@ public struct ActivityNote: View {
 /// opaque panel (panel 32% into surface, 1 px line, radius 12) with an "ACTIVITY" header
 /// (minH 44, P2/16/0) carrying the step count and, on the turn's open band, its clock. The label
 /// is muted at rest and accent while the turn streams.
-public struct ActivityBand<Content: View>: View {
-  private let meta: String
+public struct ActivityBand<Meta: View, Content: View>: View {
   private let running: Bool
   private let identifier: String
   @Binding private var expanded: Bool
+  private let meta: () -> Meta
   private let content: () -> Content
   @Environment(\.consoleTheme) private var theme
 
+  /// `meta` is the header's step count and clock; only it should tick, so the content subtree
+  /// (and every nested disclosure in it) keeps its identity while the clock runs or stops.
   public init(
-    meta: String, running: Bool, identifier: String = "activity-band", expanded: Binding<Bool>,
-    @ViewBuilder content: @escaping () -> Content
+    running: Bool, identifier: String = "activity-band", expanded: Binding<Bool>,
+    @ViewBuilder meta: @escaping () -> Meta, @ViewBuilder content: @escaping () -> Content
   ) {
-    self.meta = meta
     self.running = running
     self.identifier = identifier
     _expanded = expanded
+    self.meta = meta
     self.content = content
   }
 
@@ -482,10 +492,13 @@ public struct ActivityBand<Content: View>: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(theme.palette.accent.color)
             .symbolEffect(.pulse, isActive: running)
+            .accessibilityHidden(true)
           Text("Activity").webFont(.activityLabel)
             .foregroundStyle(running ? theme.palette.accent.color : WebColor.textMuted.color)
             .fixedSize()
-          Text(meta).font(.system(size: 10)).monospacedDigit()
+            .accessibilityLabel(running ? "Activity in progress" : "Activity")
+          meta()
+            .font(.system(size: 10)).monospacedDigit()
             .foregroundStyle(WebColor.textMuted.color)
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -493,6 +506,7 @@ public struct ActivityBand<Content: View>: View {
             .font(.system(size: 10, weight: .semibold))
             .foregroundStyle(WebColor.textMuted.color)
             .rotationEffect(.degrees(expanded ? 180 : 0))
+            .accessibilityHidden(true)
         }
         .padding(.top, 2).padding(.horizontal, 16)
         .frame(minHeight: DesignMetrics.minimumHitTarget)
@@ -500,7 +514,6 @@ public struct ActivityBand<Content: View>: View {
       }
       .buttonStyle(.plain)
       .accessibilityElement(children: .combine)
-      .accessibilityLabel("Activity" + (running ? " in progress" : "") + ", " + meta)
       .accessibilityValue(expanded ? "Expanded" : "Collapsed")
       .accessibilityIdentifier(identifier)
       if expanded {
@@ -511,6 +524,18 @@ public struct ActivityBand<Content: View>: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(theme.palette.panel.mixed(32, with: WebColor.surface).color, in: shape)
     .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
+  }
+}
+
+extension ActivityBand where Meta == Text {
+  /// A band whose header meta is fixed text.
+  public init(
+    meta: String, running: Bool, identifier: String = "activity-band", expanded: Binding<Bool>,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.init(
+      running: running, identifier: identifier, expanded: expanded, meta: { Text(meta) },
+      content: content)
   }
 }
 
