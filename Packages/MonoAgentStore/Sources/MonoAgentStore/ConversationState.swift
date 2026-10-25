@@ -25,6 +25,8 @@ public final class ConversationState {
   @ObservationIgnored private(set) var messageIndices: [String: Int] = [:]
   @ObservationIgnored var pendingMessageIndices: Set<Int> = []
   @ObservationIgnored var needsFullPublication = false
+  @ObservationIgnored private var jobProjection = ProcessJobEvents.Projection()
+  @ObservationIgnored private var shelfOwnedCalls: Set<String> = []
   @ObservationIgnored private var inputs: [String: PresentationInput] = [:]
   private struct PresentationInput: Equatable {
     var status: String
@@ -37,7 +39,7 @@ public final class ConversationState {
       role = message.role
       jobParts = message.parts.filter {
         switch $0 {
-        case .processJob, .toolCall, .subagent: true
+        case .processJob, .processJobWake, .toolCall, .subagent, .steer: true
         default: false
         }
       }
@@ -83,8 +85,6 @@ public final class ConversationState {
   }
   private func publishRows() {
     let ids = record.messages.map(\.id)
-    let visible = record.messages.filter(TranscriptTelemetry.visible).map(\.id)
-    if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
     if orderedMessageIDs != ids {
       orderedMessageIDs = ids
       let retained = Set(ids)
@@ -142,6 +142,9 @@ public final class ConversationState {
         || TranscriptTelemetry.visible(row.message) != TranscriptTelemetry.visible(message)
       let next = PresentationInput(message)
       let previous = inputs[message.id]
+      visibilityChanged =
+        visibilityChanged || previous?.status != next.status
+        || previous?.attribution != next.attribution
       jobsChanged =
         jobsChanged || previous?.jobParts != next.jobParts || previous?.role != next.role
       contextChanged =
@@ -152,12 +155,26 @@ public final class ConversationState {
       if row.message != message { row.message = message }
       if row.turnID != message.turnId { row.turnID = message.turnId }
     }
-    pendingMessageIndices.removeAll()
-    if visibilityChanged {
-      let visible = record.messages.filter(TranscriptTelemetry.visible).map(\.id)
-      if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
+    if !jobsChanged {
+      for index in pendingMessageIndices where record.messages.indices.contains(index) {
+        publishEntries(record.messages[index])
+      }
+      if visibilityChanged { publishTranscriptIDs() }
     }
+    pendingMessageIndices.removeAll()
     publishDerived(jobs: jobsChanged, context: contextChanged, route: routeChanged)
+  }
+  private func publishEntries(_ message: WebMessage) {
+    guard let row = messageStates[message.id] else { return }
+    let entries = ProcessJobEvents.entries(
+      for: message, projection: jobProjection, shelfOwnedCalls: shelfOwnedCalls)
+    if row.transcriptEntries != entries { row.transcriptEntries = entries }
+  }
+  private func publishTranscriptIDs() {
+    let visible = ProcessJobEvents.orderedMessages(record.messages).filter { message in
+      ProcessJobEvents.visible(message, entries: messageStates[message.id]?.transcriptEntries ?? [])
+    }.map(\.id)
+    if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
   }
   private func publishDerived(jobs: Bool, context contextChanged: Bool, route: Bool) {
     if jobs {
@@ -181,6 +198,10 @@ public final class ConversationState {
         return value
       }
       if jobParentMessages != parents { jobParentMessages = parents }
+      jobProjection = ProcessJobEvents.project(messages: record.messages, threadID: thread.id)
+      shelfOwnedCalls = ProcessJobEvents.shelfOwnedCalls(messages: parents, items: items)
+      for message in record.messages { publishEntries(message) }
+      publishTranscriptIDs()
     }
     if contextChanged {
       let projection = UsagePresentation.context(messages: record.messages, thread: record.thread)
@@ -201,6 +222,7 @@ public final class TranscriptMessageState: Identifiable {
   public nonisolated let id: String
   public internal(set) var message: WebMessage
   public internal(set) var turnID: String?
+  public internal(set) var transcriptEntries: [TranscriptEntry] = []
   init(_ message: WebMessage) {
     self.id = message.id
     self.message = message

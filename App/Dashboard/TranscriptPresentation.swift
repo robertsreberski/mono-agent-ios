@@ -191,19 +191,7 @@ enum TranscriptPresentation {
   /// the footer (fallback, a transition or retry, an effort the provider did not honour, or an
   /// unsettled run already attempting another model). An ordinary turn carries none.
   static func showsRunAttribution(_ value: WebRunAttribution?, status: String) -> Bool {
-    guard let value else { return false }
-    if value.disposition == "fallback" { return true }
-    if !value.transitions.isEmpty || !value.retries.isEmpty { return true }
-    let run = value.executed ?? value.attempted
-    if let effective = run?.effectiveEffort, let requested = value.requested.effort,
-      canonicalEffort(effective) != canonicalEffort(requested)
-    {
-      return true
-    }
-    guard status != "complete", let attempted = run?.model, !attempted.isEmpty,
-      let requested = value.requested.model, !requested.isEmpty
-    else { return false }
-    return attempted != requested
+    ProcessJobEvents.showsAttribution(value, status: status)
   }
   /// Web `effortChanged`: the effective effort differs from the requested one (or none was asked).
   static func effortChange(_ value: WebRunAttribution) -> String? {

@@ -39,6 +39,7 @@ public struct ProcessJobStartReceipt: Sendable, Equatable {
   public var tool: String
   public var state: String
   public var startedAt: String?
+  public var maxRuntimeMs: Double?
 }
 
 /// Pure port of the web's `projectProcessJobPresentation`: background jobs live in the shelf, so
@@ -71,7 +72,8 @@ public enum ProcessJobEvents {
 
   /// Web `parseProcessJobStartReceipt`: only the canonical receipt with exactly its keys, for the
   /// tool that carries it.
-  public static func receipt(_ value: JSONValue?, containingTool: String?) -> ProcessJobStartReceipt?
+  public static func receipt(_ value: JSONValue?, containingTool: String?)
+    -> ProcessJobStartReceipt?
   {
     guard case .object(let record) = value else { return nil }
     let required: Set<String> = ["schema", "jobId", "tool", "state", "startedAt"]
@@ -80,7 +82,7 @@ public enum ProcessJobEvents {
       record["schema"] == .string(receiptSchema),
       case .string(let tool) = record["tool"], toolNames.contains(tool), tool == containingTool,
       case .string(let jobId) = record["jobId"],
-      !jobId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, jobId.count <= 256,
+      !jobId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, jobId.utf16.count <= 256,
       case .string(let state) = record["state"], ["queued", "starting", "running"].contains(state)
     else { return nil }
     var startedAt: String?
@@ -89,12 +91,15 @@ public enum ProcessJobEvents {
     case .string(let value)? where canonical(value): startedAt = value
     default: return nil
     }
+    var maxRuntimeMs: Double?
     if let limit = record["maxRuntimeMs"] {
       guard case .number(let number) = limit, number > 0, number.rounded() == number,
         number <= 9_007_199_254_740_991
       else { return nil }
+      maxRuntimeMs = number
     }
-    return .init(jobId: jobId, tool: tool, state: state, startedAt: startedAt)
+    return .init(
+      jobId: jobId, tool: tool, state: state, startedAt: startedAt, maxRuntimeMs: maxRuntimeMs)
   }
 
   /// Web `processJobThreadId`: the retained web thread a job reports to.
@@ -106,6 +111,7 @@ public enum ProcessJobEvents {
   }
 
   public static func project(messages: [WebMessage], threadID: String?) -> Projection {
+    let messages = orderedMessages(messages)
     var projection = Projection()
     var order: [String] = []
     for message in messages {
@@ -157,7 +163,8 @@ public enum ProcessJobEvents {
       let admitted = ServerTimestamp.date(job.timestamps.admittedAt)
       let receiptStart = candidate.receipt.startedAt
       let projectionStart = job.timestamps.startedAt
-      let conflicts = receiptStart != nil && projectionStart != nil && receiptStart != projectionStart
+      let conflicts =
+        receiptStart != nil && projectionStart != nil && receiptStart != projectionStart
       let started = conflicts ? nil : receiptStart ?? projectionStart
       let validStarted: String? = {
         guard let started, canonical(started), let date = ServerTimestamp.date(started),
@@ -199,43 +206,134 @@ public enum ProcessJobEvents {
   /// becomes its job's terminal event (or nothing when the job is unknown), and a completed launch
   /// call with a started event folds into it (its Input moves onto the started row). Launches
   /// without a started event keep their tool row, followed by their events.
-  public static func items(
-    for message: WebMessage, projection: Projection
-  ) -> [TranscriptItem] {
+  public static func entries(
+    for message: WebMessage, projection: Projection, shelfOwnedCalls: Set<String> = []
+  ) -> [TranscriptEntry] {
     let events = projection.eventsByMessageID[message.id] ?? []
     var byCall: [String: [ProcessJobActivityEvent]] = [:]
     for event in events { byCall[event.toolCallId, default: []].append(event) }
-    var items: [TranscriptItem] = []
-    for part in message.parts {
+    var items: [TranscriptEntry] = []
+    for (index, part) in message.parts.enumerated() {
+      func append(_ item: TranscriptItem, suffix: String = "") {
+        items.append(.init(id: "part-\(index)" + suffix, item: item))
+      }
       switch part {
       case .processJob:
         continue
       case .processJobWake(let wake):
         if let job = projection.jobsByID[wake.jobId] {
-          items.append(.jobEvent(.terminal(job, toolCallId: wake.deliveryKey)))
+          append(.jobEvent(.terminal(job, toolCallId: wake.deliveryKey)))
         }
       case .toolCall(let call):
         let launch = byCall[call.toolCallId] ?? []
         guard !launch.isEmpty else {
-          items.append(.part(part))
+          if !shelfOwnedCalls.contains(callKey(message.id, call.toolCallId)) { append(.part(part)) }
           continue
         }
         let folds = call.status == "complete" && launch.contains { $0.phase == .started }
-        if !folds { items.append(.part(part)) }
+        if !folds { append(.part(part)) }
         for var event in launch {
           if folds && event.phase == .started && call.args != nil {
             event.launchArgs = call.args
             event.launchArgsTruncated = call.argsTruncated == true ? true : nil
             event.launchArgsBytes = call.argsBytes
           }
-          items.append(.jobEvent(event))
+          append(.jobEvent(event), suffix: ":" + event.phase.rawValue)
         }
       default:
-        items.append(.part(part))
+        append(.part(part))
       }
     }
     return items
   }
+  public static func items(for message: WebMessage, projection: Projection) -> [TranscriptItem] {
+    entries(for: message, projection: projection).map(\.item)
+  }
+  public static func callKey(_ messageID: String, _ callID: String) -> String {
+    messageID + "\u{0}" + callID
+  }
+  /// Only rows that actually appear in an existing shelf group are suppressed. Unmatched,
+  /// malformed and foreground calls remain reachable in the transcript.
+  public static func shelfOwnedCalls(messages: [WebMessage], items: [JobShelfItem]) -> Set<String> {
+    Set(
+      items.filter { $0.family != nil }.flatMap { item in
+        JobShelf.timeline(item, messages: messages).compactMap { step -> String? in
+          guard case .call(let parent) = step else { return nil }
+          return callKey(parent.messageID, parent.call.toolCallId)
+        }
+      })
+  }
+
+  public static func showsAttribution(_ value: WebRunAttribution?, status: String) -> Bool {
+    guard let value else { return false }
+    if value.disposition == "fallback" || !value.transitions.isEmpty || !value.retries.isEmpty {
+      return true
+    }
+    let run = value.executed ?? value.attempted
+    func effort(_ text: String) -> String {
+      text.lowercased() == "none" ? "off" : text.lowercased()
+    }
+    if let effective = run?.effectiveEffort, let requested = value.requested.effort,
+      effort(effective) != effort(requested)
+    {
+      return true
+    }
+    guard status != "complete", let attempted = run?.model, !attempted.isEmpty,
+      let requested = value.requested.model, !requested.isEmpty
+    else { return false }
+    return attempted != requested
+  }
+
+  /// Applied steers replace their standalone user bubble only while the inline marker is loaded.
+  /// Other live inputs remain below their target turn, not above the work they are steering.
+  public static func orderedMessages(_ messages: [WebMessage]) -> [WebMessage] {
+    let inlineIDs = Set(
+      messages.flatMap { message in
+        message.parts.compactMap { part -> String? in
+          if case .steer(let steer) = part { return steer.messageId }
+          return nil
+        }
+      })
+    let shaped = messages.filter { $0.role != "user" || !inlineIDs.contains($0.id) }
+    var anchors: [String: Int] = [:]
+    for (index, message) in shaped.enumerated()
+    where message.role != "user" || message.liveInputStatus == nil {
+      if let turn = message.turnId { anchors[turn] = index }
+    }
+    var moved = Set<String>()
+    var following: [Int: [WebMessage]] = [:]
+    for message in shaped where message.role == "user" && message.liveInputStatus != nil {
+      if let turn = message.turnId, let anchor = anchors[turn] {
+        following[anchor, default: []].append(message)
+        moved.insert(message.id)
+      }
+    }
+    return shaped.enumerated().flatMap { index, message in
+      (moved.contains(message.id) ? [] : [message]) + (following[index] ?? [])
+    }
+  }
+
+  public static func visible(_ message: WebMessage, entries: [TranscriptEntry]) -> Bool {
+    guard TranscriptTelemetry.visible(message) else { return false }
+    guard message.role == "assistant",
+      message.parts.contains(where: { if case .processJob = $0 { true } else { false } })
+    else { return true }
+    if !message.attachments.isEmpty || message.quote != nil
+      || ["failed", "interrupted", "cancelled"].contains(message.status)
+      || showsAttribution(message.attribution, status: message.status)
+    {
+      return true
+    }
+    return entries.contains { entry in
+      guard case .part(let part) = entry.item else { return true }
+      switch part {
+      case .text(let text), .reasoning(let text):
+        return !text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      default: return TranscriptTelemetry.visible(part, in: message)
+      }
+    }
+  }
+
 }
 
 /// A transcript row source: a stored message part or a synthesised job event.
@@ -246,4 +344,11 @@ public enum TranscriptItem: Sendable, Equatable {
     if case .part(let value) = self { return value }
     return nil
   }
+}
+
+/// Identity retains the stored part index, even when preceding job carriers disappear or a
+/// terminal event is inserted. A band's disclosure key must not shift as a job settles.
+public struct TranscriptEntry: Sendable, Equatable, Identifiable {
+  public var id: String
+  public var item: TranscriptItem
 }
