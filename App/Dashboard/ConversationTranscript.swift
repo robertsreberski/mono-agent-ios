@@ -30,23 +30,9 @@ struct ConversationTranscript<Header: View>: View {
     self.store = store
     self.header = header()
   }
-  #if DEBUG
-    @Environment(\.fixtureReferenceDate) private var referenceDate
-  #endif
-  var body: some View {
-    // One minute schedule for relative ages; settled elapsed leaves remain unscheduled.
-    TimelineView(.periodic(from: .now, by: 60)) { context in
-      transcript.environment(\.transcriptMinuteDate, minuteDate(context.date))
-    }
-  }
-  private func minuteDate(_ wall: Date) -> Date {
-    #if DEBUG
-      return TranscriptClock.ageDate(
-        wall: wall, offset: store.serverClockOffset, fixture: referenceDate)
-    #else
-      return TranscriptClock.ageDate(wall: wall, offset: store.serverClockOffset)
-    #endif
-  }
+  // Messages carry no relative ages (web parity), so nothing schedules a transcript-wide tick;
+  // only running leaves read the clock (`RunningTimeline`).
+  var body: some View { transcript }
   @ViewBuilder private var transcript: some View {
     let regular = sizeClass == .regular
     ScrollView {
@@ -218,14 +204,12 @@ struct ConversationTranscript<Header: View>: View {
       )
       .accessibilityIdentifier("history-truncated")
     }
+    // Web: no "up to date" marker; only a stale history says anything.
     if state.freshness != .fresh {
       TranscriptNotice(
         "History may be stale · pull to refresh", systemImage: "clock.arrow.circlepath"
       )
       .accessibilityIdentifier("transcript-stale")
-    } else {
-      TranscriptNotice("History up to date", systemImage: "checkmark")
-        .accessibilityIdentifier("transcript-fresh")
     }
     if let error = store.errorMessage {
       ConnectionBanner(.problem, title: "Conversation update failed", message: error)

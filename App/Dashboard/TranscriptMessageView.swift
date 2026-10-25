@@ -8,17 +8,6 @@ struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
   @State private var gallery = ReplyMessageGallery()
-  @Environment(\.transcriptMinuteDate) private var minuteDate
-  #if DEBUG
-    @Environment(\.fixtureReferenceDate) private var referenceDate
-  #endif
-  private var actionDate: Date {
-    if let minuteDate { return minuteDate }
-    #if DEBUG
-      if let referenceDate { return referenceDate }
-    #endif
-    return Date().addingTimeInterval(store.serverClockOffset)
-  }
   private var hasMcp: Bool {
     row.message.parts.contains { if case .mcpApp = $0 { true } else { false } }
   }
@@ -76,17 +65,21 @@ struct TranscriptMessageView: View {
       if isUser, !message.attachments.isEmpty {
         messageAttachments(message).padding(.bottom, 8)
       }
+      let visible = message.parts.filter {
+        TranscriptTelemetry.visible($0, in: message) && TranscriptPresentation.isShown($0)
+      }
+      let bands = TranscriptPresentation.activityBands(visible)
+      // Web: only the band holding the turn's last activity part carries the turn's clock.
+      let openBand = bands.last { $0.parts.allSatisfy(TranscriptPresentation.isActivity) }?.id
       VStack(alignment: .leading, spacing: 10) {
         if let quote = message.quote {
           MessageQuote(quote.text)
 
         }
-        ForEach(
-          TranscriptPresentation.activityBands(
-            message.parts.filter { TranscriptTelemetry.visible($0, in: message) })
-        ) { band in
+        ForEach(bands) { band in
           if band.parts.allSatisfy(TranscriptPresentation.isActivity) {
-            TranscriptActivityBand(parts: band.parts, message: message, store: store)
+            TranscriptActivityBand(
+              parts: band.parts, message: message, store: store, timed: band.id == openBand)
           } else if band.parts.allSatisfy(TranscriptPresentation.isReplyImage) {
             ReplyImagesView(
               parts: band.parts.compactMap {
@@ -95,7 +88,7 @@ struct TranscriptMessageView: View {
               }, message: message, store: store, gallery: gallery)
           } else if let part = band.parts.first {
             if message.role == "system", case .text(let value) = part {
-              Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)
+              Text(value.text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
                 .textSelection(.enabled)
             } else {
               TranscriptPartView(part: part, message: message, store: store)
@@ -103,19 +96,28 @@ struct TranscriptMessageView: View {
           }
         }
         if !isUser { messageAttachments(message) }
-        if message.parts.isEmpty && message.status == "running" {
-          Label("Thinking…", systemImage: "sparkles").webFont(.reasoningTrigger)
-            .foregroundStyle(WebColor.textMuted.color)
+        // Web `RunningText` (`indicator="no-text"`): the dots stand in while the turn runs
+        // without new prose, including after an Activity band.
+        if message.role == "assistant" && message.status == "running"
+          && !TranscriptPresentation.endsWithProse(visible)
+        {
+          ThinkingDots()
         }
         if let status = message.liveInputStatus {
           Text("Follow-up · " + status).webFont(.messageAction)
             .foregroundStyle(WebColor.textMuted.color)
         }
-        if message.role == "assistant" {
-          RunAttributionView(message: message, store: store)
+        if message.role == "assistant",
+          TranscriptPresentation.showsRunAttribution(message.attribution, status: message.status)
+        {
+          RunAttributionView(message: message)
         }
-        if ["failed", "cancelled", "interrupted"].contains(message.status) {
-          StatusIndicator(.failed, label: "Response " + message.status)
+        if message.status == "failed" {
+          MessageErrorCard(code: "", message: "The response ended with an error.")
+            .accessibilityIdentifier("message-error")
+        } else if ["cancelled", "interrupted"].contains(message.status) {
+          Text("Response " + message.status).webFont(.messageAction)
+            .foregroundStyle(WebColor.textMuted.color)
         }
       }
     }
@@ -140,27 +142,23 @@ struct TranscriptMessageView: View {
     }
   }
 
-  /// Web `.message-actions`: always visible on touch, Copy plus the message time.
+  /// Web `.message-actions`: always visible on touch and Copy only. The web shows no message
+  /// time; VoiceOver still hears who wrote it and when. Copy is disabled without copyable text.
   private func actions(_ message: WebMessage) -> some View {
-    HStack(spacing: 4) {
+    let text = QuoteFormatting.text(of: message)
+    return HStack(spacing: 4) {
       if isUser { Spacer(minLength: 0) }
-      Text(
-        DashboardModel.relativeTime(
-          message.createdAt, now: actionDate)
-      )
-      .webFont(.rowTime).foregroundStyle(WebColor.textMuted.color)
-      .accessibilityLabel(
+      MessageActionButton("Copy", systemImage: "doc.on.doc") {
+        UIPasteboard.general.string = text
+      }
+      .disabled(text.isEmpty)
+      .opacity(text.isEmpty ? 0.45 : 1)
+      .accessibilityLabel(isUser ? "Copy message" : "Copy response")
+      .accessibilityValue(
         role + ", "
           + (TranscriptPresentation.date(message.createdAt)?.formatted() ?? "time unavailable")
       )
-      .padding(.horizontal, isUser ? 0 : 7)
-      .opacity(message.parts.isEmpty ? 0 : 1)
-      if !QuoteFormatting.text(of: message).isEmpty {
-        MessageActionButton("Copy", systemImage: "doc.on.doc") {
-          UIPasteboard.general.string = QuoteFormatting.text(of: message)
-        }
-        .accessibilityIdentifier("message-copy")
-      }
+      .accessibilityIdentifier("message-copy")
       if !isUser { Spacer(minLength: 0) }
     }
     .padding(.top, 5)
@@ -210,7 +208,8 @@ struct TranscriptPartView: View {
         if let text = value.message { Text(text).textSelection(.enabled) }
       }
     case .error(let value):
-      ConnectionBanner(.problem, title: value.code ?? "Agent error", message: value.message)
+      MessageErrorCard(code: value.code ?? "Agent error", message: value.message)
+        .accessibilityIdentifier("message-error-part")
     case .failure(let value):
       ReplyFailureCard(code: value.code, message: value.message)
     case .subagent(let value):
@@ -284,46 +283,60 @@ struct DeferredTranscriptPart: View {
   }
 }
 
-/// The web activity root preserves independent row disclosures and lazy tool payloads.
+/// Web `ActivityGroup`: open while the turn streams and collapsed once it settles
+/// (`collapseOnSettle`); a user toggle wins until the next settle. Only the band holding the
+/// turn's last activity part carries the turn's clock.
 struct TranscriptActivityBand: View {
   let parts: [WebMessagePart]
   let message: WebMessage
   let store: ConsoleStore
-  @State private var expanded = true
+  var timed = true
+  @State private var userOpen: Bool?
+  private var running: Bool { message.status == "running" }
   var body: some View {
-    RunningTimeline(
-      running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
-    ) {
-      store.serverClockOffset
-    } content: { date in
-      #if DEBUG
-        let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
-      #endif
-      ActivityBand(
-        meta: "\(parts.count) \(parts.count == 1 ? "step" : "steps")"
-          + (TranscriptPresentation.elapsed(
-            message,
-            now: date
-          )
-          .map { " · " + $0 } ?? ""),
-        running: message.status == "running", expanded: $expanded
-      ) {
-        ForEach(TranscriptPresentation.clusters(parts)) { entry in
-          if entry.parts.count > 1 {
-            ToolClusterView(
-              calls: entry.parts.compactMap {
-                if case .toolCall(let call) = $0 { return call }
-                return nil
-              }, message: message, store: store)
-          } else if let part = entry.parts.first {
-            TranscriptPartView(part: part, message: message, store: store)
-          }
+    let steps = TranscriptPresentation.activityStepCount(parts)
+    let count = "\(steps) \(steps == 1 ? "step" : "steps")"
+    let expanded = Binding(get: { userOpen ?? running }, set: { userOpen = $0 })
+    Group {
+      if timed {
+        RunningTimeline(
+          running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
+        ) {
+          store.serverClockOffset
+        } content: { date in
+          #if DEBUG
+            let _ = PerformanceProbe.body("TranscriptActivityBand.clock")
+          #endif
+          band(
+            meta: count
+              + (TranscriptPresentation.elapsed(message, now: date).map { " · " + $0 } ?? ""),
+            expanded: expanded)
+        }
+      } else {
+        band(meta: count, expanded: expanded)
+      }
+    }
+    .onChange(of: running) { _, now in if !now { userOpen = nil } }
+  }
+  private func band(meta: String, expanded: Binding<Bool>) -> some View {
+    ActivityBand(meta: meta, running: running, expanded: expanded) {
+      ForEach(TranscriptPresentation.clusters(parts)) { entry in
+        if entry.parts.count > 1 {
+          ToolClusterView(
+            calls: entry.parts.compactMap {
+              if case .toolCall(let call) = $0 { return call }
+              return nil
+            }, message: message, store: store)
+        } else if let part = entry.parts.first {
+          TranscriptPartView(part: part, message: message, store: store)
         }
       }
     }
   }
 }
 
+/// Web `variant="thinking"`: a muted bulb, no label, the thought's first 52 characters as the
+/// summary; it opens while the thought streams and collapses when it settles.
 struct ReasoningDisclosure: View {
   let text: String
   let message: WebMessage
@@ -331,40 +344,20 @@ struct ReasoningDisclosure: View {
   @State private var userOpen: Bool?
   private var running: Bool { message.status == "running" }
   var body: some View {
-    RunningTimeline(
-      running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
+    ActivityDisclosure(
+      "", summary: TranscriptPresentation.thinkingPreview(text),
+      status: running ? .connecting : .disconnected, glyph: .reasoning,
+      identifier: "reasoning-disclosure",
+      expanded: Binding(get: { userOpen ?? running }, set: { userOpen = $0 })
     ) {
-      store.serverClockOffset
-    } content: { date in
-      #if DEBUG
-        let _ = PerformanceProbe.body("ReasoningDisclosure.clock")
-      #endif
-      ActivityDisclosure(
-        running ? "Thinking…" : "Reasoning",
-        status: running ? .connecting : .disconnected,
-        detail: TranscriptPresentation.elapsed(
-          message,
-          now: date
-        ),
-        glyph: .reasoning, identifier: "reasoning-disclosure",
-        expanded: Binding(
-          get: { userOpen ?? running },
-          set: {
-            userOpen = $0
-          })
-      ) {
-        Text(text).webFont(.reasoningText).foregroundStyle(WebColor.textSoft.color)
-          .textSelection(.enabled)
-          .padding(.vertical, 4).padding(.leading, 11)
-          .overlay(alignment: .leading) {
-            Rectangle().fill(WebColor.lineStrong.color).frame(width: 1)
-          }
-      }
-    }.onChange(of: running) { _, current in if !current { userOpen = false } }
-
+      ActivityThought(text)
+    }
+    .onChange(of: running) { _, current in if !current { userOpen = nil } }
   }
 }
 
+/// Web `ToolClusterPart`: a run of identical calls as one row (`Read ×4`, deduplicated leaves,
+/// summed time, a failure count); members stay individually expandable as flat steps.
 struct ToolClusterView: View {
   let calls: [WebToolCall]
   let message: WebMessage
@@ -380,153 +373,180 @@ struct ToolClusterView: View {
       summary: TranscriptPresentation.clusterSummary(calls),
       status: running ? .connecting : failures > 0 ? .failed : .disconnected,
       detail: TranscriptPresentation.duration(times.isEmpty ? nil : times.reduce(0, +)),
-      alert: failures > 0 ? "\(failures) failed" : nil, identifier: "tool-cluster",
-      expanded: Binding(
-        get: { expanded },
-        set: {
-          expanded = $0
-        })
+      alert: TranscriptPresentation.failedLabel(failures, clustered: true),
+      identifier: "tool-cluster", expanded: $expanded
     ) {
-      ForEach(calls, id: \.toolCallId) { call in
-        ToolCallView(call: call, message: message, store: store)
+      ActivitySteps {
+        ForEach(calls, id: \.toolCallId) { call in
+          ActivityStep(
+            TranscriptPresentation.toolName(call), summary: TranscriptPresentation.preview(call),
+            failed: TranscriptPresentation.failedLabel(
+              TranscriptPresentation.failed(call) ? 1 : 0, clustered: false),
+            duration: TranscriptPresentation.duration(call.executionMs),
+            identifier: "tool-call-" + call.toolCallId
+          ) {
+            ToolPayloadView(call: call, message: message, store: store, indented: false)
+          }
+        }
       }
     }
   }
 }
 
+/// Web `ToolFallback`: one call as an activity row; the time is its only trailing fact (no
+/// state word), a failure adds the tag.
 struct ToolCallView: View {
   let call: WebToolCall
   let message: WebMessage
   let store: ConsoleStore
   @State private var expanded = false
-  @State private var loading = false
-  @State private var failedRepair = false
   var body: some View {
+    let failed = TranscriptPresentation.failed(call)
     ActivityDisclosure(
       TranscriptPresentation.verb(TranscriptPresentation.toolName(call)),
       summary: TranscriptPresentation.preview(call),
-      status: call.status == "running"
-        ? .connecting : TranscriptPresentation.failed(call) ? .failed : .disconnected,
-      detail: [call.status, TranscriptPresentation.duration(call.executionMs)]
-        .compactMap { $0 }.joined(separator: " · "),
-      alert: TranscriptPresentation.failed(call) ? call.history?.terminalState ?? call.status : nil,
+      status: call.status == "running" ? .connecting : failed ? .failed : .disconnected,
+      detail: TranscriptPresentation.duration(call.executionMs),
+      alert: failed ? call.history?.terminalState ?? "failed" : nil,
       identifier: "tool-call-" + call.toolCallId,
-      expanded: Binding(
-        get: { expanded },
-        set: {
-          expanded = $0
-        })
+      expanded: $expanded
     ) {
-      CodeDocumentView(source: TranscriptPresentation.json(call.args), language: "Input")
-      if call.result != nil {
-        CodeDocumentView(
-          source: TranscriptPresentation.json(call.result),
-          language: TranscriptPresentation.failed(call) ? "Error" : "Output")
-      }
-      if call.history?.persistence == "failed" {
-        StatusIndicator(
-          .failed,
-          label: "Tool history for this call was not saved"
-            + (call.history?.errorCode.map { " (" + $0 + ")" } ?? ""))
-      }
-      if call.argsTruncated == true || call.resultTruncated == true {
-        Text("Preview only" + (call.resultBytes ?? call.argsBytes).map { " · \($0) chars" }.orEmpty)
-          .designFont(.caption)
-        Button(loading ? "Loading…" : "Show full output") {
-          loading = true
-          failedRepair = false
-          Task {
-            let repaired = await store.repairToolOutput(
-              threadID: message.threadId, messageID: message.id, toolCallID: call.toolCallId)
-            failedRepair = !repaired
-            loading = false
-          }
-        }.disabled(loading).accessibilityIdentifier("tool-load-full")
-      }
-      if failedRepair {
-        StatusIndicator(
-          .failed, label: "Could not load full output. Retry or refresh this conversation.")
-      }
+      ToolPayloadView(call: call, message: message, store: store, indented: true)
     }
   }
 }
 
-extension Optional where Wrapped == String {
-  fileprivate var orEmpty: String { self ?? "" }
-}
-
-struct RunAttributionView: View {
+/// Web `ActivityPayload`: Input, a preview notice owning the one repair control, Output or
+/// Error, and a tinted history failure.
+struct ToolPayloadView: View {
+  let call: WebToolCall
   let message: WebMessage
   let store: ConsoleStore
+  let indented: Bool
+  @State private var phase = ActivityTruncationNotice.Phase.idle
   var body: some View {
-    if message.attribution != nil {
-      AttributionBox { lines }
-    } else {
-      lines.webFont(.runAttribution).foregroundStyle(WebColor.textMuted.color)
+    let argsTruncated = call.argsTruncated == true
+    let resultTruncated = call.resultTruncated == true
+    let load: () -> Void = { repair() }
+    let resultLoad: (() -> Void)? = argsTruncated ? nil : load
+    let resultPhase: ActivityTruncationNotice.Phase = argsTruncated ? .idle : phase
+    let failed = TranscriptPresentation.failed(call)
+    let historyNote: String? =
+      call.history?.persistence == "failed"
+      ? "Tool history for this call was not saved"
+        + (call.history?.errorCode.map { " (" + $0 + ")" } ?? "") + "." : nil
+    ActivityPayload(indented: indented) {
+      ActivityPayloadBlock("Input", text: TranscriptPresentation.json(call.args))
+      if argsTruncated {
+        ActivityTruncationNotice(characters: call.argsBytes, phase: phase, action: load)
+      }
+      if call.result != nil {
+        ActivityPayloadBlock(
+          failed ? "Error" : "Output", text: TranscriptPresentation.json(call.result))
+      }
+      // One repair fetches the whole part, so only the first notice offers it.
+      if resultTruncated {
+        ActivityTruncationNotice(
+          characters: call.resultBytes, phase: resultPhase, action: resultLoad)
+      }
+      if let historyNote { ActivityErrorNote(historyNote) }
     }
   }
-  @ViewBuilder private var lines: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      if let value = message.attribution {
-        Text(TranscriptPresentation.attribution(value, status: message.status)).textSelection(
-          .enabled
-        )
-        .accessibilityIdentifier("run-attribution")
-        if value.transitions.count > 0 || value.retries.count > 0
-          || value.executed?.effectiveEffort != nil || value.truncated == true
+  private func repair() {
+    phase = .loading
+    Task {
+      let repaired = await store.repairToolOutput(
+        threadID: message.threadId, messageID: message.id, toolCallID: call.toolCallId)
+      phase = repaired ? .idle : .failed
+    }
+  }
+}
+
+/// Web `RunAttribution`, shown only for a run that deviated (see
+/// `TranscriptPresentation.showsRunAttribution`): fit-content, a FALLBACK pill and warning tint
+/// for a fallback, an effort-change note, and quiet routing details. No cost or clock: the
+/// Activity header already carries the turn's elapsed time.
+struct RunAttributionView: View {
+  let message: WebMessage
+  @State private var details = false
+  var body: some View {
+    if let value = message.attribution {
+      let fallback = value.disposition == "fallback"
+      AttributionBox(fallback: fallback) {
+        // Fit-content like the web: one line when it fits, wrapping only when it must.
+        ViewThatFits(in: .horizontal) {
+          HStack(alignment: .firstTextBaseline, spacing: 8) { summary(value, fallback: fallback) }
+          WebFlowLayout(spacing: 8, lineSpacing: 5) { summary(value, fallback: fallback) }
+        }
+        if !value.transitions.isEmpty || !value.retries.isEmpty || value.truncated == true
+          || (value.executed ?? value.attempted)?.effectiveEffort != nil
         {
-          DisclosureGroup("Routing details") {
-            Text(
-              "Requested · "
-                + TranscriptPresentation.route(value.requested.model, value.requested.effort))
-            if let route = value.attempted {
-              Text("Attempted · " + TranscriptPresentation.route(route.model, route.effort))
+          Button {
+            details.toggle()
+          } label: {
+            HStack(spacing: 5) {
+              Image(systemName: "arrowtriangle.right.fill").font(.system(size: 7))
+                .rotationEffect(.degrees(details ? 90 : 0))
+              Text("Routing details")
             }
-            if let route = value.executed {
-              Text(
-                "Executed · "
-                  + TranscriptPresentation.route(route.model, route.effectiveEffort ?? route.effort)
-              )
-            }
-            ForEach(Array(value.transitions.enumerated()), id: \.offset) { _, transition in
-              Text(
-                "\(transition.from) → \(transition.to) · \(transition.reason ?? "reason not reported")"
-              )
-            }
-            ForEach(Array(value.retries.enumerated()), id: \.offset) { _, retry in
-              Text(
-                "Retried \(retry.model ?? "current route") · \(retry.reason ?? "reason not reported")"
-              )
-            }
-            if value.truncated == true { Text("Older routing entries were omitted.") }
+            .font(.system(size: 10))
+            .foregroundStyle(WebColor.textMuted.color)
+            .frame(minHeight: 28)
+            .contentShape(Rectangle())
           }
+          .buttonStyle(.plain)
+          .accessibilityValue(details ? "Expanded" : "Collapsed")
+          .accessibilityIdentifier("routing-details")
+          if details { routingDetails(value) }
         }
       }
-      RunningTimeline(
-        running: TranscriptPresentation.needsElapsedTimeline(status: message.status)
-      ) {
-        store.serverClockOffset
-      } content: { date in
-        #if DEBUG
-          let _ = PerformanceProbe.body("RunAttributionView.clock")
-        #endif
-        Text(
-          [
-            TranscriptPresentation.cost(cost),
-            TranscriptPresentation.elapsed(
-              message,
-              now: date),
-          ].compactMap { $0 }.joined(separator: " · "))
-      }
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel(fallback ? "Model fallback" : "Run route")
     }
   }
-  private var cost: CostAmount {
-    // Never apply today's cumulative run cost to a historical turn.
-    let state = store.conversations[message.threadId]?.thread.runState
-    guard let turn = message.turnId, state?.id == turn, let activity = state?.activity else {
-      return .unknown(knownSpend: nil)
+  @ViewBuilder private func summary(_ value: WebRunAttribution, fallback: Bool) -> some View {
+    if fallback { AttributionWarning("Fallback") }
+    Text(TranscriptPresentation.attribution(value, status: message.status))
+      .textSelection(.enabled)
+      .accessibilityIdentifier("run-attribution")
+    if let change = TranscriptPresentation.effortChange(value) {
+      Text(change).foregroundStyle(WebColor.warning.color)
     }
-    return activity.cost
+  }
+  @ViewBuilder private func routingDetails(_ value: WebRunAttribution) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      row("Requested", TranscriptPresentation.route(value.requested.model, value.requested.effort))
+      if let route = value.attempted {
+        row("Attempted", TranscriptPresentation.route(route.model, route.effort))
+      }
+      if let route = value.executed {
+        row("Executed", TranscriptPresentation.route(route.model, route.effort))
+      }
+      if let effective = (value.executed ?? value.attempted)?.effectiveEffort {
+        row("Effective effort", effective)
+      }
+      ForEach(Array(value.transitions.enumerated()), id: \.offset) { _, transition in
+        Text(
+          "\(transition.from) → \(transition.to) · \(transition.reason ?? "reason not reported")")
+      }
+      ForEach(Array(value.retries.enumerated()), id: \.offset) { _, retry in
+        Text(
+          "Retried \(retry.model ?? "current route")"
+            + (retry.retryIndex.map { " · attempt \($0 + 1)" } ?? "")
+            + (retry.reason.map { " · " + $0 } ?? ""))
+      }
+      if value.truncated == true {
+        Text("Older routing entries were omitted.").foregroundStyle(WebColor.warning.color)
+      }
+    }
+    .padding(.vertical, 7)
+    .textSelection(.enabled)
+  }
+  private func row(_ label: String, _ value: String) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Text(label).foregroundStyle(WebColor.textMuted.color).frame(width: 92, alignment: .leading)
+      Text(value).font(.system(size: 9.5, design: .monospaced))
+    }
   }
 }
 

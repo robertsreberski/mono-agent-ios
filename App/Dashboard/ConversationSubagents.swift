@@ -292,7 +292,7 @@ struct SubagentPartView: View {
       ].joined(separator: " · "),
       glyph: .agent, identifier: "subagent-" + call.toolCallId, expanded: $expanded
     ) {
-      VStack(alignment: .leading, spacing: 7) {
+      ActivitySteps {
         if let route = call.attribution {
           let executed = route.executed
           RouteBadge(
@@ -322,8 +322,6 @@ struct SubagentPartView: View {
           }
         }
         if call.result != nil {
-          Text(JobPresentation.preview(TranscriptPresentation.json(call.result), limit: 200).text)
-            .webFont(.jobDetail).lineLimit(3)
           DisclosureGroup("Latest answer") {
             CodeDocumentView(source: TranscriptPresentation.json(call.result), language: "Report")
           }

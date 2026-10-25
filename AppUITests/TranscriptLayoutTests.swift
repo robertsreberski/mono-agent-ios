@@ -19,9 +19,17 @@ import XCTest
             .firstMatch.waitForExistence(timeout: 20))
       }
       let scroll = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
-      let notice = app.descendants(matching: .any)[
-        scenario == "conversation-streaming" ? "transcript-stale" : "transcript-fresh"
-      ].firstMatch
+      // The reading edge is the first transcript row: the stale notice, else the first message
+      // (the web shows no "up to date" marker).
+      let notice =
+        scenario == "conversation-streaming"
+        ? app.descendants(matching: .any)["transcript-stale"].firstMatch
+        : app.descendants(matching: .any).matching(
+          NSPredicate(
+            format:
+              "identifier BEGINSWITH 'message-' AND NOT (identifier IN {'message-copy', 'message-error', 'message-error-part'})"
+          )
+        ).firstMatch
       let header = app.descendants(matching: .any)["conversation-top-bar"].firstMatch
       let nativeHeader = app.navigationBars.firstMatch
       let headerBottom = header.exists ? header.frame.maxY : nativeHeader.frame.maxY

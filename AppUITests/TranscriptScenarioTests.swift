@@ -138,6 +138,9 @@ import XCTest
       XCTAssertTrue(
         complete.waitForExistence(timeout: 20), "Scripted deltas must reach a terminal write")
     } else if scenario == "conversation-tools" {
+      // A settled turn's Activity band is collapsed (web `collapseOnSettle`); open it first.
+      XCTAssertTrue(element(app, "activity-band").waitForExistence(timeout: 10))
+      element(app, "activity-band").tap()
       XCTAssertTrue(element(app, "tool-cluster").waitForExistence(timeout: 10))
       element(app, "tool-cluster").tap()
       XCTAssertFalse(
@@ -162,7 +165,7 @@ import XCTest
       XCTAssertTrue(element(app, "code-copy").waitForExistence(timeout: 10))
       XCTAssertTrue(element(app, "markdown-table").waitForExistence(timeout: 10))
     } else {
-      XCTAssertTrue(element(app, "tool-cluster").waitForExistence(timeout: 10))
+      XCTAssertTrue(element(app, "activity-band").waitForExistence(timeout: 10))
     }
     if scenario == "conversation-tools" {
       XCTAssertFalse(

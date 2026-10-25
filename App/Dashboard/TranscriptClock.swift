@@ -10,7 +10,3 @@ enum TranscriptClock {
     running ? serverDate : .distantPast
   }
 }
-
-extension EnvironmentValues {
-  @Entry var transcriptMinuteDate: Date?
-}
