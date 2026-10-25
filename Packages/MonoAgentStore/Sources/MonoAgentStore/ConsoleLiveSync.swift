@@ -304,7 +304,7 @@ extension ConsoleStore {
       backgrounded = true
       await stopEffects()
       publishAll()
-      await discardStagedUploads()
+      // Suspension is not abandonment: keep staged files and their in-flight uploads.
       await flushAuthored()
       await flushCache()
     case .active:

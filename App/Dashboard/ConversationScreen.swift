@@ -74,6 +74,9 @@ struct ConversationScreen: View {
       store: store, route: route, createdThreadID: $createdThreadID,
       sampleAttachments: model.offersSampleAttachments
     )
+    #if DEBUG
+      .modifier(SyntheticDraftLifecycle(model: model, store: store))
+    #endif
     .background(theme.palette.panel.color.ignoresSafeArea())
     .onGeometryChange(for: CGFloat.self) {
       $0.size.width

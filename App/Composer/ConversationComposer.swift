@@ -2,6 +2,7 @@
 import MonoAgentDesign
 import MonoAgentKit
 import MonoAgentStore
+import Observation
 import SwiftUI
 import UIKit
 
@@ -46,37 +47,54 @@ extension View {
   }
 }
 
+/// Route-task lifetime state, separate from the composer's presentation/focus state.
+@MainActor @Observable
+final class ComposerMountState {
+  private(set) var controller: ComposerController?
+  private var route: AppRoute?
+
+  func mount(store: ConsoleStore, route: AppRoute) -> ComposerController? {
+    guard let source = route.sourceID else { return nil }
+    if self.route == route, let controller, controller.store === store { return controller }
+    let next = ComposerController(store: store, sourceID: source, threadID: route.threadID)
+    controller = next
+    self.route = route
+    return next
+  }
+}
+
 private struct ConversationComposerMount: ViewModifier {
   let store: ConsoleStore
   let route: AppRoute
   @Binding var createdThreadID: String?
   let sampleAttachments: Bool
-  @State private var controller: ComposerController?
+  @State private var mountState = ComposerMountState()
   @Environment(\.openNewConversation) private var openNewConversation
 
   func body(content: Content) -> some View {
     content
       .environment(\.composerActions, actions)
       .safeAreaBar(edge: .bottom) {
-        if let controller {
+        if let controller = mountState.controller {
           ComposerBar(controller: controller)
             .environment(\.composerSampleAttachments, sampleAttachments)
         }
       }
       .task(id: route) {
-        guard let source = route.sourceID else { return }
-        let next = ComposerController(store: store, sourceID: source, threadID: route.threadID)
+        guard let source = route.sourceID, let next = mountState.mount(store: store, route: route)
+        else { return }
         next.onCreate = { createdThreadID = $0 }
         next.onNewConversation = { openNewConversation.open?(source) }
-        controller = next
       }
       .onChange(of: store.hydrated) { _, hydrated in
-        if hydrated, controller?.text.isEmpty == true { controller?.restoreDraft() }
+        if hydrated, mountState.controller?.text.isEmpty == true {
+          mountState.controller?.restoreDraft()
+        }
       }
   }
 
   private var actions: ComposerActions {
-    guard let controller else { return ComposerActions() }
+    guard let controller = mountState.controller else { return ComposerActions() }
     return ComposerActions(
       quote: { controller.setQuote($0) },
       sendReply: { await controller.sendReply($0) },

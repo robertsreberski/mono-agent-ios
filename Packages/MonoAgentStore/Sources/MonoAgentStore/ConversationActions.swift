@@ -126,7 +126,7 @@ extension ConsoleStore {
         guard store.organizeContextIsCurrent(context, threadID: thread.id) else {
           throw CancellationError()
         }
-        store.completeConversationDeletion(thread.id)
+        await store.completeConversationDeletion(thread.id)
       }
 
     }
@@ -205,7 +205,7 @@ extension ConsoleStore {
           guard store.organizeContextIsCurrent(context, threadID: threadID) else {
             throw CancellationError()
           }
-          store.completeConversationDeletion(threadID)
+          await store.completeConversationDeletion(threadID)
         } catch let error as APIError where error.code == "thread_not_empty" {
           // Activity arrived after the archive: the successful archive still stands.
         }
@@ -215,6 +215,7 @@ extension ConsoleStore {
         store.selectedThreadID = nil
         store.selection &+= 1
         store.visible = false
+        await store.updateDraftAttachmentContext()
       }
     }
   }
@@ -308,7 +309,7 @@ extension ConsoleStore {
     )
   }
 
-  private func completeConversationDeletion(_ threadID: String) {
+  private func completeConversationDeletion(_ threadID: String) async {
     removeThread(threadID)
     for draft in authored.drafts where draft.key.threadID == threadID {
       noteDraftRemoval(draft.version)
@@ -320,6 +321,7 @@ extension ConsoleStore {
       selectedThreadID = nil
       selection &+= 1
       visible = false
+      await updateDraftAttachmentContext()
     }
   }
 }

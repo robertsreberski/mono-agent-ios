@@ -80,6 +80,7 @@ public final class ConsoleStore {
   public internal(set) var uploadProgress: [UploadProgressItem] = []
   /// Per-agent skill registries for the composer; memory only, refreshed on demand.
   public internal(set) var skillRegistries: [String: SkillRegistryState] = [:]
+  @ObservationIgnored var draftAttachmentContext: DraftAttachmentContext?
   @ObservationIgnored var uploadTasks: [UUID: Task<[WebAttachment], any Error>] = [:]
 
   @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
@@ -250,17 +251,30 @@ public final class ConsoleStore {
     if !completedSubmissions.isEmpty { try? await persistJournal() }
   }
   public func select(sourceID: String, archived: Bool = false, threadID: String? = nil) async {
+    // Reappearing may refresh detail, but is not a context abandonment.
+    let bucket = BucketKey(sourceID: sourceID, archived: archived)
+    let changingSelection = selectedBucket != bucket || selectedThreadID != threadID
+    let changingContext =
+      draftAttachmentContext
+      != DraftAttachmentContext(
+        sourceID: sourceID, threadID: threadID)
     pruneTombstones()
-    selection &+= 1
-    invalidateMcpApps()
-    visible = false
-    selectedBucket = BucketKey(sourceID: sourceID, archived: archived)
-    selectedThreadID = threadID
+    if changingSelection {
+      selection &+= 1
+      invalidateMcpApps()
+      visible = false
+      selectedBucket = bucket
+      selectedThreadID = threadID
+    }
     let generation = epoch
     let selected = selection
-    draftTask?.cancel()
-    await flushAuthored()
-    await discardStagedUploads()
+    if changingContext {
+      // Abandon the old context before a background/epoch change can interrupt the flush.
+      await updateDraftAttachmentContext()
+      guard selection == selected else { return }
+      draftTask?.cancel()
+      await flushAuthored()
+    }
     guard epoch == generation, selection == selected else { return }
     // The disk cache has 24 entries but memory holds eight. Restore a cold selection
     // before attempting network I/O, including when the console is offline.

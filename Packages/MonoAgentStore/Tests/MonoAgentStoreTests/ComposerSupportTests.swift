@@ -53,7 +53,81 @@ struct ComposerSupportTests {
     await h.store.stop()
   }
 
-  @Test func stagingReportsProgressAndSingleChipRemovalDeletesOnlyThatFile() async throws {
+  @Test func sameContextReselectionDoesNotAbandonTheDraft() async throws {
+    let h = Harness()
+    try await live(h)
+    try h.seed()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    await h.store.setDraft(
+      sourceID: "agent-example", threadID: "thread-example", text: "Sample draft")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    let selection = h.store.selection
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    #expect(h.store.selection == selection, "reappearing in the same context is not abandonment")
+    #expect(h.store.stagedAttachments.map(\.id) == ["upload-example"])
+    #expect(
+      h.store.draft(sourceID: "agent-example", threadID: "thread-example")?.text == "Sample draft")
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    await h.store.stop()
+  }
+
+  @Test func backgroundDuringSelectionFlushCannotMoveAttachmentsToTheNextConversation() async throws
+  {
+    let h = CorrectionHarness()
+    await h.store.hydrate()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    h.store.bootstrap = try JSONDecoder().decode(ApiBootstrap.self, from: Scenario.bootstrap.data)
+    h.store.started = true
+    h.store.connection = .live
+    await h.store.setDraft(
+      sourceID: "agent-example", threadID: "thread-example", text: "Sample draft")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    await h.repository.pauseNextAuthoredSave()
+    let selection = Task {
+      await h.store.select(sourceID: "agent-example", threadID: "thread-other")
+    }
+    await eventually { await h.repository.isAuthoredPaused() }
+    await h.store.scenePhaseChanged(.background)
+    await h.repository.releaseAuthored()
+    await selection.value
+    await h.store.scenePhaseChanged(.active)
+    await h.store.select(sourceID: "agent-example", threadID: "thread-other")
+    #expect(h.store.selectedThreadID == "thread-other")
+    #expect(h.store.stagedAttachments.isEmpty)
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 1)
+    await h.store.stop()
+  }
+
+  @Test func sidebarArchiveFilterDoesNotAbandonTheVisibleComposer() async throws {
+    let h = Harness()
+    try await live(h)
+    try h.seed()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    await h.store.select(sourceID: "agent-example", archived: true, threadID: "thread-example")
+    #expect(h.store.stagedAttachments.map(\.id) == ["upload-example"])
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    await h.store.stop()
+  }
+
+  @Test func backgroundDoesNotAbandonStagedAttachments() async throws {
+    let h = Harness()
+    try await live(h)
+    try h.seed()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    await h.store.setDraft(
+      sourceID: "agent-example", threadID: "thread-example", text: "Sample draft")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    await h.store.scenePhaseChanged(.background)
+    #expect(h.store.stagedAttachments.map(\.id) == ["upload-example"])
+    #expect(
+      h.store.draft(sourceID: "agent-example", threadID: "thread-example")?.text == "Sample draft")
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    await h.store.stop()
+  }
+
+  @Test(arguments: [0, 1, 2, 3, 4, 5])
+  func stagingReportsProgressAndSingleChipRemovalDeletesOnlyThatFile(transition: Int) async throws {
     let routes = RouteTransport()
     let transport = UploadRouteTransport(routes)
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -97,8 +171,33 @@ struct ComposerSupportTests {
     #expect(
       store.uploadProgress.contains { $0.fraction == 0.5 },
       "intermediate progress is held until acceptance")
+    switch transition {
+    case 0: await store.select(sourceID: "agent-example")
+    case 1: await store.scenePhaseChanged(.background)
+    case 2: await store.stopEffects()  // A stream epoch change is not upload abandonment.
+    case 3: await store.discardStagedUploads()
+    case 4: await store.select(sourceID: "other-agent")
+    default: await store.select(sourceID: "agent-example", archived: true)
+    }
     await routes.release(try response(uploaded))
+    if [3, 4].contains(transition) {
+      do {
+        try await staging.value
+        Issue.record("Abandoned uploads must reject late completion")
+      } catch is CancellationError {}
+      #expect(store.stagedAttachments.isEmpty && store.uploadProgress.isEmpty)
+      #expect(await routes.count("/api/v1/uploads/upload-example", method: "DELETE") == 1)
+      await store.stop()
+      try FileManager.default.removeItem(at: directory)
+      return
+    }
     try await staging.value
+    #expect(await routes.count("/api/v1/uploads", method: "POST") == 1)
+    #expect(await routes.count("/api/v1/uploads/upload-example/content", method: "PUT") == 1)
+    #expect(await routes.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    // Resume connectivity without creating another upload.
+    store.backgrounded = false
+    store.connection = .live
     #expect(store.uploadProgress.isEmpty, "finished rows leave the progress list")
     #expect(store.stagedAttachments.map(\.id) == ["upload-example"])
     var second = reserved

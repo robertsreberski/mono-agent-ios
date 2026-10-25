@@ -102,6 +102,35 @@ struct ConversationActionTests {
     await h.store.stop()
   }
 
+  @Test(arguments: [ConversationAction.archive, .delete])
+  func leavingThroughAnActionCannotMoveAttachmentsIntoANewConversation(action: ConversationAction)
+    async throws
+  {
+    let h = try await live(archived: action == .delete)
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    var saved = try #require(h.store.selectedConversation?.thread)
+    saved.archivedAt = "2030-01-02T12:00:00Z"
+    saved.messageCount = 2
+    saved.revision += 1
+    await h.transport.set(
+      path,
+      [
+        .response(
+          action == .archive ? try response(["thread": saved]) : .init(data: Data(), status: 204))
+      ])
+    h.store.requestConversationAction(action, threadID: saved.id)
+    h.store.confirmConversationAction(try #require(h.store.conversationActionConfirmation).id)
+    do { try await h.store.settleThreadWrites(saved.id) } catch {}
+    await eventually { h.store.pendingConversationActions.isEmpty }
+    #expect(h.store.selectedThreadID == nil)
+    #expect(h.store.stagedAttachments.isEmpty)
+    await h.store.select(sourceID: "agent-example")
+    #expect(h.store.stagedAttachments.isEmpty)
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 1)
+    await h.store.stop()
+  }
+
   @Test func archiveAndRestoreUsePatchAndArchiveOnlyDeletesConfirmedEmpty() async throws {
     let h = try await live()
     var saved = h.store.conversations["thread-example"]!.thread

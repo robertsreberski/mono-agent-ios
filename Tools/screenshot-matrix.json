@@ -510,6 +510,22 @@
     {
       "scenario": "composer-draft-attachments",
       "appearance": "light",
+      "variant": "lifecycle",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-draft-attachments",
+      "appearance": "dark",
+      "variant": "lifecycle",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "composer-draft-attachments",
+      "appearance": "light",
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
