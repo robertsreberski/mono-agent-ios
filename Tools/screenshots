@@ -54,6 +54,8 @@ def capture_suite(entry):
          and variant in {"ax3", "opaque"})
         or (scenario == "connection-empty" and variant in {"editorax3", "editoropaque"})):
         return "accessibility"
+    if scenario == "conversation-markdown" and variant == "context":
+        return "activity"
     if scenario.startswith("conversation-mcp-"):
         return "mcp"
     if scenario in {"conversation-transcript", "conversation-streaming", "conversation-tools", "conversation-long", "conversation-markdown"}:

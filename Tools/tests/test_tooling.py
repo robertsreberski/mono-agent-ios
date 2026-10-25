@@ -250,7 +250,8 @@ class ToolingTests(unittest.TestCase):
 
     def test_activity_only_runs_exact_activity_matrix(self):
         matrix = [entry for entry in MATRIX if entry["scenario"] in {
-            "conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context", "peer-question"}]
+            "conversation-jobs", "conversation-job-stack", "conversation-subagents", "conversation-context", "peer-question"}
+            or (entry["scenario"] == "conversation-markdown" and entry.get("variant") == "context")]
         self.export(family="iPhone", focus="--activity-only", matrix=matrix)
         command = next(call for call in self.calls if call[0] == "xcodebuild")
         self.assertIn("-only-testing:MonoAgentUITests/ActivityScenarioTests", command)
