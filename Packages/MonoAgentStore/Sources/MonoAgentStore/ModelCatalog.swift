@@ -45,10 +45,16 @@ extension ConsoleStore {
     guard !provider.isEmpty, started, !stopping, !backgrounded,
       let generation = agent(sourceID).map(\.generation)
     else { return }
-    let flight = sourceID + "\u{0}" + provider
+    // One flight per agent generation and Store lifetime: a newer generation (or lifetime)
+    // never waits on an older flight whose answer it will reject.
+    let lifetime = epoch
+    let flight = [sourceID, provider, generation ?? "", String(lifetime)].joined(separator: "\u{0}")
+    let resource = sourceID + "\u{0}" + provider
     guard !catalogFlights.contains(flight) else { return }
     let now = await clock.wallNow()
-    guard !catalogFlights.contains(flight), agent(sourceID)?.generation == generation else {
+    guard !catalogFlights.contains(flight), epoch == lifetime,
+      agent(sourceID)?.generation == generation
+    else {
       return
     }
     if let existing = modelCatalog(sourceID: sourceID).providers[provider],
@@ -59,18 +65,24 @@ extension ConsoleStore {
       return
     }
     catalogFlights.insert(flight)
+    let owner = UUID()
+    catalogOwners[resource] = owner
     defer {
       catalogFlights.remove(flight)
-      // An abandoned walk must not leave a permanent "loading" that blocks every later request.
-      if modelCatalogs[sourceID]?.generation == generation,
-        modelCatalogs[sourceID]?.providers[provider]?.status == .loading
-      {
-        update(sourceID, generation: generation, provider: provider) { $0?.status = .failed }
+      // An abandoned walk must not leave a permanent "loading" that blocks every later request,
+      // but only the latest owner may settle the resource's state.
+      if catalogOwners[resource] == owner {
+        catalogOwners[resource] = nil
+        if modelCatalogs[sourceID]?.generation == generation,
+          modelCatalogs[sourceID]?.providers[provider]?.status == .loading
+        {
+          update(sourceID, generation: generation, provider: provider) { $0?.status = .failed }
+        }
       }
     }
-    let lifetime = epoch
     func current() -> Bool {
       epoch == lifetime && !Task.isCancelled && agent(sourceID)?.generation == generation
+        && catalogOwners[resource] == owner
     }
     update(sourceID, generation: generation, provider: provider) { state in
       state = ProviderCatalogState(

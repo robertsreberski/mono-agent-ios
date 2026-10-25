@@ -89,6 +89,7 @@ public final class ConsoleStore {
   /// Settings-specific provider catalogs, keyed by agent; memory only.
   public internal(set) var modelCatalogs: [String: AgentModelCatalog] = [:]
   @ObservationIgnored var catalogFlights: Set<String> = []
+  @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
   @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
   @ObservationIgnored let replyImages = ReplyImageCache()

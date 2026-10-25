@@ -59,7 +59,7 @@ func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
     return fields
   }
 
-  @Test func draftsAreMemoryOnlyAndTheDotIgnoresTheContextChoice() async throws {
+  @Test func draftsStayOutOfStorageAndTheDotIgnoresTheContextChoice() async throws {
     let h = try await live()
     #expect(!h.store.hasUnsavedRunDefaults(source))
     h.store.editRunDefaults(sourceID: source, .init(context1M: true))
@@ -67,6 +67,18 @@ func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
     #expect(h.store.runDefaultsDirty(source))
     h.store.editRunDefaults(sourceID: source, .init(model: "sample:small"))
     #expect(h.store.hasUnsavedRunDefaults(source))
+    // Memory only: flushing every persisted record writes no trace of the draft.
+    h.store.editRunDefaults(sourceID: source, .init(model: "draft:only-in-memory"))
+    await h.store.flushAuthored()
+    await h.store.flushCache()
+    let files = FileManager.default.enumerator(at: h.directory, includingPropertiesForKeys: nil)
+    var written = 0
+    while let url = files?.nextObject() as? URL {
+      guard let data = try? Data(contentsOf: url) else { continue }
+      written += 1
+      #expect(!String(decoding: data, as: UTF8.self).contains("draft:only-in-memory"))
+    }
+    #expect(written > 0, "the cache and authored records were written")
     h.store.discardRunDefaults(sourceID: source)
     #expect(h.store.agentSettingsState(source).draft == nil)
     // A draft equal to the saved override is not unsaved work.
@@ -187,12 +199,15 @@ func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
     await eventually { await h.transport.pauseCount() == 1 }
     h.store.editRunDefaults(sourceID: source, .init(model: "sample:small"))
     h.store.saveRunDefaults(sourceID: source, summary: "Sample Small")
-    for _ in 0..<50 { await Task.yield() }
-    #expect(await h.transport.count(defaults) == 0, "the save waits behind the pin")
     var pinned = try #require(h.store.agents.first)
     pinned.pinned = true
     await h.transport.release(try agentEnvelope(pinned))
     await eventually { !state.saving }
+    // Deterministic order: the save is dispatched only after the pin's reply was released.
+    #expect(
+      await h.transport.timeline == [
+        "PATCH " + agentPath, "release", "PUT " + defaults,
+      ], "the save waits behind the pin")
     #expect(await h.transport.count(agentPath, method: "PATCH") == 1, "a pending pin ignores taps")
     #expect(await h.transport.count(defaults) == 1)
     #expect(h.store.agents.first?.pinned == true)
@@ -217,6 +232,106 @@ func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
     await h.transport.set("/api/v1/bootstrap", [.response(try response(stale))])
     await h.store.refreshBootstrap()
     #expect(h.store.agents.first?.runSettings.override == nil)
+  }
+
+  /// Review regression: a later pin-only confirmation must not re-assert older run settings
+  /// over a bootstrap that started after them and carries another client's newer defaults.
+  @Test func pinConfirmationDoesNotResurrectOlderRunSettings() async throws {
+    let h = try await live()
+    await h.transport.set(defaults, [.response(try agentResponse(h, model: "sample:a"))])
+    h.store.editRunDefaults(sourceID: source, .init(model: "sample:a"))
+    h.store.saveRunDefaults(sourceID: source, summary: "A")
+    await eventually { !h.store.agentSettingsState(source).saving }
+    #expect(h.store.agents.first?.runSettings.override?.model == "sample:a")
+    // Another client saves B; this read starts after A was confirmed and pauses with B.
+    var other = try JSONDecoder().decode(ApiBootstrap.self, from: Scenario.bootstrap.data)
+    other.agents[0].runSettings.override = try decode(#"{"model":"sample:b","effort":null}"#)
+    await h.transport.set("/api/v1/bootstrap", [.paused])
+    let read = Task { await h.store.refreshBootstrap() }
+    await eventually { await h.transport.pauseCount() == 1 }
+    // A pin-only write confirms while the read is paused.
+    await h.transport.set(
+      agentPath, [.response(try agentResponse(h, model: "sample:a", pinned: true))])
+    h.store.setAgentPinned(sourceID: source, pinned: true)
+    await eventually { !h.store.agentSettingsState(source).pinPending }
+    await h.transport.release(try response(other))
+    await read.value
+    #expect(h.store.agents.first?.runSettings.override?.model == "sample:b", "B is newer than A")
+    #expect(h.store.agents.first?.pinned == true, "the pin confirmed during the read is kept")
+  }
+
+  @Test func retryAfterAFailureIsOneExplicitSecondRequest() async throws {
+    let h = try await live()
+    await h.transport.set(
+      defaults,
+      [
+        .response(HTTPResponse(data: Data(), status: 503)),
+        .response(try agentResponse(h, model: "sample:small")),
+      ])
+    h.store.editRunDefaults(sourceID: source, .init(model: "sample:small"))
+    h.store.saveRunDefaults(sourceID: source, summary: "Sample Small")
+    let state = h.store.agentSettingsState(source)
+    await eventually { !state.saving }
+    #expect(state.saveError != nil && state.draft != nil)
+    #expect(await h.transport.count(defaults) == 1)
+    h.store.saveRunDefaults(sourceID: source, summary: "Sample Small")
+    await eventually { !state.saving }
+    #expect(await h.transport.count(defaults) == 2)
+    #expect(state.saveError == nil && state.draft == nil)
+    #expect(h.store.agents.first?.runSettings.override?.model == "sample:small")
+  }
+
+  @Test func discardWhileSavingIsIgnoredLikeTheWebsDisabledButton() async throws {
+    let h = try await live()
+    await h.transport.set(defaults, [.paused])
+    h.store.editRunDefaults(sourceID: source, .init(model: "sample:small"))
+    h.store.saveRunDefaults(sourceID: source, summary: "Sample Small")
+    await eventually { await h.transport.pauseCount() == 1 }
+    let state = h.store.agentSettingsState(source)
+    h.store.discardRunDefaults(sourceID: source)
+    #expect(state.draft == .init(model: "sample:small"), "the submitted draft settles first")
+    await h.transport.release(try agentResponse(h, model: "sample:small"))
+    await eventually { !state.saving }
+    #expect(state.draft == nil && state.notice != nil)
+  }
+
+  @Test func lateReplyForOneAgentNeverTouchesAnother() async throws {
+    let h = try await live()
+    var second = try #require(h.store.agents.first)
+    second.sourceId = "agent-second"
+    second.label = "Second agent"
+    h.store.bootstrap?.agents.append(second)
+    await h.transport.set(defaults, [.paused])
+    h.store.editRunDefaults(sourceID: source, .init(model: "sample:small"))
+    h.store.saveRunDefaults(sourceID: source, summary: "Sample Small")
+    await eventually { await h.transport.pauseCount() == 1 }
+    // The operator moves to the second agent and starts a draft there.
+    h.store.selectedBucket = BucketKey(sourceID: "agent-second")
+    h.store.editRunDefaults(sourceID: "agent-second", .init(model: "sample:fast"))
+    await h.transport.release(try agentResponse(h, model: "sample:small"))
+    await eventually { !h.store.agentSettingsState(source).saving }
+    #expect(h.store.agent(source)?.runSettings.override?.model == "sample:small")
+    #expect(h.store.agent("agent-second")?.runSettings.override == nil)
+    #expect(h.store.agentSettingsState("agent-second").draft == .init(model: "sample:fast"))
+    #expect(h.store.agentSettingsState("agent-second").notice == nil)
+    #expect(h.store.agentSettingsState(source).notice != nil)
+  }
+
+  /// Web compares the draft with the saved override, not the agent config: choosing the
+  /// config's own values is a real override (PUT), only "Use agent config" removes it.
+  @Test func choosingTheConfigValuesWritesAnOverrideLikeTheWeb() async throws {
+    let h = try await live()
+    h.store.bootstrap?.agents[0].runSettings.config = try decode(
+      #"{"model":"sample:large","effort":"medium"}"#)
+    await h.transport.set(
+      defaults, [.response(try agentResponse(h, model: "sample:large", effort: "medium"))])
+    h.store.editRunDefaults(sourceID: source, .init(model: "sample:large", effort: "medium"))
+    #expect(h.store.runDefaultsDirty(source))
+    h.store.saveRunDefaults(sourceID: source, summary: "Sample Large · Medium")
+    await eventually { !h.store.agentSettingsState(source).saving }
+    #expect(await h.transport.count(defaults, method: "PUT") == 1)
+    #expect(await h.transport.count(defaults, method: "DELETE") == 0)
+    #expect(await body(h, defaults)?["model"] == .string("sample:large"))
   }
 
   @Test func stoppingDuringASaveNeverPublishesTheLateReply() async throws {
@@ -311,6 +426,22 @@ func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
     #expect(h.store.modelCatalog(sourceID: source).providers["sample"]?.status == .failed)
     await h.store.ensureProviderCatalog(sourceID: source, provider: "sample")
     #expect(h.store.modelCatalog(sourceID: source).providers["sample"]?.status == .loaded)
+  }
+
+  /// Review regression: a newer generation must not wait on (and lose to) an older flight.
+  @Test func newerGenerationLoadsWhileTheOlderFlightIsStillOpen() async throws {
+    let h = try await live()
+    await h.transport.set(path, [.paused, .response(try page(["g2"], next: nil))])
+    let first = Task { await h.store.ensureProviderCatalog(sourceID: source, provider: "sample") }
+    await eventually { await h.transport.pauseCount() == 1 }
+    h.store.bootstrap?.agents[0].generation = "generation-2"
+    await h.store.ensureProviderCatalog(sourceID: source, provider: "sample")
+    #expect(await h.transport.count(path) == 2, "G2 did not return early on the G1 flight")
+    #expect(h.store.modelCatalog(sourceID: source).providers["sample"]?.models.map(\.id) == ["g2"])
+    await h.transport.release(try page(["g1"], next: nil))
+    await first.value
+    let state = h.store.modelCatalog(sourceID: source).providers["sample"]
+    #expect(state?.status == .loaded && state?.models.map(\.id) == ["g2"], "G1 cannot clobber G2")
   }
 
   @Test func singleFlightAndGenerationChangeInvalidates() async throws {

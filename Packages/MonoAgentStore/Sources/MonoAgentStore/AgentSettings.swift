@@ -56,12 +56,14 @@ public struct AgentSettingsTarget: Sendable, Equatable, Hashable {
   init(sourceID: String) { self.sourceID = sourceID }
 }
 
-/// A confirmed agent write that an older in-flight bootstrap read must not undo.
+/// Confirmed agent fields that an older in-flight bootstrap read must not undo. Each field has
+/// its own confirmation clock: a later pin must not re-assert older run settings.
 struct AgentWrite {
-  var clock: UInt64 = 0
   /// `.some(nil)` is a confirmed unpinned/absent value; `nil` means pin was not written.
   var pinned: Bool??
+  var pinnedClock: UInt64 = 0
   var runSettings: WebAgentRunSettings?
+  var runSettingsClock: UInt64 = 0
 }
 
 extension ConsoleStore {
@@ -114,8 +116,9 @@ extension ConsoleStore {
     state.draftVersion &+= 1
   }
 
+  /// Web disables Discard while saving; the submitted draft settles first.
   public func discardRunDefaults(sourceID: String) {
-    guard let state = agentSettings[sourceID] else { return }
+    guard let state = agentSettings[sourceID], !state.saving else { return }
     state.saveError = nil
     guard state.draft != nil else { return }
     state.draft = nil
@@ -142,14 +145,14 @@ extension ConsoleStore {
     else { return }
     agentWriteClock &+= 1
     var record = agentWrites[written.sourceId] ?? AgentWrite()
-    record.clock = agentWriteClock
+    record.pinned = .some(written.pinned)
+    record.pinnedClock = agentWriteClock
     if pinOnly {
       value.agents[index].pinned = written.pinned
-      record.pinned = .some(written.pinned)
     } else {
       value.agents[index] = written
-      record.pinned = .some(written.pinned)
       record.runSettings = written.runSettings
+      record.runSettingsClock = agentWriteClock
     }
     agentWrites[written.sourceId] = record
     bootstrap = value
@@ -160,12 +163,16 @@ extension ConsoleStore {
   func protectAgentWrites(_ value: inout ApiBootstrap, began: UInt64) -> Bool {
     var patched = false
     for index in value.agents.indices {
-      guard let write = agentWrites[value.agents[index].sourceId], write.clock > began else {
-        continue
+      guard let write = agentWrites[value.agents[index].sourceId] else { continue }
+      // Only fields confirmed after this read began are newer than its rows.
+      if let pinned = write.pinned, write.pinnedClock > began {
+        value.agents[index].pinned = pinned
+        patched = true
       }
-      if let pinned = write.pinned { value.agents[index].pinned = pinned }
-      if let runSettings = write.runSettings { value.agents[index].runSettings = runSettings }
-      patched = true
+      if let runSettings = write.runSettings, write.runSettingsClock > began {
+        value.agents[index].runSettings = runSettings
+        patched = true
+      }
     }
     return patched
   }
