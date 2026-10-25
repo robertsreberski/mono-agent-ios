@@ -288,9 +288,12 @@ struct WakeScheduleEditor: View {
         }
         store.editWakeDraft(request.id, draft: next)
       } label: {
+        // The whole 44 pt chip is the hit target, not only the glyphs.
         Text(WakeScheduleModel.shortDays[day])
           .fontWeight(draft.days.contains(day) ? .semibold : .regular)
-      }.buttonStyle(.plain).frame(minWidth: 44, minHeight: 44)
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(RoundedRectangle(cornerRadius: 8))
+      }.buttonStyle(.plain)
         .foregroundStyle(WebColor.text.color)
         .background(
           draft.days.contains(day) ? theme.palette.accentInk : WebGlass.groupFill.color,

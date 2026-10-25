@@ -56,10 +56,15 @@ struct ProjectScreen: View {
               HStack {
                 Eyebrow("Context")
                 Spacer()
-                Button("Edit") { editor = .init(sourceID: sourceID, projectID: projectID) }
-                  .buttonStyle(.plain).webFont(.footer)
-                  .foregroundStyle(theme.palette.accent.color)
-                  .frame(minWidth: 44, minHeight: DesignMetrics.minimumHitTarget)
+                Button {
+                  editor = .init(sourceID: sourceID, projectID: projectID)
+                } label: {
+                  Text("Edit")
+                    .frame(minWidth: 44, minHeight: DesignMetrics.minimumHitTarget)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).webFont(.footer)
+                .foregroundStyle(theme.palette.accent.color)
               }
               Text(
                 project.context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
