@@ -402,9 +402,11 @@ final class ScenarioTests: XCTestCase {
       NSPredicate(
         format: "label == %@ AND identifier != %@", "Conversation tags", "conversation-tags")
     ).firstMatch
-    XCTAssertTrue(tags.waitForExistence(timeout: 5))
+    XCTAssertTrue(waitUntilHittable(tags))
     tags.tap()
-    app.buttons["New tag…"].tap()
+    let newTag = app.buttons["New tag…"]
+    XCTAssertTrue(waitUntilHittable(newTag))
+    newTag.tap()
     XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
   }
 
