@@ -138,9 +138,12 @@ final class ComposerController {
   var runModel: String { threadID == nil ? newConversationModel : thread?.runModel ?? "" }
   var runEffort: String { threadID == nil ? newConversationEffort : thread?.runEffort ?? "" }
 
+  /// Agent settings covers this composer's destination; nothing it holds may be sent.
+  var coveredBySettings = false
+
   /// Send (idle) or queue live input (running). Never resends a previous attempt.
   func send() async {
-    guard affordances.primaryEnabled else { return }
+    guard affordances.primaryEnabled, !coveredBySettings else { return }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = store.stagedAttachments.map(\.id)
     let input = ApiStartSubmission(
@@ -168,7 +171,7 @@ final class ComposerController {
 
   /// Explicit retry keeps the Store-assigned UUID even if recovery retired its reference.
   func retry() async {
-    guard var attempt = lastAttempt, phase.allowsRetry else { return }
+    guard var attempt = lastAttempt, phase.allowsRetry, !coveredBySettings else { return }
     attempt.liveInput = running
     await submit(attempt)
   }

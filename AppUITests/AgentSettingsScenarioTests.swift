@@ -280,6 +280,39 @@ import XCTest
     WaitFor.value(field, contains: "Draft kept from an earlier visit")
   }
 
+  /// A hardware keyboard cannot reach the covered composer: typing and ⌘Return while
+  /// settings is open neither edit nor send the invisible draft.
+  func testCoveredComposerIgnoresHardwareKeyboard() throws {
+    try XCTSkipUnless(isPad, "iPhone settings is a full-screen cover over the dashboard")
+    let app = launch("composer-draft-attachments", "light")
+    let field = element(app, "composer-field")
+    XCTAssertTrue(field.waitForExistence(timeout: 15))
+    WaitFor.value(field, contains: "Draft kept from an earlier visit")
+    field.tap()
+    field.typeText(" Before settings.")
+    WaitFor.value(field, contains: "Before settings.")
+    let before = field.value as? String ?? ""
+    element(app, "agent-settings-button").tap()
+    waitForSettings(app)
+    WaitFor.absent(field)
+    app.typeKey("z", modifierFlags: [])
+    app.typeKey("\t", modifierFlags: [])
+    app.typeKey("q", modifierFlags: [])
+    app.typeKey(.return, modifierFlags: .command)
+    // The settings screen stays open and nothing was submitted while it covered the composer.
+    XCTAssertTrue(element(app, "agent-settings-screen").exists)
+    let sent = app.descendants(matching: .any).matching(
+      NSPredicate(format: "label CONTAINS %@", "Synthetic reply")
+    ).firstMatch
+    XCTAssertFalse(sent.waitForExistence(timeout: 3), "nothing was sent while covered")
+    element(app, "agent-settings-close").tap()
+    WaitFor.absent(element(app, "agent-settings-screen"))
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    WaitFor.value(field, contains: "Before settings.")
+    XCTAssertEqual(field.value as? String, before, "the draft is unchanged")
+    XCTAssertFalse(sent.exists, "nothing was sent after closing either")
+  }
+
   /// After the first send from a new-conversation route, closing settings returns to the
   /// created conversation, not a blank new one.
   func testRoundTripAfterFirstSendReturnsToTheCreatedThread() throws {

@@ -15,6 +15,8 @@ struct ComposerBar: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.dynamicTypeSize) private var typeSize
   @FocusState private var focused: Bool
+  /// Agent settings covers this conversation (iPad): the composer gives up keyboard focus.
+  @Environment(\.coveredBySettings) private var covered
   @State private var showPhotos = false
   @State private var showFiles = false
   @State private var showCamera = false
@@ -95,6 +97,11 @@ struct ComposerBar: View {
       }
     }
     .onChange(of: controller.focusRequest) { focused = true }
+    .onChange(of: covered, initial: true) { _, isCovered in
+      controller.coveredBySettings = isCovered
+      // Resign without touching the text, quote or staged files.
+      if isCovered { focused = false }
+    }
     .task(id: SkillLoadKey(source: controller.sourceID, live: store.connection == .live)) {
       // Load once the console is live; an offline attempt is retried when it reconnects.
       guard store.connection == .live, store.skillRegistries[controller.sourceID]?.canInsert != true

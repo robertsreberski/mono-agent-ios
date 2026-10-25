@@ -75,6 +75,9 @@ struct DashboardShell: View {
           .environment(\.coveredBySettings, settings != nil)
           .opacity(settings == nil ? 1 : 0)
           .allowsHitTesting(settings == nil)
+          // Keyboard-inert too: no focus, typing, Tab target or ⌘Return send while covered.
+          // Disabling keeps the destination mounted, so draft, quote and uploads survive.
+          .disabled(settings != nil)
           .onGeometryChange(for: CGRect.self) {
             $0.frame(in: .global)
           } action: {
