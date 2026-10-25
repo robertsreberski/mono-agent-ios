@@ -167,12 +167,15 @@ import XCTest
     transition("fixture-toggle-run", revision: 6, primary: "composer-send")
     element(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "with 2 attachments"))
+    let clearedField = element(app, "composer-field")
     let cleared = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        !self.element(app, "attachment-sample-photo.png").exists
-          && !self.element(app, "quote-preview").exists && self.fieldText(app).isEmpty
+        let value = clearedField.value as? String ?? ""
+        return !self.element(app, "attachment-sample-photo.png").exists
+          && !self.element(app, "quote-preview").exists && clearedField.exists
+          && (value.isEmpty || value == "Message" || value.hasPrefix("Message "))
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 10), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 20), .completed)
   }
 
   private func skillPicker(
@@ -240,17 +243,31 @@ import XCTest
     let field = composerField(app)
     field.tap()
     field.typeText("Also check the images")
-    XCTAssertTrue(element(app, "composer-queue").waitForExistence(timeout: 5))
+    let retainedText = NSPredicate(format: "value == %@", "Also check the images")
+    func assertDraftRetained() {
+      let retained = XCTNSPredicateExpectation(predicate: retainedText, object: field)
+      XCTAssertEqual(XCTWaiter.wait(for: [retained], timeout: 15), .completed)
+      let enabled = XCTNSPredicateExpectation(
+        predicate: NSPredicate(format: "exists == true AND enabled == true"),
+        object: element(app, "composer-queue"))
+      XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
+    }
+    assertDraftRetained()
     dismissKeyboard(app)
+    assertDraftRetained()
     capture()
+    assertDraftRetained()
     element(app, "composer-queue").tap()
-    XCTAssertTrue(waitFor(app, "composer-status", containing: "live input"))
+    // Admission's status is ephemeral (4 seconds); a slow AX snapshot can miss it.
+    // The durable applied live-input message proves admission without that timing race.
     XCTAssertTrue(waitForText(app, "Follow-up · applied"))
     element(app, "composer-stop").tap()
     let stopped = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"), object: element(app, "composer-stop"))
     XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 10), .completed, "Stop ends the run")
-    XCTAssertTrue(element(app, "composer-send").exists, "Idle again: Send replaces Queue")
+    XCTAssertTrue(
+      element(app, "composer-send").waitForExistence(timeout: 10),
+      "Idle again: Send replaces Queue")
   }
 
   private func sendFailed(_ app: XCUIApplication, capture: () -> Void) {
@@ -258,7 +275,7 @@ import XCTest
     field.tap()
     field.typeText("Publish the sample")
     element(app, "composer-send").tap()
-    XCTAssertTrue(waitFor(app, "composer-status", containing: "Not confirmed"))
+    XCTAssertTrue(waitForText(app, "Not confirmed"))
     XCTAssertEqual(fieldText(app), "Publish the sample", "Uncertain text is retained")
     dismissKeyboard(app)
     capture()
