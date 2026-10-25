@@ -1342,20 +1342,18 @@
       "theme": "evergreen"
     },
     {
-      "scenario": "composer-quote",
+      "scenario": "composer-quote-selection",
       "appearance": "light",
       "textSize": "standard",
       "transparency": "system",
-      "theme": "evergreen",
-      "variant": "sheet"
+      "theme": "evergreen"
     },
     {
-      "scenario": "composer-quote",
+      "scenario": "composer-quote-selection",
       "appearance": "dark",
       "textSize": "standard",
       "transparency": "system",
-      "theme": "evergreen",
-      "variant": "sheet"
+      "theme": "evergreen"
     },
     {
       "scenario": "conversation-job-stack",
