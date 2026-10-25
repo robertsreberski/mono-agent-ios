@@ -33,6 +33,7 @@ import Testing
         ])
       #expect(rows[0].name == "Default · Sample Large")
       #expect(rows[3].providerLabel == "Sample" && rows[4].providerLabel == "Grove")
+      #expect(rows[2].providerLabel == "Sample", "advertised labels keep one group per provider")
       #expect(rows[1].supportsContext1M && rows[1].standardContextWindow == 200_000)
       #expect(rows[0].supportsContext1M, "the automatic row inherits the default route's context")
       #expect(!rows[2].supportsContext1M)

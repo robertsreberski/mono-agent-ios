@@ -175,12 +175,21 @@ enum SettingsModelOptions {
       return agent.modelOptions?[reference]?.label
         ?? findCatalogModel(catalog, reference)?.name ?? reference
     }
+    // Advertised provider labels win (web `selectorProvides`), so one provider is one group.
+    func label(_ provider: String, fallback: String) -> String {
+      agent.providers?.first { $0.id == provider }?.label ?? fallback
+    }
     func providerOf(_ reference: String) -> (String, String) {
       if let model = findCatalogModel(catalog, reference), !model.provider.isEmpty {
-        return (model.provider, model.providerLabel.isEmpty ? model.provider : model.providerLabel)
+        return (
+          model.provider,
+          label(
+            model.provider,
+            fallback: model.providerLabel.isEmpty ? model.provider : model.providerLabel)
+        )
       }
       let provider = ModelOptions.providerOf(reference)
-      return (provider, provider)
+      return (provider, label(provider, fallback: provider))
     }
     func context(_ row: inout SettingsModelRow, _ reference: String) {
       guard
@@ -223,7 +232,8 @@ enum SettingsModelOptions {
           id: id, name: model.name, detail: id,
           efforts: effortOptions(agent, reference: id, catalogModel: model),
           provider: provider,
-          providerLabel: model.providerLabel.isEmpty ? provider : model.providerLabel)
+          providerLabel: label(
+            provider, fallback: model.providerLabel.isEmpty ? provider : model.providerLabel))
         context(&row, id)
         rows.append(row)
       }

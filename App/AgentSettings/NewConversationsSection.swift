@@ -313,19 +313,19 @@ struct SettingsModelPicker: View {
     store.modelCatalog(sourceID: agent.sourceId).providers.values.contains { $0.status == .loading }
   }
 
-  private var groups: [(label: String?, rows: [SettingsModelRow])] {
+  /// Web `groupSelectorModels`: the automatic row, then one group per provider, first seen.
+  private var groups: [(provider: String?, label: String?, rows: [SettingsModelRow])] {
     let visible = rows.filter {
       query.isEmpty
         || ($0.name + " " + $0.detail + " " + ($0.providerLabel ?? ""))
           .localizedCaseInsensitiveContains(query)
     }
-    var result: [(label: String?, rows: [SettingsModelRow])] = []
+    var result: [(provider: String?, label: String?, rows: [SettingsModelRow])] = []
     for row in visible {
-      let label = row.provider == nil ? nil : row.providerLabel ?? row.provider
-      if let index = result.firstIndex(where: { $0.label == label }) {
+      if let index = result.firstIndex(where: { $0.provider == row.provider }) {
         result[index].rows.append(row)
       } else {
-        result.append((label, [row]))
+        result.append((row.provider, row.provider.map { row.providerLabel ?? $0 }, [row]))
       }
     }
     return result
@@ -341,7 +341,7 @@ struct SettingsModelPicker: View {
       WebSearchField("Search models", text: $query)
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
-          ForEach(groups, id: \.label) { group in
+          ForEach(groups, id: \.provider) { group in
             if let label = group.label {
               Text(label).webFont(.contextEyebrow).foregroundStyle(WebGlass.textMuted.color)
                 .padding(.top, 10).padding(.horizontal, 10).padding(.bottom, 2)
