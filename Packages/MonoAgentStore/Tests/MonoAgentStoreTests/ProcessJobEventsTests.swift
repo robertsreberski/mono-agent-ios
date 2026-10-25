@@ -290,6 +290,29 @@ struct ProcessJobEventsTests {
     #expect(
       ProcessJobEvents.orderedMessages([user, pending]).map(\.id) == ["assistant", "followup"])
   }
+  @Test func suppressesOnlyParentCallsActuallyOwnedByAShelfGroup() throws {
+    var job = try self.job()
+    job.kind = "internal"
+    job.tool = "Agent"
+    job.instanceId = "sample-helper"
+    var call = try launch(job)
+    call.toolName = "AgentManage"
+    call.structuredResult = nil
+    call.args = .object([
+      "id": .string("sample-helper"), "message": .string("Review the fictional zones"),
+    ])
+    let parent = try message("parent", [.toolCall(call)])
+    let messages = try [parent, carrier(job)]
+    let shelf = JobShelf.items(messages: messages)
+    let owned = ProcessJobEvents.shelfOwnedCalls(messages: messages, items: shelf)
+    #expect(owned.contains(ProcessJobEvents.callKey(parent.id, call.toolCallId)))
+    let entries = ProcessJobEvents.entries(
+      for: parent, projection: project(messages), shelfOwnedCalls: owned)
+    #expect(entries.isEmpty)
+    #expect(!ProcessJobEvents.visible(parent, entries: entries))
+    #expect(ProcessJobEvents.entries(for: parent, projection: project(messages)).count == 1)
+    #expect(parent.parts == [.toolCall(call)])
+  }
   @MainActor @Test func heldRowsUpdateWakeAndLaunchTogetherWithoutChangingIdentity() throws {
     let job = try job()
     let origin = try message("origin", [.toolCall(launch(job))])

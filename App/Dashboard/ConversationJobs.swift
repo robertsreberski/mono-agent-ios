@@ -171,7 +171,9 @@ struct JobShelfSummary: View {
     }
     .padding(.leading, 2)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Background jobs, " + JobShelf.summary(items, now: now))
+    .accessibilityLabel(
+      "Background jobs, " + JobShelf.summary(items, now: now)
+        + (current.count == 1 ? ", " + JobPresentation.title(current[0].lead(now: now)) : ""))
   }
   private func entries(_ shown: Int) -> some View {
     HStack(spacing: 5) {
@@ -183,13 +185,29 @@ struct JobShelfSummary: View {
         let face = JobFace(item.lead(now: now), now: now)
         HStack(spacing: 5) {
           JobGlyph(face.mark, tone: face.tone, size: 16)
-          Text(item.instanceID ?? item.lead(now: now).tool)
-            .webFont(.jobEntry)
-            .fontWeight(item.family != nil ? .bold : .semibold)
-            .foregroundStyle(
-              item.family != nil ? WebColor.delegation.color : WebColor.textSoft.color
-            )
-            .lineLimit(1)
+          if current.count == 1 {
+            let job = item.lead(now: now)
+            Image(systemName: JobPresentation.command(job) ? "apple.terminal" : "face.smiling")
+              .font(.system(size: 12)).foregroundStyle(
+                item.family != nil ? WebColor.delegation.color : WebColor.textSoft.color
+              )
+              .accessibilityHidden(true)
+            if let instance = item.instanceID {
+              Text(instance).webFont(.jobEntry).fontWeight(.bold)
+                .foregroundStyle(WebColor.delegation.color).lineLimit(1)
+            }
+            Text(JobPresentation.title(job)).webFont(.jobEntry)
+              .foregroundStyle(WebColor.textSoft.color).lineLimit(1).truncationMode(.tail)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          } else {
+            Text(item.instanceID ?? item.lead(now: now).tool)
+              .webFont(.jobEntry)
+              .fontWeight(item.family != nil ? .bold : .semibold)
+              .foregroundStyle(
+                item.family != nil ? WebColor.delegation.color : WebColor.textSoft.color
+              )
+              .lineLimit(1)
+          }
         }
       }
       if current.count > shown {
@@ -197,7 +215,7 @@ struct JobShelfSummary: View {
           .foregroundStyle(WebGlass.textMuted.color).fixedSize()
       }
     }
-    .fixedSize()
+    .fixedSize(horizontal: current.count > 1, vertical: true)
   }
 }
 
@@ -908,26 +926,72 @@ extension Color {
   fileprivate func mixedOpacity(_ value: Double) -> Color { opacity(value) }
 }
 
-/// Inline lifecycle fact; the retained, interactive card lives once in the conversation shelf.
-struct ProcessJobLifecycleView: View {
-  let job: ProcessJobProjection
+/// Web lifecycle facts are static activity rows. Job polling and live elapsed clocks remain
+/// solely in the shelf; opening this row never starts either.
+struct ProcessJobEventView: View {
+  let event: ProcessJobActivityEvent
+  let message: WebMessage
   let store: ConsoleStore
-  var body: some View {
-    Label(
-      job.tool + " job " + job.state.replacingOccurrences(of: "_", with: " ") + " · "
-        + JobPresentation.title(job),
-      systemImage: JobPresentation.command(job) ? "terminal" : "person.crop.circle"
-    )
-    // Web: a quiet activity line in the transcript; the job itself lives in the shelf.
-    .webFont(.activityMeta)
-    .foregroundStyle(WebColor.textMuted.color)
-    .accessibilityHint("Details in Background jobs above the message field")
+  @State private var expanded = false
+  @State private var phase = ActivityTruncationNotice.Phase.idle
+  private var terminal: Bool { event.phase == .terminal }
+  private var outcome: String {
+    terminal ? event.state.replacingOccurrences(of: "_", with: " ") : "started"
   }
-}
-struct ProcessJobWakeView: View {
-  let wake: ProcessJobWakePart
+  private var occurred: String? {
+    TranscriptPresentation.date(event.occurredAt)?.formatted(date: .abbreviated, time: .standard)
+  }
+  private var detail: String {
+    ([occurred]
+      + (terminal
+        ? [
+          TranscriptPresentation.duration(event.durationMs),
+          event.exitCode.map { "exit \($0)" }, event.signal,
+        ] : []))
+      .compactMap { $0 }.joined(separator: " · ")
+  }
   var body: some View {
-    Label("Job \(wake.jobId) · wake \(wake.disposition)", systemImage: "bell.badge")
-      .webFont(.activityMeta).foregroundStyle(WebColor.textMuted.color)
+    ActivityDisclosure(
+      event.tool + " job " + outcome, summary: event.summary,
+      status: terminal && event.state != "succeeded" ? .failed : .disconnected,
+      detail: detail,
+      glyph: .job(agent: ["Agent", "AgentManage", "AgentSend"].contains(event.tool)),
+      identifier: "job-event-" + event.jobId + "-" + event.phase.rawValue, expanded: $expanded
+    ) {
+      ActivityPayload(indented: true) {
+        if let args = event.launchArgs {
+          ActivityPayloadBlock("Input", text: TranscriptPresentation.json(args))
+          if event.launchArgsTruncated == true {
+            ActivityTruncationNotice(characters: event.launchArgsBytes, phase: phase) { repair() }
+          }
+        }
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+          fact("Job", event.jobId)
+          fact(terminal ? "Outcome" : "Phase", outcome)
+          if let occurred { fact(terminal ? "Completed" : "Started", occurred) }
+          if let duration = TranscriptPresentation.duration(event.durationMs) {
+            fact("Duration", duration)
+          }
+          if let exit = event.exitCode { fact("Exit", String(exit)) }
+          if let signal = event.signal { fact("Signal", signal) }
+        }
+        .webFont(.activityMeta).foregroundStyle(WebColor.textSoft.color)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+  }
+  private func fact(_ key: String, _ value: String) -> some View {
+    GridRow(alignment: .top) {
+      Text(key).foregroundStyle(WebColor.textMuted.color)
+      Text(value).textSelection(.enabled)
+    }
+  }
+  private func repair() {
+    phase = .loading
+    Task {
+      let repaired = await store.repairToolOutput(
+        threadID: message.threadId, messageID: message.id, toolCallID: event.toolCallId)
+      phase = repaired ? .idle : .failed
+    }
   }
 }

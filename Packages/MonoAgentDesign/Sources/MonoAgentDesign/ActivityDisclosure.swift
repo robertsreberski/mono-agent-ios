@@ -22,6 +22,18 @@ public enum ActivityGlyph: Sendable, Equatable {
   }
 }
 
+/// A delegation's own reported route; absence means old history has no route evidence.
+public struct ActivityRoute: Sendable {
+  public let model: String
+  public let effort: String
+  public let detail: String
+  public init(model: String, effort: String, detail: String) {
+    self.model = model
+    self.effort = effort
+    self.detail = detail
+  }
+}
+
 /// One web `.activity-row`: a tool call, a `Read ×4` cluster, a thought, a delegation or a job
 /// fact share this shape; only the glyph and what expanding reveals differ. The caller owns
 /// expansion and supplies already-indented content (`ActivityPayload`, `ActivitySteps`,
@@ -33,6 +45,7 @@ public struct ActivityDisclosure<Content: View>: View {
   private let detail: String?
   private let alert: String?
   private let badge: String?
+  private let route: ActivityRoute?
   private let glyph: ActivityGlyph
   private let identifier: String
   @Binding private var expanded: Bool
@@ -41,7 +54,7 @@ public struct ActivityDisclosure<Content: View>: View {
   @Environment(\.consoleTheme) private var theme
   public init(
     _ title: String, summary: String = "", status: StatusKind = .disconnected,
-    detail: String? = nil, alert: String? = nil, badge: String? = nil,
+    detail: String? = nil, alert: String? = nil, badge: String? = nil, route: ActivityRoute? = nil,
     glyph: ActivityGlyph = .dot, identifier: String = "activity-disclosure",
     expanded: Binding<Bool>, @ViewBuilder content: @escaping () -> Content
   ) {
@@ -51,6 +64,7 @@ public struct ActivityDisclosure<Content: View>: View {
     self.detail = detail
     self.alert = alert
     self.badge = badge
+    self.route = route
     self.glyph = glyph
     self.identifier = identifier
     _expanded = expanded
@@ -75,7 +89,7 @@ public struct ActivityDisclosure<Content: View>: View {
       .accessibilityElement(children: .combine)
       .accessibilityLabel(
         [
-          title, summary, badge ?? "", alert ?? "", detail ?? "",
+          title, summary, badge ?? "", route?.detail ?? "", alert ?? "", detail ?? "",
           status == .connecting ? "running" : "",
         ]
         .filter { !$0.isEmpty }.joined(separator: ", ")
@@ -85,6 +99,18 @@ public struct ActivityDisclosure<Content: View>: View {
       .accessibilityIdentifier(identifier)
       if expanded { content() }
     }
+    .background(jobFill, in: RoundedRectangle(cornerRadius: WebRadius.small))
+    .overlay(RoundedRectangle(cornerRadius: WebRadius.small).strokeBorder(jobBorder, lineWidth: 1))
+  }
+  private var jobFill: Color {
+    guard case .job = glyph else { return .clear }
+    return (status == .failed ? WebColor.danger.color : theme.palette.accent.color)
+      .opacity(status == .failed ? 0.07 : 0.03)
+  }
+  private var jobBorder: Color {
+    guard case .job = glyph else { return .clear }
+    return (status == .failed ? WebColor.danger : theme.palette.accent)
+      .mixed(status == .failed ? 42 : 16, with: WebColor.line).color
   }
   private var oneLineRow: some View {
     HStack(alignment: .center, spacing: 8) {
@@ -92,7 +118,7 @@ public struct ActivityDisclosure<Content: View>: View {
       if !title.isEmpty { titleText }
       summaryText.lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
         .layoutPriority(-1)
-      if let badge, !badge.isEmpty { badgeText(badge).lineLimit(1) }
+      badges
       trailing
       chevron
     }
@@ -109,7 +135,7 @@ public struct ActivityDisclosure<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         WebFlowLayout(spacing: 7, lineSpacing: 1) {
-          if let badge, !badge.isEmpty { badgeText(badge) }
+          badges
           trailing
         }
       }
@@ -125,8 +151,13 @@ public struct ActivityDisclosure<Content: View>: View {
     Text(summary).webFont(.activityMeta).foregroundStyle(WebColor.textMuted.color)
       .truncationMode(.tail)
   }
-  private func badgeText(_ text: String) -> some View {
-    Text(text).webFont(.stepTime).foregroundStyle(WebColor.textMuted.color)
+  @ViewBuilder private var badges: some View {
+    if let badge, !badge.isEmpty {
+      Text(badge).webFont(.stepTime).foregroundStyle(WebColor.textMuted.color).lineLimit(1)
+    }
+    if let route {
+      RouteBadge(model: route.model, effort: route.effort, detail: route.detail)
+    }
   }
   private var chevron: some View {
     Image(systemName: "chevron.down")
@@ -138,8 +169,13 @@ public struct ActivityDisclosure<Content: View>: View {
   @ViewBuilder private var trailing: some View {
     if let alert, !alert.isEmpty { FailedTag(alert) }
     if let detail, !detail.isEmpty {
-      Text(detail).webFont(.stepTime).foregroundStyle(WebColor.textMuted.color)
-        .lineLimit(1).fixedSize()
+      if twoLine {
+        Text(detail).webFont(.stepTime).foregroundStyle(WebColor.textMuted.color)
+          .fixedSize(horizontal: false, vertical: true)
+      } else {
+        Text(detail).webFont(.stepTime).foregroundStyle(WebColor.textMuted.color)
+          .lineLimit(1).fixedSize()
+      }
     }
   }
   @ViewBuilder private var glyphView: some View {
@@ -308,20 +344,24 @@ public struct ActivityPayload<Content: View>: View {
 public struct ActivityPayloadBlock: View {
   private let label: String
   private let text: String
+  private let showLabel: Bool
   @State private var height: CGFloat?
   @Environment(\.consoleTheme) private var theme
   @Environment(\.webMaterial) private var material
-  public init(_ label: String, text: String) {
+  public init(_ label: String, text: String, showLabel: Bool = true) {
     self.label = label
     self.text = text
+    self.showLabel = showLabel
   }
   private var display: String { String(decoding: text.utf8.prefix(16_384), as: UTF8.self) }
   func copy() { UIPasteboard.general.string = text }
   public var body: some View {
     let shape = RoundedRectangle(cornerRadius: WebRadius.small, style: .continuous)
     VStack(alignment: .leading, spacing: 7) {
-      Text(label).webFont(.payloadLabel).foregroundStyle(material.textMuted.color)
-        .accessibilityAddTraits(.isHeader)
+      if showLabel {
+        Text(label).webFont(.payloadLabel).foregroundStyle(material.textMuted.color)
+          .accessibilityAddTraits(.isHeader)
+      }
       ScrollView(.vertical) {
         Text(verbatim: display)
           .webFont(.payloadText)

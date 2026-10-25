@@ -271,80 +271,181 @@ struct JobSubagentProgressView: View {
   }
 }
 
+/// Pure collapsed-row and report decisions shared with the fixture tests.
+enum SubagentPresentation {
+  static func task(_ call: WebToolCall) -> String? {
+    UsagePresentation.text(UsagePresentation.layers(call.args), ["prompt"])
+      ?? TranscriptPresentation.string(call.args)
+  }
+  static func meta(_ call: WebToolCall) -> String {
+    let count = call.calls?.count ?? 0
+    var parts = ["\(count) \(count == 1 ? "tool" : "tools")"]
+    if let duration = TranscriptPresentation.duration(call.executionMs) { parts.append(duration) }
+    if let cost = call.costUsd, cost.isFinite, cost >= 0 {
+      parts.append(TranscriptPresentation.cost(.init(amount: cost)))
+    } else if let known = call.knownCostUsd, known.isFinite, known > 0 {
+      parts.append("Known cost " + TranscriptPresentation.cost(.init(amount: known)))
+    }
+    if call.history?.persistence == "failed" { parts.append("history not saved") }
+    return parts.joined(separator: " · ")
+  }
+  static func route(_ call: WebToolCall) -> ActivityRoute? {
+    guard let route = call.attribution else { return nil }
+    let executed = route.executed ?? route.attempted
+    guard let model = executed?.model ?? route.requested.model else { return nil }
+    return .init(
+      model: model,
+      effort: executed?.effectiveEffort ?? executed?.effort ?? route.requested.effort ?? "",
+      detail: TranscriptPresentation.attribution(route, status: call.status))
+  }
+  static func report(_ call: WebToolCall) -> String {
+    let text = TranscriptPresentation.json(call.result)
+    // Design: omit only the host's leading wrapper; never trim a header quoted inside a report.
+    return text.replacingOccurrences(
+      of: #"^<subagent: [^<>\n]+>\r?\n?"#, with: "", options: .regularExpression)
+  }
+}
+
 struct SubagentPartView: View {
   let call: WebToolCall
   let message: WebMessage
   let store: ConsoleStore
   @State private var expanded = false
-  @State private var loading = false
-  @State private var repairFailed = false
   var body: some View {
+    let failed = TranscriptPresentation.failed(call)
     ActivityDisclosure(
-      "Subagent · " + (call.name ?? call.toolName ?? "Delegation"),
-      summary: call.label ?? UsagePresentation.text(UsagePresentation.layers(call.args), ["prompt"])
-        ?? "",
-      status: call.status == "running" ? .connecting : call.status == "failed" ? .failed : .online,
-      detail: [
-        call.status, "\(call.calls?.count ?? 0) tool calls",
-        JobPresentation.duration(call.executionMs),
-        TranscriptPresentation.cost(
-          .init(amount: call.costUsd, unknown: call.costUnknown, knownSpend: call.knownCostUsd)),
-      ].joined(separator: " · "),
+      "", summary: call.label ?? SubagentPresentation.task(call) ?? call.name ?? "Delegation",
+      status: call.status == "running" ? .connecting : failed ? .failed : .disconnected,
+      detail: SubagentPresentation.meta(call), alert: failed ? "failed" : nil,
+      badge: call.name, route: SubagentPresentation.route(call),
       glyph: .agent, identifier: "subagent-" + call.toolCallId, expanded: $expanded
     ) {
       ActivitySteps {
-        if let route = call.attribution {
-          let executed = route.executed
-          RouteBadge(
-            model: executed?.model ?? route.attempted?.model ?? route.requested.model
-              ?? "Unknown model",
-            effort: executed?.effectiveEffort ?? executed?.effort ?? route.attempted?.effort
-              ?? route.requested.effort ?? "",
-            detail: TranscriptPresentation.attribution(route, status: call.status))
+        if TranscriptPresentation.showsRunAttribution(call.attribution, status: call.status) {
+          // Full route warnings stay inside; ordinary requested routes need only the badge.
+          RunAttributionView(message: attributedMessage)
         }
-        DisclosureGroup("Task") {
-          Text(
-            UsagePresentation.text(UsagePresentation.layers(call.args), ["prompt"])
-              ?? TranscriptPresentation.json(call.args)
-          ).textSelection(.enabled)
+        if SubagentPresentation.task(call) != nil || call.argsTruncated == true {
+          SubagentNoteView(
+            title: "Task", text: SubagentPresentation.task(call) ?? "",
+            truncated: call.argsTruncated == true, characters: call.argsBytes,
+            callID: call.toolCallId, canRepair: true, message: message, store: store)
         }
         let calls = call.calls ?? []
-        if calls.isEmpty { Text("No tool calls recorded.").webFont(.jobDetail) }
+        if calls.isEmpty {
+          Text("No tool calls recorded.").webFont(.activityMeta).foregroundStyle(
+            WebColor.textMuted.color)
+        }
         ForEach(TranscriptPresentation.clusters(calls.map(WebMessagePart.toolCall))) { cluster in
-          if cluster.parts.count > 1 {
-            ToolClusterView(
-              calls: cluster.parts.compactMap {
-                if case .toolCall(let call) = $0 { return call }
-                return nil
-              }, message: message, store: store)
-          } else if let part = cluster.parts.first {
-            TranscriptPartView(part: part, message: message, store: store)
-          }
+          SubagentCallsStep(
+            calls: cluster.parts.compactMap {
+              if case .toolCall(let value) = $0 { return value }
+              return nil
+            }, message: message, store: store)
         }
-        if call.result != nil {
-          DisclosureGroup("Latest answer") {
-            CodeDocumentView(source: TranscriptPresentation.json(call.result), language: "Report")
-          }
-        }
-        if call.argsTruncated == true || call.resultTruncated == true {
-          Text("Preview only").webFont(.activityMeta)
-          Button(loading ? "Loading…" : "Load full delegation") {
-            loading = true
-            Task {
-              repairFailed =
-                !(await store.repairToolOutput(
-                  threadID: message.threadId, messageID: message.id, toolCallID: call.toolCallId))
-              loading = false
-            }
-          }.disabled(loading)
-        }
-        if repairFailed {
-          Text("Could not load full delegation. Retry or refresh.").webFont(.activityMeta)
+        if call.result != nil || call.resultTruncated == true {
+          SubagentNoteView(
+            title: "Report", text: SubagentPresentation.report(call),
+            truncated: call.resultTruncated == true, characters: call.resultBytes,
+            callID: call.toolCallId, canRepair: call.argsTruncated != true, message: message,
+            store: store)
         }
         if call.history?.persistence == "failed" {
-          Text("Tool history was not saved.").webFont(.activityMeta)
+          ActivityErrorNote("Tool history for this delegation was not saved.")
         }
       }
+    }
+  }
+  private var attributedMessage: WebMessage {
+    var value = message
+    value.attribution = call.attribution
+    value.status = call.status
+    return value
+  }
+
+}
+
+private struct SubagentNoteView: View {
+  let title: String
+  let text: String
+  let truncated: Bool
+  let characters: Int?
+  let callID: String
+  let canRepair: Bool
+  let message: WebMessage
+  let store: ConsoleStore
+  @State private var phase = ActivityTruncationNotice.Phase.idle
+  var body: some View {
+    ActivityStep(title, identifier: "subagent-" + title.lowercased() + "-" + callID) {
+      ActivityPayload {
+        if !text.isEmpty { ActivityPayloadBlock(title, text: text, showLabel: false) }
+        if truncated {
+          ActivityTruncationNotice(
+            characters: characters, phase: phase, action: canRepair ? { repair() } : nil)
+        }
+      }
+    }
+  }
+  private func repair() {
+    phase = .loading
+    Task {
+      let repaired = await store.repairToolOutput(
+        threadID: message.threadId,
+        messageID: message.id, toolCallID: callID)
+      phase = repaired ? .idle : .failed
+    }
+  }
+}
+
+/// Repeated child tools share a single flat step and joined payloads, not nested tool rows.
+private struct SubagentCallsStep: View {
+  let calls: [WebToolCall]
+  let message: WebMessage
+  let store: ConsoleStore
+  @State private var phase = ActivityTruncationNotice.Phase.idle
+  var body: some View {
+    let failed = calls.filter(TranscriptPresentation.failed).count
+    let times = calls.compactMap(\.executionMs).filter { $0.isFinite && $0 >= 0 }
+    let name = calls.first.map(TranscriptPresentation.toolName) ?? "Tool"
+    ActivityStep(
+      name + (calls.count > 1 ? " ×\(calls.count)" : ""),
+      summary: calls.count > 1
+        ? TranscriptPresentation.clusterSummary(calls)
+        : calls.first.map(TranscriptPresentation.preview) ?? "",
+      failed: TranscriptPresentation.failedLabel(failed, clustered: calls.count > 1),
+      duration: TranscriptPresentation.duration(times.isEmpty ? nil : times.reduce(0, +)),
+      identifier: "subagent-calls-" + (calls.first?.toolCallId ?? "empty")
+    ) {
+      ActivityPayload {
+        ActivityPayloadBlock(
+          "Input",
+          text: calls.map { TranscriptPresentation.json($0.args) }.joined(separator: "\n\n"))
+        let results = calls.compactMap(\.result)
+        if !results.isEmpty {
+          ActivityPayloadBlock(
+            failed > 0 ? "Error" : "Output",
+            text: results.map { TranscriptPresentation.json($0) }.joined(separator: "\n\n"))
+        }
+        if calls.contains(where: { $0.argsTruncated == true || $0.resultTruncated == true }) {
+          ActivityTruncationNotice(characters: nil, phase: phase) { repair() }
+        }
+        if calls.contains(where: { $0.history?.persistence == "failed" }) {
+          ActivityErrorNote("Tool history for a child call was not saved.")
+        }
+      }
+    }
+  }
+  private func repair() {
+    phase = .loading
+    Task {
+      var allRepaired = true
+      for call in calls where call.argsTruncated == true || call.resultTruncated == true {
+        let repaired = await store.repairToolOutput(
+          threadID: message.threadId,
+          messageID: message.id, toolCallID: call.toolCallId)
+        allRepaired = allRepaired && repaired
+      }
+      phase = allRepaired ? .idle : .failed
     }
   }
 }

@@ -315,9 +315,9 @@ public enum ProcessJobEvents {
 
   public static func visible(_ message: WebMessage, entries: [TranscriptEntry]) -> Bool {
     guard TranscriptTelemetry.visible(message) else { return false }
-    guard message.role == "assistant",
-      message.parts.contains(where: { if case .processJob = $0 { true } else { false } })
-    else { return true }
+    guard message.role == "assistant" else { return true }
+    let containedJob = message.parts.contains { if case .processJob = $0 { true } else { false } }
+    if !containedJob && (!entries.isEmpty || message.parts.isEmpty) { return true }
     if !message.attachments.isEmpty || message.quote != nil
       || ["failed", "interrupted", "cancelled"].contains(message.status)
       || showsAttribution(message.attribution, status: message.status)

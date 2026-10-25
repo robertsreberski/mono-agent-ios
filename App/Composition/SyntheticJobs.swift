@@ -12,7 +12,7 @@
       _ id: String, state: String = "running", tool: String = "Bash", instance: String? = nil
     ) throws -> ProcessJobProjection {
       var job: ProcessJobProjection = try TranscriptFixture.decode(
-        #"{"schema":"mono-agent.process-job.v1","jobId":"sample-job","tool":"Bash","state":"running","summary":"Purpose: Check the sample catalog","origin":{"conversationId":"web:t-atlas-launch","channel":"web","runId":"turn-transcript","historyBoundary":"sample-boundary","bucket":null},"timestamps":{"admittedAt":"2030-01-02T11:58:58Z","queueDeadlineAt":"2030-01-02T12:04:00Z","startedAt":"2030-01-02T11:59:00Z","runtimeDeadlineAt":"2030-01-02T12:29:00Z","completedAt":null},"limits":{"maxRuntimeMs":1800000,"maxOutputBytes":1000000,"previewChars":4096,"chainDepth":0},"output":{"stdoutBytes":104,"stderrBytes":0,"truncated":false,"preview":"STDOUT:\nChecked 12 sample entries\nReady for the next stage","stdoutRef":null,"stderrRef":null},"wake":{"state":"pending","attempts":0,"deliveryKey":"sample-delivery","lastAttemptAt":null},"exitCode":null,"signal":null,"durationMs":null,"cancelRequested":false,"lastError":null}"#
+        #"{"schema":"mono-agent.process-job.v1","jobId":"sample-job","tool":"Bash","state":"running","summary":"Purpose: Check the sample catalog","origin":{"conversationId":"web:t-atlas-launch","channel":"web","runId":"turn-transcript","historyBoundary":"sample-boundary","bucket":null},"timestamps":{"admittedAt":"2030-01-02T11:58:58.000Z","queueDeadlineAt":"2030-01-02T12:04:00.000Z","startedAt":"2030-01-02T11:59:00.000Z","runtimeDeadlineAt":"2030-01-02T12:29:00.000Z","completedAt":null},"limits":{"maxRuntimeMs":1800000,"maxOutputBytes":1000000,"previewChars":4096,"chainDepth":0},"output":{"stdoutBytes":104,"stderrBytes":0,"truncated":false,"preview":"STDOUT:\nChecked 12 sample entries\nReady for the next stage","stdoutRef":null,"stderrRef":null},"wake":{"state":"pending","attempts":0,"deliveryKey":"sample-delivery","lastAttemptAt":null},"exitCode":null,"signal":null,"durationMs":null,"cancelRequested":false,"lastError":null}"#
       )
       job.jobId = id
       job.state = state
@@ -25,7 +25,7 @@
         job.timestamps.startedAt = nil
       }
       if !["queued", "starting", "running"].contains(state) {
-        job.timestamps.completedAt = "2030-01-02T11:59:30Z"
+        job.timestamps.completedAt = "2030-01-02T11:59:30.000Z"
         job.durationMs = job.timestamps.startedAt == nil ? nil : 30_000
         job.exitCode = state == "succeeded" ? 0 : state == "failed" ? 1 : nil
         job.wake.state = "delivered"
@@ -54,13 +54,16 @@
     }
     static func question(state: String = "awaiting_answer") throws -> PeerProcessJobQuestion {
       var question: PeerProcessJobQuestion = try TranscriptFixture.decode(
-        #"{"state":"awaiting_answer","questionId":"sample-peer-question","peer":"seed-bank","thread":"spring-order","message":"Should I reserve the fictional seed packets now or wait for the member vote?","requestedSchema":{"type":"object","properties":{"decision":{"type":"string","enum":["reserve","wait"]}}},"expiresAt":"2030-01-02T12:20:00Z"}"#
+        #"{"state":"awaiting_answer","questionId":"sample-peer-question","peer":"seed-bank","thread":"spring-order","message":"Should I reserve the fictional seed packets now or wait for the member vote?","requestedSchema":{"type":"object","properties":{"decision":{"type":"string","enum":["reserve","wait"]}}},"expiresAt":"2030-01-02T12:20:00.000Z"}"#
       )
       question.state = state
       return question
     }
     static func jobs(_ scenario: StoreScenario) throws -> [ProcessJobProjection] {
       if scenario == .conversationJobs {
+        if ProcessInfo.processInfo.arguments.contains("--single-job-glance") {
+          return [try job("running")]
+        }
         var jobs = try [
           "running", "succeeded", "failed", "cancelled", "timed_out", "queued", "starting",
           "spawn_failed", "queue_expired", "interrupted",
@@ -148,11 +151,26 @@
         text:
           "Synthetic background activity. Open Background jobs in the header to inspect the retained cards."
       )
-      message.parts += try jobs(scenario).map { job in
+      message.parts += try jobs(scenario).flatMap { job -> [WebMessagePart] in
         let part: ProcessJobPart = try TranscriptFixture.decode(
           #"{"type":"process-job","job":\#(String(decoding: JSONEncoder().encode(job), as: UTF8.self))}"#
         )
-        return .processJob(part)
+        var launch = try TranscriptFixture.tool(1, full: true)
+        launch.toolCallId = "launch-" + job.jobId
+        launch.toolName = job.tool
+        launch.args = .object([
+          "description": .string("Check the fictional catalog"),
+          "command": .string("sample-check"), "id": .string(job.instanceId ?? "sample-helper"),
+        ])
+        launch.result = nil
+        launch.resultTruncated = false
+        launch.structuredResult = .object([
+          "schema": .string("mono-agent.process-job-start-receipt.v1"),
+          "jobId": .string(job.jobId), "tool": .string(job.tool),
+          "state": .string(job.timestamps.startedAt == nil ? "queued" : "running"),
+          "startedAt": job.timestamps.startedAt.map(JSONValue.string) ?? .null,
+        ])
+        return [.toolCall(launch), .processJob(part)]
       }
       if scenario == .conversationContext {
         let telemetry: TelemetryPart = try TranscriptFixture.decode(
@@ -165,7 +183,7 @@
       }
       if scenario == .conversationJobStack {
         let call: WebToolCall = try TranscriptFixture.decode(
-          #"{"type":"tool-call","toolCallId":"launch-garden-helper","toolName":"Agent","args":{"id":"garden-helper","prompt":"Review the sample planting plan","persist":true,"background":true},"structuredResult":{"schema":"mono-agent.process-job-start-receipt.v1","jobId":"turn-1","tool":"Agent","state":"running","startedAt":"2030-01-02T11:59:00Z"},"status":"complete"}"#
+          #"{"type":"tool-call","toolCallId":"message-garden-helper","toolName":"AgentManage","args":{"id":"garden-helper","message":"Review the fictional north zone"},"status":"complete","result":"Message delivered"}"#
         )
         message.parts.insert(.toolCall(call), at: 0)
         // A tall code backdrop exercises the floating shelf/composer over busy web content.
@@ -179,10 +197,15 @@
           call.toolCallId = "delegation-" + status
           call.name = "researcher"
           call.toolName = "Agent"
-          call.label = "Review sample zones · " + status
+          call.label = "Review the fictional planting zones and prepare a concise report"
           call.status = status
           call.args = .object(["prompt": .string("Compare the fictional planting zones.")])
-          call.result = status == "running" ? nil : .string("Three sample zones reviewed.")
+          call.result =
+            status == "running"
+            ? nil
+            : .string(
+              "<subagent: researcher · instance sample-helper · turn 1>\nThree sample zones reviewed."
+            )
           call.attribution = try TranscriptFixture.decode(
             #"{"requested":{"model":"sample:large","effort":"high"},"executed":{"model":"sample:large","effort":"high"},"disposition":"requested","transitions":[],"retries":[]}"#
           )
@@ -192,11 +215,22 @@
           message.parts.append(.subagent(call))
         }
       }
+      if scenario == .conversationJobs,
+        !ProcessInfo.processInfo.arguments.contains("--single-job-glance")
+      {
+        let wake: ProcessJobWakePart = try TranscriptFixture.decode(
+          #"{"type":"process-job-wake","jobId":"succeeded","deliveryKey":"sample-delivery","disposition":"follow_up"}"#
+        )
+        var delivered = try TranscriptFixture.message(
+          id: "wake-sample", role: "assistant", text: "The fictional catalog check finished.")
+        delivered.parts.insert(.processJobWake(wake), at: 0)
+        return [message, delivered]
+      }
       return [message]
     }
     static func usage() throws -> WebThreadUsage {
       try TranscriptFixture.decode(
-        #"{"total":{"tokens":{"input":12000,"cacheWrite":2000,"cacheRead":70000,"output":1200},"costUnknown":true,"knownCostUsd":0.42,"tokensPartial":true},"subagents":{"tokens":{"input":2000,"cacheWrite":0,"cacheRead":1000,"output":200},"costUsd":0.12,"tokensPartial":true,"runs":3,"runsWithTokens":2},"byModel":[{"model":"sample:large","costUnknown":true,"knownCostUsd":0.3},{"model":"sample:small","costUsd":0.12}],"computedAt":"2030-01-02T12:00:00Z","settledAssistantTurns":3}"#
+        #"{"total":{"tokens":{"input":12000,"cacheWrite":2000,"cacheRead":70000,"output":1200},"costUnknown":true,"knownCostUsd":0.42,"tokensPartial":true},"subagents":{"tokens":{"input":2000,"cacheWrite":0,"cacheRead":1000,"output":200},"costUsd":0.12,"tokensPartial":true,"runs":3,"runsWithTokens":2},"byModel":[{"model":"sample:large","costUnknown":true,"knownCostUsd":0.3},{"model":"sample:small","costUsd":0.12}],"computedAt":"2030-01-02T12:00:00.000Z","settledAssistantTurns":3}"#
       )
     }
   }

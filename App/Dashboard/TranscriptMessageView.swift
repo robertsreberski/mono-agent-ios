@@ -36,8 +36,8 @@ struct TranscriptMessageView: View {
       } else {
         messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
       }
-      // Web: the action row belongs to a settled message, not one still being written.
-      if message.status != "running" && message.role != "system" {
+      // Web: touch keeps Copy available even while the response is being written.
+      if message.role != "system" {
         actions(message).quotable(message, enabled: hasMcp)
       }
     }
@@ -65,8 +65,10 @@ struct TranscriptMessageView: View {
       if isUser, !message.attachments.isEmpty {
         messageAttachments(message).padding(.bottom, 8)
       }
-      let visible = message.parts.filter {
-        TranscriptTelemetry.visible($0, in: message) && TranscriptPresentation.isShown($0)
+      let visible = row.transcriptEntries.filter { entry in
+        guard let part = entry.item.part else { return true }
+        return TranscriptTelemetry.visible(part, in: message)
+          && TranscriptPresentation.isShown(part)
       }
       let bands = TranscriptPresentation.activityBands(visible)
       // Web: only the band holding the turn's last activity part carries the turn's clock.
@@ -81,18 +83,20 @@ struct TranscriptMessageView: View {
             TranscriptActivityBand(
               parts: band.parts, message: message, store: store, bandID: band.id,
               timed: band.id == openBand)
-          } else if band.parts.allSatisfy(TranscriptPresentation.isReplyImage) {
+          } else if band.parts.allSatisfy({
+            $0.part.map(TranscriptPresentation.isReplyImage) ?? false
+          }) {
             ReplyImagesView(
               parts: band.parts.compactMap {
-                if case .attachment(let value) = $0 { return value }
+                if case .part(.attachment(let value)) = $0 { return value }
                 return nil
               }, message: message, store: store, gallery: gallery)
-          } else if let part = band.parts.first {
-            if message.role == "system", case .text(let value) = part {
+          } else if let item = band.parts.first {
+            if message.role == "system", case .part(.text(let value)) = item {
               Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)
                 .textSelection(.enabled)
             } else {
-              TranscriptPartView(part: part, message: message, store: store)
+              TranscriptItemView(item: item, message: message, store: store)
             }
           }
         }
@@ -100,7 +104,7 @@ struct TranscriptMessageView: View {
         // Web `RunningText` (`indicator="no-text"`): the dots stand in while the turn runs
         // without new prose, including after an Activity band.
         if message.role == "assistant" && message.status == "running"
-          && !TranscriptPresentation.endsWithProse(visible)
+          && !TranscriptPresentation.endsWithProse(visible.last?.item.part.map { [$0] } ?? [])
         {
           ThinkingDots()
         }
@@ -167,10 +171,23 @@ struct TranscriptMessageView: View {
   }
 }
 
+struct TranscriptItemView: View {
+  let item: TranscriptItem
+  let message: WebMessage
+  let store: ConsoleStore
+  var body: some View {
+    switch item {
+    case .part(let part): TranscriptPartView(part: part, message: message, store: store)
+    case .jobEvent(let event): ProcessJobEventView(event: event, message: message, store: store)
+    }
+  }
+}
+
 struct TranscriptPartView: View {
   let part: WebMessagePart
   let message: WebMessage
   let store: ConsoleStore
+  @ScaledMetric(relativeTo: .body) private var steerSize: CGFloat = 14
   var body: some View {
     switch part {
     case .text(let value):
@@ -193,11 +210,15 @@ struct TranscriptPartView: View {
       .opacity(value.kind == "project" ? 0.62 : 1)
       .accessibilityIdentifier("conversation-marker")
     case .steer(let value):
-      VStack(alignment: .leading) {
-        Label("You · Follow-up", systemImage: "arrow.turn.down.right").designFont(.caption)
-        if let quote = value.quote { Text(quote.text).foregroundStyle(.secondary) }
-        Text(value.text).textSelection(.enabled)
-      }.padding(DesignSpacing.sm).background(DesignColor.contentSurface)
+      UserBubble {
+        VStack(alignment: .leading, spacing: 8) {
+          if let quote = value.quote { MessageQuote(quote.text) }
+          Text(value.text).font(.system(size: steerSize)).foregroundStyle(WebColor.text.color)
+            .textSelection(.enabled)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .accessibilityIdentifier("inline-steer-" + value.inputId)
     case .scheduledWake(let value):
       VStack(alignment: .leading) {
         WakeScheduleStatus(
@@ -215,10 +236,9 @@ struct TranscriptPartView: View {
       ReplyFailureCard(code: value.code, message: value.message)
     case .subagent(let value):
       SubagentPartView(call: value, message: message, store: store)
-    case .processJob(let value):
-      ProcessJobLifecycleView(job: value.job, store: store)
-    case .processJobWake(let value):
-      ProcessJobWakeView(wake: value)
+    case .processJob, .processJobWake:
+      // The Store drops carriers and resolves wakes into typed events before rendering.
+      EmptyView()
     case .attachment(let value):
       ReplyAttachmentView(part: value, message: message, store: store)
     case .mcpApp(let value):
@@ -245,7 +265,7 @@ struct TranscriptPartView: View {
       {
       case .hidden: EmptyView()
       case .note(let text):
-        Text(text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
+        Text(text).webFont(.activityNote).foregroundStyle(WebColor.textSoft.color)
           .textSelection(.enabled).accessibilityIdentifier("runtime-warning-note")
       case .compaction:
         if let marker = TranscriptPresentation.compaction(
@@ -288,18 +308,18 @@ struct DeferredTranscriptPart: View {
 /// (`collapseOnSettle`); a user toggle wins until the next settle. Only the band holding the
 /// turn's last activity part carries the turn's clock.
 struct TranscriptActivityBand: View {
-  let parts: [WebMessagePart]
+  let parts: [TranscriptItem]
   let message: WebMessage
   let store: ConsoleStore
   /// Stable within the message: the index of the band's first part.
-  var bandID = 0
+  var bandID = "part-0"
   var timed = true
   @Environment(\.transcriptDisclosures) private var disclosures
   @State private var localOpen: Bool?
   private var running: Bool { message.status == "running" }
   private var key: String { message.id + "#band-\(bandID)" }
   var body: some View {
-    let steps = TranscriptPresentation.activityStepCount(parts)
+    let steps = parts.count
     let count = "\(steps) \(steps == 1 ? "step" : "steps")"
     // The user's choice lives outside the recycled row (per conversation, keyed by message and
     // band), so a band opened and scrolled away is still open on return.
@@ -321,11 +341,11 @@ struct TranscriptActivityBand: View {
         if entry.parts.count > 1 {
           ToolClusterView(
             calls: entry.parts.compactMap {
-              if case .toolCall(let call) = $0 { return call }
+              if case .part(.toolCall(let call)) = $0 { return call }
               return nil
             }, message: message, store: store)
-        } else if let part = entry.parts.first {
-          TranscriptPartView(part: part, message: message, store: store)
+        } else if let item = entry.parts.first {
+          TranscriptItemView(item: item, message: message, store: store)
         }
       }
     }
