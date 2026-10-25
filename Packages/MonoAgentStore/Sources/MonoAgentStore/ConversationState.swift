@@ -130,6 +130,7 @@ public final class ConversationState {
     var contextChanged = thread != record.thread
     var routeChanged = false
     var visibilityChanged = false
+    var previousVisibility: [String: Bool] = [:]
     if thread != record.thread { thread = record.thread }
     for index in pendingMessageIndices where record.messages.indices.contains(index) {
       let message = record.messages[index]
@@ -137,9 +138,8 @@ public final class ConversationState {
         publish()
         return
       }
-      visibilityChanged =
-        visibilityChanged
-        || TranscriptTelemetry.visible(row.message) != TranscriptTelemetry.visible(message)
+      previousVisibility[message.id] = ProcessJobEvents.visible(
+        row.message, entries: row.transcriptEntries)
       let next = PresentationInput(message)
       let previous = inputs[message.id]
       visibilityChanged =
@@ -157,7 +157,11 @@ public final class ConversationState {
     }
     if !jobsChanged {
       for index in pendingMessageIndices where record.messages.indices.contains(index) {
-        publishEntries(record.messages[index])
+        let message = record.messages[index]
+        publishEntries(message)
+        let nowVisible = ProcessJobEvents.visible(
+          message, entries: messageStates[message.id]?.transcriptEntries ?? [])
+        visibilityChanged = visibilityChanged || previousVisibility[message.id] != nowVisible
       }
       if visibilityChanged { publishTranscriptIDs() }
     }

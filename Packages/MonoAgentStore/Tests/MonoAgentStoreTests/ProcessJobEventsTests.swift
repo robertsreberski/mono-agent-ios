@@ -313,6 +313,28 @@ struct ProcessJobEventsTests {
     #expect(ProcessJobEvents.entries(for: parent, projection: project(messages)).count == 1)
     #expect(parent.parts == [.toolCall(call)])
   }
+  @MainActor @Test func proseArrivingOnAHiddenCarrierPublishesBeforeTheTurnSettles() throws {
+    var source = try carrier(job("running"))
+    source.status = "running"
+    let state = ConversationState(
+      .init(thread: try sampleThread(), messages: [source], savedAt: Date()))
+    let row = try #require(state.messageStates[source.id])
+    #expect(state.transcriptMessageIDs.isEmpty)
+    // An ordinary text delta must update visibility, not wait for a job/tool or terminal write.
+    state.record.messages[0].parts.append(.text(.init(text: "Live fictional answer")))
+    state.pendingMessageIndices = [0]
+    state.publishPending()
+    #expect(state.transcriptMessageIDs == [source.id])
+    #expect(state.messageStates[source.id] === row)
+    #expect(row.message.status == "running")
+    #expect(row.transcriptEntries.count == 1)
+    // A correction which removes that prose must also remove the now-empty presentation row.
+    state.record.messages[0].parts.removeLast()
+    state.pendingMessageIndices = [0]
+    state.publishPending()
+    #expect(state.transcriptMessageIDs.isEmpty)
+    #expect(row.transcriptEntries.isEmpty)
+  }
   @MainActor @Test func heldRowsUpdateWakeAndLaunchTogetherWithoutChangingIdentity() throws {
     let job = try job()
     let origin = try message("origin", [.toolCall(launch(job))])
