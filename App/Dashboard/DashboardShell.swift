@@ -62,19 +62,15 @@ struct DashboardShell: View {
             .navigationSplitViewColumnWidth(min: 320, ideal: WebMetrics.dashboardColumn, max: 520)
         } detail: {
           // Regular: settings is the detail with a ✕; the sidebar stays usable and retargets it.
-          ZStack {
-            // Retained, but neither visible nor reachable while settings covers it.
+          // The covered destination leaves the column (so no part of it is reachable) while its
+          // route, draft and selection stay in the shell and Store; closing remounts it.
+          if let settings {
+            AgentSettingsScreen(
+              store: store, sourceID: store.dashboardAgentID, target: settings.target,
+              layout: .split, close: closeSettings)
+          } else {
             NavigationStack {
               detail(regularDetailRoute).id(regularDetailRoute)
-            }
-            .environment(\.coveredBySettings, settings != nil)
-            .opacity(settings == nil ? 1 : 0)
-            .allowsHitTesting(settings == nil)
-            .accessibilityHidden(settings != nil)
-            if let settings {
-              AgentSettingsScreen(
-                store: store, sourceID: store.dashboardAgentID, target: settings.target,
-                layout: .split, close: closeSettings)
             }
           }
         }
@@ -84,6 +80,7 @@ struct DashboardShell: View {
         // cover's modal presentation keeps VoiceOver and touches out of the covered context.
         NavigationStack(path: path) {
           dashboard(selectable: false)
+            .background(CoveredAccessibility(covered: settings != nil))
             .navigationDestination(for: AppRoute.self) { detail($0) }
         }
         .environment(\.coveredBySettings, settings != nil)
@@ -252,6 +249,35 @@ struct DashboardShell: View {
       restored.profile == store.profile.id
     {
       route = restored
+    }
+  }
+}
+
+/// Hides the covered compact stack from VoiceOver while the settings cover is presented.
+/// SwiftUI's `accessibilityHidden` stops at UIKit-hosted scroll views, so the hosting
+/// controller's own view is marked instead. The presented cover is not inside that view. The
+/// state stays retained; only accessibility is withdrawn, and restored when settings closes.
+private struct CoveredAccessibility: UIViewRepresentable {
+  let covered: Bool
+  func makeUIView(context: Context) -> UIView {
+    let view = UIView()
+    view.isUserInteractionEnabled = false
+    view.isAccessibilityElement = false
+    return view
+  }
+  func updateUIView(_ view: UIView, context: Context) {
+    let covered = covered
+    // After this update the marker is attached; walk to the stack that hosts it.
+    Task { @MainActor in
+      var responder: UIResponder? = view
+      while let current = responder, !(current is UIViewController) {
+        responder = current.next
+      }
+      guard let host = (responder as? UIViewController)?.view,
+        host.accessibilityElementsHidden != covered
+      else { return }
+      host.accessibilityElementsHidden = covered
+      UIAccessibility.post(notification: .screenChanged, argument: nil)
     }
   }
 }

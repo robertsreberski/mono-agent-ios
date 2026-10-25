@@ -212,14 +212,21 @@ import XCTest
     if isPad {
       element(app, "running-row-t-atlas-launch").tap()
       XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 15))
+      XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 10))
       button.tap()
       waitForSettings(app)
       WaitFor.value(button, contains: "Expanded")
       WaitFor.hittable(element(app, "agent-settings-close"))
+      // The covered conversation is retained but unreachable: transcript, composer, header.
+      WaitFor.absent(element(app, "conversation-transcript"))
+      WaitFor.absent(element(app, "composer-field"))
+      WaitFor.absent(element(app, "conversation-run-state"))
+      WaitFor.hittable(element(app, "agent-strip"))  // the sidebar stays usable
       button.tap()  // a second press closes on a wide layout
       WaitFor.absent(element(app, "agent-settings-screen"))
       WaitFor.value(button, contains: "Collapsed")
       XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
+      XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 10))
       // Selecting another conversation while settings is open closes it.
       button.tap()
       waitForSettings(app)
@@ -229,7 +236,8 @@ import XCTest
       WaitFor.hittable(button)
       button.tap()
       waitForSettings(app)
-      WaitFor.covered(element(app, "agent-strip"))
+      WaitFor.absent(element(app, "agent-strip"))
+      WaitFor.absent(element(app, "new-conversation"))
       element(app, "agent-settings-back").tap()
       WaitFor.absent(element(app, "agent-settings-screen"))
       WaitFor.hittable(element(app, "agent-strip"))

@@ -266,7 +266,13 @@ struct DashboardView: View {
     .accessibilityFocused($settingsButtonFocused)
     .onChange(of: settingsEntry.isOpen) { wasOpen, isOpen in
       // Closing returns VoiceOver to the invoker (web `settingsInvokerRef`).
-      if wasOpen && !isOpen { settingsButtonFocused = true }
+      // The covered stack becomes accessible again on the next update; focus after it.
+      if wasOpen && !isOpen {
+        Task { @MainActor in
+          try? await Task.sleep(for: .milliseconds(150))
+          settingsButtonFocused = true
+        }
+      }
     }
   }
 
