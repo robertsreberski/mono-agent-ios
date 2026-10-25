@@ -76,7 +76,7 @@ struct ConversationContextView: View {
         if store.agents.first(where: { $0.sourceId == state.thread.sourceId })?
           .supportsManualCompaction == true
         {
-          Divider()
+          WebHairline()
           let busy =
             store.manualCompactions[state.thread.id] == .pending
             || state.thread.compaction?.status == "running"
@@ -97,10 +97,13 @@ struct ConversationContextView: View {
             Button(busy ? "Compacting…" : "Compact") {
               store.compactConversation(threadID: state.thread.id)
             }
-            .buttonStyle(.glassProminent).tint(theme.palette.accent.color)
+            .designButtonStyle(.primary, placement: .floating)
+            .foregroundStyle(theme.palette.onAccent.color)
             .disabled(!store.canCompactConversation(state.thread) || busy)
             .accessibilityIdentifier("compact-context")
           }
+          .foregroundStyle(WebGlass.textMuted.color)
+          .padding(.horizontal, 16)
         }
       }
     }

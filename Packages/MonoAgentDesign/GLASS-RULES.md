@@ -19,9 +19,10 @@ There are two kinds of floating surface:
 - **Text-carrying sheets and popovers** use the system material plus the frosted web veil.
   This covers the context sheet and iPad popover, run settings, the skill browser, the
   peer-question sheet, quote selection, console management and the connection editor, MCP
-  consent, and the composer's job shelf, suggestion popover and status line.
+  consent, project/tag settings, the wake editor, custom conversation/tag/project-picker
+  menus, and the composer's job shelf, suggestion popover and status line.
 - **Compact floating controls** stay pure glass with no veil. This covers the composer root,
-  header tiles, jump-to-latest, footer pills, toolbars and menus.
+  header tiles, jump-to-latest, footer pills, toolbars and native system menus.
 
 1. **One material per surface.** Never put a solid web panel or surface fill on or inside
    glass. Bands, bodies, cards and footers inside a sheet have no fill of their own.
@@ -131,6 +132,21 @@ the plain material and at the opaque large detent, though, it renders as a pale 
 3.2:1 (`#7e7e7b` on `#e4e4e1`) and 3.44:1 (`#8a8a8e` on white). In dark mode it measured 3.3:1. The web-derived colours above are therefore the
 default. Over very strong bleed (a dark code block directly behind the light medium sheet),
 these colours alone are insufficient; the approved frosted veil now resolves that case.
+
+### Organize surfaces
+
+Project/tag editors and the wake editor use `.webSheetVeil()` edge to edge. Their fields and
+destructive-action groups use quiet group ink; headings, counters and explanatory labels use
+the glass muted role. `OrganizeSheetHeader` keeps a plain ✕ (spoken as Cancel), a hairline,
+and the floating primary Save action with its opaque accessibility fallback. The wake day
+choices use selected/group inks with explicit checkmarks, not seven nested glass surfaces.
+
+Custom tag, conversation-action and project-picker popovers use the standard veil too.
+`OrganizeMenuScroll` still owns only bounded scrolling, never a second material; menu details
+and `WakeSummaryView` resolve muted text from `webMaterial`. Native rename alerts, destructive
+alerts/confirmation dialogs and the dashboard context menu retain the system appearance.
+The project page stays solid web content; header tiles remain compact glass controls and its
+inline context Edit action is plain web text, not glass on a content card.
 
 ## Apple guidance this relies on
 

@@ -36,6 +36,7 @@ struct ProjectScreen: View {
           .buttonStyle(WebTileButtonStyle(.accent)).disabled(creating || !store.canOrganize)
           .accessibilityIdentifier("project-new-conversation")
       }.webFont(.conversationTitle).padding(.horizontal, 17).padding(.vertical, 7)
+        .webGlassContent()
       ScrollView {
         if let project {
           VStack(alignment: .leading, spacing: 16) {
@@ -56,7 +57,9 @@ struct ProjectScreen: View {
                 Eyebrow("Context")
                 Spacer()
                 Button("Edit") { editor = .init(sourceID: sourceID, projectID: projectID) }
-                  .webQuietPill()
+                  .buttonStyle(.plain).webFont(.footer)
+                  .foregroundStyle(theme.palette.accent.color)
+                  .frame(minWidth: 44, minHeight: DesignMetrics.minimumHitTarget)
               }
               Text(
                 project.context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

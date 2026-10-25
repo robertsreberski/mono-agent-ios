@@ -406,7 +406,7 @@ struct ConversationScreen: View {
       .disabled(!store.canOrganize)
       .padding(4)
       .frame(width: 280)
-
+      .webSheetVeil()
       .presentationCompactAdaptation(.popover)
       .task { if let thread { await store.refreshOrganizeLabels(sourceID: thread.sourceId) } }
       .onDisappear {

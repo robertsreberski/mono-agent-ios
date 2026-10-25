@@ -17,7 +17,7 @@ struct ConversationTags: View {
       ForEach(tags.filter { thread.tagIds.contains($0.id) }, id: \.id) { tag in
         TagBadge(tag.name, color: LabelColor(serverValue: tag.color))
           .padding(.horizontal, 8).frame(minHeight: 20)
-          .background(WebColor.surfaceHover.color, in: Capsule())
+          .background(WebGlass.selectedFill.color, in: Capsule())
       }
       Button {
         editing = false
@@ -28,7 +28,7 @@ struct ConversationTags: View {
           if thread.tagIds.isEmpty { Text("Add tag").webFont(.breadcrumb) }
         }.frame(minWidth: 28, minHeight: 32).contentShape(Rectangle())
       }
-      .buttonStyle(.plain).foregroundStyle(WebColor.textMuted.color)
+      .buttonStyle(.plain).foregroundStyle(WebGlass.textMuted.color)
       .accessibilityLabel("Conversation tags")
       .accessibilityValue(
         thread.tagIds.isEmpty
@@ -42,7 +42,7 @@ struct ConversationTags: View {
             OrganizeMenuRow("Edit tags", systemImage: "chevron.left") { editing = false }
           }
           if tags.isEmpty {
-            Text("No tags yet").webFont(.system).foregroundStyle(WebColor.textMuted.color).padding(
+            Text("No tags yet").webFont(.system).foregroundStyle(WebGlass.textMuted.color).padding(
               12)
           }
           ForEach(tags, id: \.id) { tag in
@@ -74,7 +74,7 @@ struct ConversationTags: View {
             .accessibilityIdentifier("tag-menu-\(tag.id)")
           }
           if !editing {
-            Rectangle().fill(WebColor.line.color).frame(height: 1).padding(.vertical, 4)
+            WebHairline().padding(.vertical, 4)
             OrganizeMenuRow("New tag…", systemImage: "plus") {
               pendingEditor = .init(sourceID: thread.sourceId, threadID: thread.id)
               open = false
@@ -88,6 +88,7 @@ struct ConversationTags: View {
         .accessibilityIdentifier("tag-picker-scroll")
         .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
         .padding(4).frame(width: 280)
+        .webSheetVeil()
         .presentationCompactAdaptation(.popover)
         .task { await store.refreshOrganizeLabels(sourceID: thread.sourceId) }
         .onDisappear {
