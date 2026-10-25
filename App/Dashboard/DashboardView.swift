@@ -95,7 +95,9 @@ struct DashboardView: View {
   // MARK: Body
 
   @Environment(\.dynamicTypeSize) private var typeSize
+  @Environment(\.agentSettingsEntry) private var settingsEntry
   @FocusState private var searchFocused: Bool
+  @AccessibilityFocusState private var settingsButtonFocused: Bool
 
   var body: some View {
     #if DEBUG
@@ -183,39 +185,89 @@ struct DashboardView: View {
     DashboardBanner.subtitle(console: consoleName, inputs: statusInputs)
   }
 
-  /// Web `.dashboard-header`: eyebrow console name, the agent name, and the action tiles.
-  private var header: some View {
-    HStack(alignment: .center, spacing: 12) {
-      VStack(alignment: .leading, spacing: 3) {
-        // The web eyebrow is the console name; a non-live state is appended in words.
-        Eyebrow(
-          statusLine.hasSuffix(" · Online") ? String(statusLine.dropLast(9)) : statusLine)
-        Text(selectedAgent?.label ?? consoleName)
-          .webFont(.agentName)
-          .foregroundStyle(WebColor.text.color)
-          .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-          .accessibilityAddTraits(.isHeader)
+  /// Web `.dashboard-header`: eyebrow console name, the agent name, and the action tiles
+  /// (Consoles, then the web's notifications, agent settings and new conversation). At
+  /// accessibility sizes the tiles wrap below the title.
+  @ViewBuilder private var header: some View {
+    if typeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: 8) {
+        headerTitle
+        headerActions
       }
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel("\(selectedAgent?.label ?? consoleName), \(statusLine)")
-      Spacer(minLength: 0)
-      // 36 pt tiles in 44 pt hit targets: the visible gap is the web's 8 px.
-      GlassEffectContainer(spacing: 8) {
-        HStack(spacing: 0) {
-          Button("Consoles", systemImage: "slider.horizontal.3") { manageConsoles() }
-            .buttonStyle(WebTileButtonStyle())
-            .accessibilityIdentifier("consoles-button")
-          Button("New conversation", systemImage: "plus") { newConversation() }
-            .buttonStyle(WebTileButtonStyle(.accent))
-            .disabled(selectedAgentID == nil)
-            .accessibilityIdentifier("new-conversation")
-        }
+      .padding(.horizontal, WebSpace.dashboardGutter)
+      .padding(.vertical, 7)
+    } else {
+      HStack(alignment: .center, spacing: 12) {
+        headerTitle
+        Spacer(minLength: 0)
+        headerActions
       }
-      .padding(.trailing, -4)
+      .padding(.horizontal, WebSpace.dashboardGutter)
+      .padding(.vertical, 7)
+      .frame(minHeight: WebMetrics.headerHeight)
     }
-    .padding(.horizontal, WebSpace.dashboardGutter)
-    .padding(.vertical, 7)
-    .frame(minHeight: WebMetrics.headerHeight)
+  }
+
+  private var headerTitle: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      // The web eyebrow is the console name; a non-live state is appended in words.
+      Eyebrow(
+        statusLine.hasSuffix(" · Online") ? String(statusLine.dropLast(9)) : statusLine)
+      Text(selectedAgent?.label ?? consoleName)
+        .webFont(.agentName)
+        .foregroundStyle(WebColor.text.color)
+        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+        .accessibilityAddTraits(.isHeader)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("\(selectedAgent?.label ?? consoleName), \(statusLine)")
+  }
+
+  private var headerActions: some View {
+    // 36 pt tiles in 44 pt hit targets: the visible gap is the web's 8 px.
+    GlassEffectContainer(spacing: 8) {
+      HStack(spacing: 0) {
+        Button("Consoles", systemImage: "server.rack") { manageConsoles() }
+          .buttonStyle(WebTileButtonStyle())
+          .accessibilityIdentifier("consoles-button")
+        NotificationsButton(store: store)
+        settingsButton
+        Button("New conversation", systemImage: "plus") { newConversation() }
+          .buttonStyle(WebTileButtonStyle(.accent))
+          .disabled(selectedAgentID == nil)
+          .accessibilityIdentifier("new-conversation")
+      }
+    }
+    .padding(.trailing, typeSize.isAccessibilitySize ? 0 : -4)
+    .padding(.leading, typeSize.isAccessibilitySize ? -4 : 0)
+  }
+
+  /// Web `.agent-settings-button`: opens over the current screen, a second press closes it
+  /// where the dashboard stays visible, and a dot marks an unsaved run-defaults draft.
+  private var settingsButton: some View {
+    let unsaved = selectedAgentID.map { store.hasUnsavedRunDefaults($0) } ?? false
+    return Button("Agent settings", systemImage: "slider.horizontal.3") {
+      settingsEntry.toggle()
+    }
+    .buttonStyle(WebTileButtonStyle())
+    .overlay(alignment: .topTrailing) {
+      if unsaved {
+        Circle().fill(WebColor.warning.color).frame(width: 6, height: 6)
+          .offset(x: -9, y: 9)
+          .accessibilityHidden(true)
+          .accessibilityIdentifier("agent-settings-dot")
+      }
+    }
+    .disabled(selectedAgentID == nil)
+    .accessibilityValue(
+      (settingsEntry.isOpen ? "Expanded" : "Collapsed") + (unsaved ? ", unsaved changes" : "")
+    )
+    .accessibilityIdentifier("agent-settings-button")
+    .accessibilityFocused($settingsButtonFocused)
+    .onChange(of: settingsEntry.isOpen) { wasOpen, isOpen in
+      // Closing returns VoiceOver to the invoker (web `settingsInvokerRef`).
+      if wasOpen && !isOpen { settingsButtonFocused = true }
+    }
   }
 
   // MARK: Banners

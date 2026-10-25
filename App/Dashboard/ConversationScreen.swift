@@ -16,6 +16,8 @@ struct ConversationScreen: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.dismiss) private var dismiss
   @State private var onScreen = false
+  /// Agent settings covering this screen: the transcript is retained but not visible or read.
+  @Environment(\.coveredBySettings) private var covered
   /// A new conversation created by this screen's composer (C8); the route stays unchanged.
   @State private var createdThreadID: String?
   @State private var screenWidth: CGFloat = 402
@@ -155,6 +157,7 @@ struct ConversationScreen: View {
     }
     .onChange(of: thread?.id) { old, new in if old != nil && new == nil { navigate(nil) } }
     .onChange(of: store.selectedBucket) { applyVisibility() }
+    .onChange(of: covered) { applyVisibility() }
   }
 
   private struct ArchiveObservation: Equatable {
@@ -175,7 +178,7 @@ struct ConversationScreen: View {
   /// `select` resets the Store's visibility; re-assert it whenever selection or scene changes.
   private func applyVisibility() {
     if let visible = TranscriptVisibility.command(
-      onScreen: onScreen, sceneActive: scenePhase == .active,
+      onScreen: onScreen && !covered, sceneActive: scenePhase == .active,
       selectedThreadID: store.selectedThreadID, threadID: threadID)
     {
       store.markVisible(visible)
