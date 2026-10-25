@@ -103,6 +103,37 @@ import Testing
       #expect(try LaunchConfiguration(arguments: ["--scenario", "agent-settings"]).settings == nil)
     }
 
+    /// Web `run-controls.ts`: a blank new-conversation choice shows the console's saved run
+    /// defaults (`runSettings.effective`), immediately after a save; threads keep their own.
+    @Test func newConversationSelectorShowsSavedRunDefaultsAfterASave() async throws {
+      let model = AppModel(scenario: .consoleOnline, storeScenario: .agentSettings)
+      await model.start()
+      let store = try #require(model.store)
+      for _ in 0..<600 where store.connection != .live || !store.canWriteAgentSettings {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      let atlas = DashboardFixture.atlas
+      let composer = ComposerController(store: store, sourceID: atlas, threadID: nil)
+      let existing = ComposerController(
+        store: store, sourceID: atlas, threadID: DashboardFixture.openThreadID)
+      func summary(_ controller: ComposerController) -> String {
+        ModelOptions.summary(
+          controller.selectorAgent, model: controller.runModel, effort: controller.runEffort)
+      }
+      #expect(summary(composer) == "Sample Large · Medium")
+      store.editRunDefaults(sourceID: atlas, .init(model: "sample:small", effort: "low"))
+      store.saveRunDefaults(sourceID: atlas, summary: "Sample Small · Low")
+      for _ in 0..<600 where store.agent(atlas)?.runSettings.override == nil {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      #expect(summary(composer) == "Sample Small · Low", "the new conversation inherits the save")
+      #expect(!composer.hasRunOverride, "inheriting is not a local choice; creation omits it")
+      #expect(summary(existing) == "Sample Large · Medium", "existing conversations keep theirs")
+      composer.setModel("sample:large")
+      #expect(summary(composer).hasPrefix("Sample Large"), "an explicit choice wins")
+      await store.stop()
+    }
+
     @Test func settingsScenariosAreServedByTheSettingsScript() {
       for scenario in StoreScenario.allCases {
         #expect(
