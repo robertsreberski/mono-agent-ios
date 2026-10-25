@@ -57,10 +57,12 @@ extension ConsoleStore {
     else {
       return
     }
+    // A "loading" state is authoritative only while this generation/lifetime's own flight is
+    // open (checked above). Otherwise it was left by a flight a stop or background abandoned,
+    // and the resource must be fetched again rather than wait for an answer it will reject.
     if let existing = modelCatalog(sourceID: sourceID).providers[provider],
-      existing.status != .failed,
-      existing.status == .loading
-        || now.timeIntervalSince(existing.fetchedAt ?? .distantPast) < ModelCatalogBounds.ttl
+      existing.status == .loaded,
+      now.timeIntervalSince(existing.fetchedAt ?? .distantPast) < ModelCatalogBounds.ttl
     {
       return
     }

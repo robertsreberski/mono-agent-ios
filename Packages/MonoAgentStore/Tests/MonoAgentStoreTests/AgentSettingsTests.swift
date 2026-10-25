@@ -444,6 +444,27 @@ func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
     #expect(state?.status == .loaded && state?.models.map(\.id) == ["g2"], "G1 cannot clobber G2")
   }
 
+  /// Review regression: a stop/background epoch advance abandons the open flight; a new ensure
+  /// for the same generation must fetch again instead of trusting the stale "loading" state.
+  @Test func epochAdvanceDoesNotStrandTheCatalogOnAStaleLoadingState() async throws {
+    let h = try await live()
+    await h.transport.set(path, [.paused, .response(try page(["fresh"], next: nil))])
+    let first = Task { await h.store.ensureProviderCatalog(sourceID: source, provider: "sample") }
+    await eventually { await h.transport.pauseCount() == 1 }
+    await h.store.stopEffects()
+    h.store.connection = .live
+    await h.store.ensureProviderCatalog(sourceID: source, provider: "sample")
+    #expect(await h.transport.count(path) == 2, "the new lifetime requested its own page")
+    #expect(
+      h.store.modelCatalog(sourceID: source).providers["sample"]?.models.map(\.id) == ["fresh"])
+    await h.transport.release(try page(["old"], next: nil))
+    await first.value
+    let state = h.store.modelCatalog(sourceID: source).providers["sample"]
+    #expect(state?.status == .loaded)
+    #expect(
+      state?.models.map(\.id) == ["fresh"], "the abandoned flight neither publishes nor fails it")
+  }
+
   @Test func singleFlightAndGenerationChangeInvalidates() async throws {
     let h = try await live()
     await h.transport.set(path, [.paused, .response(try page(["new"], next: nil))])
