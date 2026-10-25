@@ -53,6 +53,40 @@ struct ComposerSupportTests {
     await h.store.stop()
   }
 
+  @Test func sameContextReselectionDoesNotAbandonTheDraft() async throws {
+    let h = Harness()
+    try await live(h)
+    try h.seed()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    await h.store.setDraft(
+      sourceID: "agent-example", threadID: "thread-example", text: "Sample draft")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    let selection = h.store.selection
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    #expect(h.store.selection == selection, "reappearing in the same context is not abandonment")
+    #expect(h.store.stagedAttachments.map(\.id) == ["upload-example"])
+    #expect(
+      h.store.draft(sourceID: "agent-example", threadID: "thread-example")?.text == "Sample draft")
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    await h.store.stop()
+  }
+
+  @Test func backgroundDoesNotAbandonStagedAttachments() async throws {
+    let h = Harness()
+    try await live(h)
+    try h.seed()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    await h.store.setDraft(
+      sourceID: "agent-example", threadID: "thread-example", text: "Sample draft")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    await h.store.scenePhaseChanged(.background)
+    #expect(h.store.stagedAttachments.map(\.id) == ["upload-example"])
+    #expect(
+      h.store.draft(sourceID: "agent-example", threadID: "thread-example")?.text == "Sample draft")
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    await h.store.stop()
+  }
+
   @Test func stagingReportsProgressAndSingleChipRemovalDeletesOnlyThatFile() async throws {
     let routes = RouteTransport()
     let transport = UploadRouteTransport(routes)
