@@ -128,8 +128,8 @@ struct DashboardView: View {
     .sheet(item: $tagEditor) { TagSettings(store: store, request: $0) }
     .sheet(item: $projectEditor) { request in
       ProjectSettings(store: store, request: request) { project in
-        route = .project(
-          profile: store.profile.id, sourceID: project.sourceId, projectID: project.id)
+        open(
+          .project(profile: store.profile.id, sourceID: project.sourceId, projectID: project.id))
       }
     }
     .task(id: ready) { if ready { updateSearch() } }
@@ -491,7 +491,7 @@ struct DashboardView: View {
         target: target, identifier: identifier, content: content,
         selected: selectable && route == target,
         wakeStatus: thread?.wakeSchedule.map { WakeScheduleModel.status($0) }),
-      select: { route = $0 }
+      select: { open($0) }
     ).equatable()
       .contextMenu {
         if case .conversation(_, _, let id, _) = target,
@@ -595,7 +595,7 @@ struct DashboardView: View {
         content: DashboardRows.running(
           thread, agent: agent, confirmed: store.isRunningConfirmed(threadID: thread.id),
           projects: store.projects, now: now),
-        selected: selectable && route == target, running: true), select: { route = $0 }
+        selected: selectable && route == target, running: true), select: { open($0) }
     ).equatable()
       .padding(.horizontal, -WebSpace.rowPaddingHorizontal)
   }
@@ -861,7 +861,13 @@ struct DashboardView: View {
 
   private func newConversation() {
     guard let agent = selectedAgentID else { return }
-    route = .newConversation(profile: store.profile.id, sourceID: agent)
+    open(.newConversation(profile: store.profile.id, sourceID: agent))
+  }
+
+  /// An explicit destination: closes agent settings even when the route is unchanged.
+  private func open(_ target: AppRoute) {
+    settingsEntry.close()
+    route = target
   }
 
   private func selectAgent(_ id: String) {

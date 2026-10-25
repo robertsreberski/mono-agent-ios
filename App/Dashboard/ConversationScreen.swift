@@ -88,7 +88,7 @@ struct ConversationScreen: View {
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .modifier(
-      ConversationTopBar(compact: sizeClass != .regular) {
+      ConversationTopBar(compact: sizeClass != .regular, covered: covered) {
         compactHeader
       }
     )
@@ -469,6 +469,8 @@ struct ConversationScreen: View {
 /// (GLASS-RULES.md). Swipe-back stays available through `InteractivePopRestorer`.
 private struct ConversationTopBar<Bar: View>: ViewModifier {
   let compact: Bool
+  /// Agent settings covers the iPad detail: the system bar shows none of this conversation.
+  var covered = false
   @ViewBuilder let bar: () -> Bar
 
   func body(content: Content) -> some View {
@@ -479,7 +481,7 @@ private struct ConversationTopBar<Bar: View>: ViewModifier {
         .scrollEdgeEffectStyle(.hard, for: .top)
         .background { InteractivePopRestorer().frame(width: 0, height: 0) }
     } else {
-      content
+      content.toolbar(covered ? .hidden : .automatic, for: .navigationBar)
     }
   }
 }

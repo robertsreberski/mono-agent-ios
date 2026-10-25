@@ -57,7 +57,7 @@ import XCTest
     XCTAssertTrue(element(app, "settings-picker").waitForExistence(timeout: 10))
     // Both catalog pages arrive: the second Grove page proves the cursor walk.
     XCTAssertTrue(element(app, "settings-model-option-grove:deep").waitForExistence(timeout: 10))
-    XCTAssertTrue(element(app, "settings-model-option-sample:max").exists)
+    XCTAssertTrue(element(app, "settings-model-option-sample:max").waitForExistence(timeout: 10))
     WaitFor.selected(element(app, "settings-model-option-default"))
     XCTAssertTrue(element(app, "settings-context-1m").exists, "the default route offers 1M")
     capture(app, "agent-settings", appearance, variant: "picker")
@@ -243,6 +243,97 @@ import XCTest
       WaitFor.hittable(element(app, "agent-strip"))
       WaitFor.value(button, contains: "Collapsed")
     }
+  }
+
+  // MARK: iPad round trips: the covered destination is retained, not remounted
+
+  /// Settings covers a retained conversation: its quote, draft and staged sample files survive
+  /// an open/close round trip. Staged uploads surviving also proves the conversation was not
+  /// re-selected (selecting discards staged uploads).
+  func testRoundTripKeepsQuoteDraftAndAttachments() throws {
+    try XCTSkipUnless(isPad, "iPhone settings is a full-screen cover over the dashboard")
+    let app = launch("composer-draft-attachments", "light")
+    let field = element(app, "composer-field")
+    XCTAssertTrue(field.waitForExistence(timeout: 15))
+    WaitFor.value(field, contains: "Draft kept from an earlier visit")
+    element(app, "composer-attach").tap()
+    XCTAssertTrue(element(app, "attach-samples").waitForExistence(timeout: 5))
+    element(app, "attach-samples").tap()
+    XCTAssertTrue(element(app, "attachment-field-notes.txt").waitForExistence(timeout: 10))
+    let message = element(app, "message-sample-assistant")
+    XCTAssertTrue(message.waitForExistence(timeout: 10))
+    message.press(forDuration: 1.2)
+    let quote = app.buttons["Quote"].firstMatch
+    XCTAssertTrue(quote.waitForExistence(timeout: 5))
+    quote.tap()
+    XCTAssertTrue(element(app, "quote-preview").waitForExistence(timeout: 5))
+    let button = element(app, "agent-settings-button")
+    button.tap()
+    waitForSettings(app)
+    WaitFor.absent(element(app, "quote-preview"))
+    WaitFor.absent(field)
+    element(app, "agent-settings-close").tap()
+    WaitFor.absent(element(app, "agent-settings-screen"))
+    XCTAssertTrue(element(app, "quote-preview").waitForExistence(timeout: 10), "quote kept")
+    XCTAssertTrue(element(app, "attachment-field-notes.txt").exists, "staged file kept")
+    XCTAssertTrue(element(app, "attachment-sample-photo.png").exists, "staged file kept")
+    WaitFor.value(field, contains: "Draft kept from an earlier visit")
+  }
+
+  /// After the first send from a new-conversation route, closing settings returns to the
+  /// created conversation, not a blank new one.
+  func testRoundTripAfterFirstSendReturnsToTheCreatedThread() throws {
+    try XCTSkipUnless(isPad, "iPhone settings is a full-screen cover over the dashboard")
+    let app = launch("composer-empty", "light")
+    element(app, "new-conversation").tap()
+    XCTAssertTrue(element(app, "composer-placeholder").waitForExistence(timeout: 10))
+    let field = element(app, "composer-field")
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.tap()
+    field.typeText("Plan the sample launch")
+    element(app, "composer-send").tap()
+    let reply = app.descendants(matching: .any).matching(
+      NSPredicate(format: "label CONTAINS %@", "Synthetic reply: received “Plan the sample launch”")
+    ).firstMatch
+    XCTAssertTrue(reply.waitForExistence(timeout: 15))
+    element(app, "agent-settings-button").tap()
+    waitForSettings(app)
+    WaitFor.absent(reply)
+    element(app, "agent-settings-close").tap()
+    WaitFor.absent(element(app, "agent-settings-screen"))
+    XCTAssertTrue(reply.waitForExistence(timeout: 10), "the created conversation is shown")
+    XCTAssertFalse(element(app, "composer-placeholder").exists, "not a blank new conversation")
+  }
+
+  /// Reselecting the conversation already underneath is an explicit choice: settings closes.
+  func testReselectingTheCoveredConversationClosesSettings() throws {
+    try XCTSkipUnless(isPad, "the sidebar is covered on iPhone")
+    let app = launch("agent-settings", "light")
+    let row = element(app, "running-row-t-atlas-launch")
+    row.tap()
+    XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 15))
+    element(app, "agent-settings-button").tap()
+    waitForSettings(app)
+    WaitFor.absent(element(app, "conversation-transcript"))
+    row.tap()
+    WaitFor.absent(element(app, "agent-settings-screen"))
+    XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
+    WaitFor.value(element(app, "agent-settings-button"), contains: "Collapsed")
+  }
+
+  /// Switching agent in the sidebar retargets open settings to that agent and keeps it open.
+  func testSwitchingAgentRetargetsOpenSettings() throws {
+    try XCTSkipUnless(isPad, "the sidebar is covered on iPhone")
+    let app = launch("agent-settings", "light")
+    element(app, "running-row-t-atlas-launch").tap()
+    XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 15))
+    element(app, "agent-settings-button").tap()
+    waitForSettings(app)
+    WaitFor.label(element(app, "agent-settings-title"), contains: "Atlas Research")
+    element(app, "agent-tile-agent-quill").tap()
+    WaitFor.label(element(app, "agent-settings-title"), contains: "Quill Writer")
+    XCTAssertTrue(element(app, "agent-settings-screen").exists, "settings stays open")
+    WaitFor.value(element(app, "agent-settings-button"), contains: "Expanded")
   }
 
   // MARK: Notifications

@@ -15,6 +15,9 @@ struct AgentSettingsEntry {
   var isOpen = false
   var open: @MainActor (AgentSettingsSection?) -> Void = { _ in }
   var toggle: @MainActor () -> Void = {}
+  /// An explicit destination choice (row, project, new conversation) closes settings, even
+  /// when it reselects the destination already underneath. Agent switching does not.
+  var close: @MainActor () -> Void = {}
 }
 
 extension EnvironmentValues {
@@ -71,6 +74,7 @@ struct AgentSettingsScreen: View {
       }
     }
     .background(theme.palette.panel.color.ignoresSafeArea())
+    .background(SettingsAccessibilityAnchor())
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("agent-settings-screen")
   }

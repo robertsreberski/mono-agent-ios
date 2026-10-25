@@ -24,6 +24,9 @@ struct DashboardShell: View {
   @State private var launched = false
   /// Transient agent settings: covers the current context without replacing `route`.
   @State private var settings: AgentSettingsPresentation?
+  /// Regular width: where the detail column is, so settings covers exactly that column.
+  @State private var detailFrame: CGRect = .zero
+  @State private var splitFrame: CGRect = .zero
   /// Search lives here so a size-class change (rotation, iPad resizing) keeps the query.
   @State private var query: String
   @State private var search: ThreadSearchModel
@@ -61,26 +64,48 @@ struct DashboardShell: View {
           dashboard(selectable: true)
             .navigationSplitViewColumnWidth(min: 320, ideal: WebMetrics.dashboardColumn, max: 520)
         } detail: {
-          // Regular: settings is the detail with a ✕; the sidebar stays usable and retargets it.
-          // The covered destination leaves the column (so no part of it is reachable) while its
-          // route, draft and selection stay in the shell and Store; closing remounts it.
-          if let settings {
-            AgentSettingsScreen(
-              store: store, sourceID: store.dashboardAgentID, target: settings.target,
-              layout: .split, close: closeSettings)
-          } else {
-            NavigationStack {
-              detail(regularDetailRoute).id(regularDetailRoute)
-            }
+          // Regular: the covered destination stays mounted (composer, quote, uploads, transcript
+          // follow and MCP sessions survive) but is invisible, untouchable and withdrawn from
+          // VoiceOver. Settings is drawn over the detail column from outside the split view.
+          NavigationStack {
+            detail(regularDetailRoute).id(regularDetailRoute)
+              .accessibilityHidden(settings != nil)
+              .background(CoveredAccessibility(covered: settings != nil))
+          }
+          .environment(\.coveredBySettings, settings != nil)
+          .opacity(settings == nil ? 1 : 0)
+          .allowsHitTesting(settings == nil)
+          .onGeometryChange(for: CGRect.self) {
+            $0.frame(in: .global)
+          } action: {
+            detailFrame = $0
           }
         }
         .navigationSplitViewStyle(.balanced)
+        .onGeometryChange(for: CGRect.self) {
+          $0.frame(in: .global)
+        } action: {
+          splitFrame = $0
+        }
+        // Settings is the detail with a ✕; the sidebar stays usable and retargets it. It lives
+        // outside the split view's column hosts, so withdrawing the covered column from
+        // accessibility never withdraws settings.
+        .overlay(alignment: .topLeading) {
+          if let settings, detailFrame.width > 0 {
+            AgentSettingsScreen(
+              store: store, sourceID: store.dashboardAgentID, target: settings.target,
+              layout: .split, close: closeSettings
+            )
+            .frame(width: detailFrame.width, height: detailFrame.height)
+            .offset(x: detailFrame.minX - splitFrame.minX, y: detailFrame.minY - splitFrame.minY)
+          }
+        }
       } else {
         // Compact: a full-size screen with Back over the retained stack, route and scroll. The
         // cover's modal presentation keeps VoiceOver and touches out of the covered context.
         NavigationStack(path: path) {
           dashboard(selectable: false)
-            .background(CoveredAccessibility(covered: settings != nil))
+            .background(CoveredAccessibility(covered: settings != nil, scope: .presenter))
             .navigationDestination(for: AppRoute.self) { detail($0) }
         }
         .environment(\.coveredBySettings, settings != nil)
@@ -111,8 +136,9 @@ struct DashboardShell: View {
       }
     #endif
     .onChange(of: route) { old, new in
-      // Opening a conversation (sidebar or link) closes settings, as on the web.
-      if old != new, settings != nil { settings = nil }
+      // Opening a destination closes settings, as on the web. Switching agent may clear the
+      // route (nil); settings then retargets to the new agent and stays open.
+      if old != new, new != nil, settings != nil { closeSettings() }
     }
     .environment(
       \.openNewConversation,
@@ -195,7 +221,8 @@ struct DashboardShell: View {
         } else {
           openSettings(nil)
         }
-      })
+      },
+      close: { if settings != nil { closeSettings() } })
   }
 
   /// A new intent for the same section is still an explicit navigation.
@@ -249,35 +276,6 @@ struct DashboardShell: View {
       restored.profile == store.profile.id
     {
       route = restored
-    }
-  }
-}
-
-/// Hides the covered compact stack from VoiceOver while the settings cover is presented.
-/// SwiftUI's `accessibilityHidden` stops at UIKit-hosted scroll views, so the hosting
-/// controller's own view is marked instead. The presented cover is not inside that view. The
-/// state stays retained; only accessibility is withdrawn, and restored when settings closes.
-private struct CoveredAccessibility: UIViewRepresentable {
-  let covered: Bool
-  func makeUIView(context: Context) -> UIView {
-    let view = UIView()
-    view.isUserInteractionEnabled = false
-    view.isAccessibilityElement = false
-    return view
-  }
-  func updateUIView(_ view: UIView, context: Context) {
-    let covered = covered
-    // After this update the marker is attached; walk to the stack that hosts it.
-    Task { @MainActor in
-      var responder: UIResponder? = view
-      while let current = responder, !(current is UIViewController) {
-        responder = current.next
-      }
-      guard let host = (responder as? UIViewController)?.view,
-        host.accessibilityElementsHidden != covered
-      else { return }
-      host.accessibilityElementsHidden = covered
-      UIAccessibility.post(notification: .screenChanged, argument: nil)
     }
   }
 }
