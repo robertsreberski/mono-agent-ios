@@ -104,7 +104,9 @@ class MatrixError(Exception):
     pass
 
 
-def surface(scenario):
+def surface(scenario, variant=None):
+    if scenario == "dashboard-populated" and variant and variant.startswith("consoles"):
+        return "connection"
     if scenario.startswith("design-catalog"):
         return "design catalog"
     if scenario.startswith("project-"):
@@ -211,7 +213,7 @@ def capture(family, device):
                                   scenario=scenario, appearance=appearance, variant=variant,
                                   textSize=entry["textSize"],
                                   transparency=entry["transparency"], theme=entry["theme"],
-                                  surface=surface(scenario),
+                                  surface=surface(scenario, variant),
                                   label="synthetic fixture", dimensions=dimensions))
     if test_failures:
         raise MatrixError(f"{family}: test batches failed: {'; '.join(test_failures)}")

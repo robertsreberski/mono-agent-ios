@@ -188,6 +188,16 @@ class ToolingTests(unittest.TestCase):
         self.assertTrue(any(entry["textSize"] != "standard" and entry["scenario"].startswith("design-catalog") for entry in MATRIX))
         self.assertTrue(any(entry["transparency"] != "system" for entry in MATRIX))
 
+    def test_console_variants_have_connection_surface_and_variant_metadata(self):
+        rows = [row for row in self.export(family="iPhone")
+                if row["scenario"] == "dashboard-populated" and (row.get("variant") or "").startswith("consoles")]
+        self.assertEqual(len(rows), 10)
+        for row in rows:
+            self.assertEqual(row["surface"], "connection")
+            self.assertEqual(row["textSize"], "accessibility XL (AX3)" if "ax3" in row["variant"] else "standard")
+            self.assertEqual(row["theme"], "evergreen")
+            self.assertEqual(row["transparency"], "system")
+
     def test_export_classifies_organize_surfaces(self):
         index = self.export(family="iPhone")
         for prefix, surface in (("project-", "project"), ("tag-", "tag"), ("wake-", "wake schedule"), ("organize-", "conversation")):
