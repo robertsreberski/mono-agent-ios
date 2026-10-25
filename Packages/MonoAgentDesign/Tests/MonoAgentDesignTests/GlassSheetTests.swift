@@ -84,6 +84,24 @@ struct GlassSheetTests {
     }
   }
 
+  /// Wake day chips use the theme accent as ink, never a second material. Their primary
+  /// labels/checkmarks keep AA in every theme, including Increase Contrast resolution.
+  @Test(arguments: ConsoleTheme.allCases)
+  func selectedWakeDayLabelsPassAA(_ theme: ConsoleTheme) {
+    let selected = GlassInk(theme.palette.accent, light: 0.12, dark: 0.20)
+    for scheme in schemes {
+      for contrast in contrasts {
+        for backdrop in WebGlass.referenceBackdrops(scheme) + [WebGlass.sampledBleed(scheme)] {
+          let sheet = WebGlass.sheetVeil.composited(over: backdrop, scheme, contrast: contrast)
+          let chip = selected.composited(over: sheet, scheme, contrast: contrast)
+          #expect(
+            WebColor.text.resolved(scheme, contrast: contrast).contrastRatio(with: chip) >= 4.5,
+            "\(theme) \(scheme) \(contrast) selected day on \(chip)")
+        }
+      }
+    }
+  }
+
   @Test func consentVeilIsAtLeastAsStrongAsStandard() {
     #expect(WebGlass.consentVeil.lightOpacity >= WebGlass.sheetVeil.lightOpacity)
     #expect(WebGlass.consentVeil.darkOpacity >= WebGlass.sheetVeil.darkOpacity)

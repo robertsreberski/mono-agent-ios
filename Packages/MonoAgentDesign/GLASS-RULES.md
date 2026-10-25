@@ -139,7 +139,9 @@ Project/tag editors and the wake editor use `.webSheetVeil()` edge to edge. Thei
 destructive-action groups use quiet group ink; headings, counters and explanatory labels use
 the glass muted role. `OrganizeSheetHeader` keeps a plain ✕ (spoken as Cancel), a hairline,
 and the floating primary Save action with its opaque accessibility fallback. The wake day
-choices use selected/group inks with explicit checkmarks, not seven nested glass surfaces.
+choices use accent ink with primary labels/checkmarks when selected, quiet group ink otherwise,
+not seven nested glass surfaces (`selectedWakeDayLabelsPassAA`). Accent secondary affordances
+keep `WebGlass.accentText`; they must not silently become neutral labels.
 
 Custom tag, conversation-action and project-picker popovers use the standard veil too.
 `OrganizeMenuScroll` still owns only bounded scrolling, never a second material; menu details

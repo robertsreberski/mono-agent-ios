@@ -131,6 +131,7 @@ struct WakeScheduleEditor: View {
         Button(failure.conflict ? "Load latest" : "Try again") {
           Task { await store.refreshWakeEditor(request.id, explicit: failure.conflict) }
         }
+        .foregroundStyle(WebGlass.accentText(theme.palette).color)
         .designButtonStyle(.secondary, placement: .floating).disabled(state?.busy != nil)
         .accessibilityIdentifier("wake-reload")
       }.accessibilityElement(children: .contain).accessibilityIdentifier("wake-error")
@@ -140,6 +141,7 @@ struct WakeScheduleEditor: View {
         Text("Load the latest version before saving. This replaces your unsaved changes.").webFont(
           .sheetSubtitle)
         Button("Load latest") { Task { await store.refreshWakeEditor(request.id, explicit: true) } }
+          .foregroundStyle(WebGlass.accentText(theme.palette).color)
           .designButtonStyle(.secondary, placement: .floating).disabled(state?.busy != nil)
       }
     }
@@ -198,10 +200,11 @@ struct WakeScheduleEditor: View {
             : action == .pause ? "Pause schedule" : "Resume schedule"
         ) {
           store.mutateWakeEditor(request.id, action: action)
-        }.designButtonStyle(.secondary, placement: .floating).disabled(
-          dirty || state?.busy != nil || (action == .resume && archived) || !store.canOrganize
-        )
-        .accessibilityIdentifier("wake-toggle")
+        }.foregroundStyle(WebGlass.accentText(theme.palette).color)
+          .designButtonStyle(.secondary, placement: .floating).disabled(
+            dirty || state?.busy != nil || (action == .resume && archived) || !store.canOrganize
+          )
+          .accessibilityIdentifier("wake-toggle")
       }
     }.padding(.bottom, 16).overlay(alignment: .bottom) {
       WebHairline()
@@ -252,7 +255,8 @@ struct WakeScheduleEditor: View {
                 next.times.remove(at: index)
                 store.editWakeDraft(request.id, draft: next)
               }
-              .labelStyle(.iconOnly).designButtonStyle(.secondary, placement: .floating)
+              .labelStyle(.iconOnly).foregroundStyle(WebGlass.accentText(theme.palette).color)
+              .designButtonStyle(.secondary, placement: .floating)
               .accessibilityIdentifier(
                 "wake-remove-time-\(index)")
             }
@@ -264,6 +268,7 @@ struct WakeScheduleEditor: View {
             next.times.append(WakeScheduleModel.nextTimeSlot(next.times))
             store.editWakeDraft(request.id, draft: next)
           }
+          .foregroundStyle(WebGlass.accentText(theme.palette).color)
           .designButtonStyle(.secondary, placement: .floating).accessibilityIdentifier(
             "wake-add-time")
         }
@@ -284,13 +289,17 @@ struct WakeScheduleEditor: View {
         store.editWakeDraft(request.id, draft: next)
       } label: {
         Text(WakeScheduleModel.shortDays[day])
+          .fontWeight(draft.days.contains(day) ? .semibold : .regular)
       }.buttonStyle(.plain).frame(minWidth: 44, minHeight: 44)
         .foregroundStyle(WebColor.text.color)
         .background(
-          draft.days.contains(day) ? WebGlass.selectedFill.color : WebGlass.groupFill.color,
+          draft.days.contains(day) ? theme.palette.accentInk : WebGlass.groupFill.color,
           in: RoundedRectangle(cornerRadius: 8)
         )
-        .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(WebGlass.hairline.color) }
+        .overlay {
+          RoundedRectangle(cornerRadius: 8).strokeBorder(
+            draft.days.contains(day) ? theme.palette.accent.color : WebGlass.hairline.color)
+        }
         .overlay(alignment: .bottom) {
           if draft.days.contains(day) {
             Image(systemName: "checkmark").font(.system(size: 7, weight: .bold)).offset(y: -1)
@@ -317,7 +326,8 @@ struct WakeScheduleEditor: View {
         .autocorrectionDisabled().padding(12).groupingFill().accessibilityIdentifier("wake-zone")
       Button("Use device timezone (\(TimeZone.current.identifier))") {
         binding(\.timezone).wrappedValue = TimeZone.current.identifier
-      }.designButtonStyle(.secondary, placement: .floating)
+      }.foregroundStyle(WebGlass.accentText(theme.palette).color)
+        .designButtonStyle(.secondary, placement: .floating)
       Text("Times stay in this timezone, including daylight saving changes.").webFont(
         .sheetSubtitle
       ).foregroundStyle(WebGlass.textMuted.color)
