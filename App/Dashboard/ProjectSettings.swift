@@ -47,7 +47,10 @@ struct ProjectSettings: View {
           } else {
             VStack(alignment: .leading, spacing: 8) {
               Eyebrow("Name")
-              TextField("Project name", text: $name).accessibilityIdentifier("project-name")
+              TextField(
+                "Project name", text: $name,
+                prompt: Text("Project name").foregroundStyle(WebGlass.textMuted.color)
+              ).accessibilityIdentifier("project-name")
                 .disabled(created != nil)
                 .padding(12).background(
                   WebGlass.groupFill.color, in: RoundedRectangle(cornerRadius: 8))
@@ -68,7 +71,8 @@ struct ProjectSettings: View {
               }
               TextField(
                 "Shared briefing for every conversation in this project", text: $context,
-                axis: .vertical
+                prompt: Text("Shared briefing for every conversation in this project")
+                  .foregroundStyle(WebGlass.textMuted.color), axis: .vertical
               )
               .lineLimit(5...10).padding(12)
               .background(

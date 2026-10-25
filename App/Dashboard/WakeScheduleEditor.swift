@@ -65,7 +65,8 @@ struct WakeScheduleEditor: View {
                   }
                   TextField(
                     "What should the agent pick up when it wakes?", text: binding(\.message),
-                    axis: .vertical
+                    prompt: Text("What should the agent pick up when it wakes?")
+                      .foregroundStyle(WebGlass.textMuted.color), axis: .vertical
                   )
                   .lineLimit(3...5).padding(12).groupingFill().accessibilityIdentifier(
                     "wake-message")
@@ -309,7 +310,10 @@ struct WakeScheduleEditor: View {
   private var zoneFields: some View {
     VStack(alignment: .leading, spacing: 8) {
       Eyebrow("Timezone")
-      TextField("Europe/Berlin", text: binding(\.timezone)).textInputAutocapitalization(.never)
+      TextField(
+        "Europe/Berlin", text: binding(\.timezone),
+        prompt: Text("Europe/Berlin").foregroundStyle(WebGlass.textMuted.color)
+      ).textInputAutocapitalization(.never)
         .autocorrectionDisabled().padding(12).groupingFill().accessibilityIdentifier("wake-zone")
       Button("Use device timezone (\(TimeZone.current.identifier))") {
         binding(\.timezone).wrappedValue = TimeZone.current.identifier
