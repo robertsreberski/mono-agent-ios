@@ -313,6 +313,52 @@ struct ProcessJobEventsTests {
     #expect(ProcessJobEvents.entries(for: parent, projection: project(messages)).count == 1)
     #expect(parent.parts == [.toolCall(call)])
   }
+  @Test func failedControlAndResultBearingParentCallsKeepTheirPayloadsReachable() throws {
+    var job = try self.job()
+    job.kind = "internal"
+    job.tool = "Agent"
+    job.instanceId = "sample-helper"
+    var call = try launch(job)
+    call.toolName = "AgentManage"
+    call.structuredResult = nil
+    call.args = .object(["id": .string("sample-helper"), "stop": .bool(true)])
+    call.status = "failed"
+    call.result = .string("Fictional control request refused")
+    func retained(_ call: WebToolCall) throws {
+      let parent = try message("parent", [.toolCall(call)])
+      let messages = try [parent, carrier(job)]
+      let shelf = JobShelf.items(messages: messages)
+      // Prove ownership would match; the payload guard, not a failed match, retains this row.
+      #expect(
+        JobShelf.timeline(try #require(shelf.first), messages: messages).contains {
+          if case .call(let value) = $0 { value.call.toolCallId == call.toolCallId } else { false }
+        })
+      let owned = ProcessJobEvents.shelfOwnedCalls(messages: messages, items: shelf)
+      #expect(!owned.contains(ProcessJobEvents.callKey(parent.id, call.toolCallId)))
+      #expect(
+        ProcessJobEvents.entries(
+          for: parent, projection: project(messages),
+          shelfOwnedCalls: owned
+        ).map(\.item) == [.part(.toolCall(call))])
+    }
+    try retained(call)
+    call.status = "complete"
+    try retained(call)
+    call.result = nil
+    call.structuredResult = .object(["diagnostic": .string("Fictional control details")])
+    try retained(call)
+    call.structuredResult = nil
+    call.argsTruncated = true
+    call.argsBytes = 50000
+    call.argsDigest = "sample-digest"
+    try retained(call)
+    call.argsTruncated = nil
+    call.argsBytes = nil
+    call.argsDigest = nil
+    call.resultTruncated = true
+    call.resultBytes = 50000
+    try retained(call)
+  }
   @MainActor @Test func proseArrivingOnAHiddenCarrierPublishesBeforeTheTurnSettles() throws {
     var source = try carrier(job("running"))
     source.status = "running"

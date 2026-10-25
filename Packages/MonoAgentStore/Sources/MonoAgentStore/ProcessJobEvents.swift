@@ -259,7 +259,16 @@ public enum ProcessJobEvents {
       items.filter { $0.family != nil }.flatMap { item in
         JobShelf.timeline(item, messages: messages).compactMap { step -> String? in
           guard case .call(let parent) = step else { return nil }
-          return callKey(parent.messageID, parent.call.toolCallId)
+          let call = parent.call
+          // The shelf currently exposes only the header and authored input. Keep diagnostics,
+          // output and preview-repair metadata on the ordinary row until it can render them too.
+          guard call.status == "complete", call.result == nil, call.structuredResult == nil,
+            call.argsTruncated != true, call.resultTruncated != true,
+            call.argsBytes == nil, call.argsDigest == nil,
+            call.resultBytes == nil, call.resultDigest == nil,
+            call.history?.persistence != "failed"
+          else { return nil }
+          return callKey(parent.messageID, call.toolCallId)
         }
       })
   }
