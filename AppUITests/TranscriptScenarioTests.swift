@@ -134,7 +134,9 @@ import XCTest
   /// Swipe toward older rows until the element is hittable (bounded).
   private func reveal(_ element: XCUIElement, in scroll: XCUIElement) -> Bool {
     for _ in 0..<40 {
-      if waitUntil(timeout: 1, { element.exists && element.isHittable }) { return true }
+      if element.exists && element.isHittable {
+        return waitUntil { element.exists && element.isHittable }
+      }
       scroll.swipeDown()
     }
     return waitUntil(timeout: 2) { element.exists && element.isHittable }
