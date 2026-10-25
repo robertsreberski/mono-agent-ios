@@ -18,7 +18,16 @@ struct SubagentPresentationTests {
     call.status = "failed"
     #expect(SubagentPresentation.meta(call) == "2 tools · 1.2s")
     call.costUsd = 0.12
-    #expect(SubagentPresentation.meta(call).contains("$0.12"))
+    #expect(SubagentPresentation.meta(call) == "2 tools · 1.2s")
+    call.knownCostUsd = 0.05
+    #expect(SubagentPresentation.meta(call) == "2 tools · 1.2s · Known cost $0.0500")
+    call.costUnknown = false
+    #expect(SubagentPresentation.meta(call) == "2 tools · 1.2s · $0.1200")
+    call.costUnknown = true
+    for invalid in [Double.nan, Double.infinity, -0.05, 0] {
+      call.knownCostUsd = invalid
+      #expect(SubagentPresentation.meta(call) == "2 tools · 1.2s")
+    }
   }
   @Test func routeRequiresEvidenceAndUsesTheDelegationsOwnEffectiveRoute() throws {
     var call = try TranscriptFixture.tool(1)

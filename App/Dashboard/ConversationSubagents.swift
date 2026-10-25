@@ -281,10 +281,15 @@ enum SubagentPresentation {
     let count = call.calls?.count ?? 0
     var parts = ["\(count) \(count == 1 ? "tool" : "tools")"]
     if let duration = TranscriptPresentation.duration(call.executionMs) { parts.append(duration) }
-    if let cost = call.costUsd, cost.isFinite, cost >= 0 {
-      parts.append(TranscriptPresentation.cost(.init(amount: cost)))
-    } else if let known = call.knownCostUsd, known.isFinite, known > 0 {
-      parts.append("Known cost " + TranscriptPresentation.cost(.init(amount: known)))
+    switch CostAmount(
+      amount: call.costUsd, unknown: call.costUnknown, knownSpend: call.knownCostUsd)
+    {
+    case .known(let amount):
+      parts.append(TranscriptPresentation.cost(.known(amount)))
+    case .unknown(let known):
+      if let known, known.isFinite, known > 0 {
+        parts.append("Known cost " + TranscriptPresentation.cost(.known(known)))
+      }
     }
     if call.history?.persistence == "failed" { parts.append("history not saved") }
     return parts.joined(separator: " · ")
