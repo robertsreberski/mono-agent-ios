@@ -41,7 +41,9 @@ enum WaitFor {
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     Self.element(element, timeout: timeout, "value without “\(text)”", file: file, line: line) {
-      !($0.value as? String ?? "").contains(text)
+      // A missing or non-string value proves nothing; require a real value without the text.
+      guard let value = $0.value as? String else { return false }
+      return !value.contains(text)
     }
   }
 
