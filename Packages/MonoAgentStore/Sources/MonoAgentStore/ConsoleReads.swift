@@ -29,7 +29,11 @@ extension ConsoleStore {
         if let active = value.activeThreads { applyFleet(active, fetchedAt: fetchedAt) }
         if selection == selected, let source = value.threadsSourceId {
           let key = BucketKey(sourceID: source, archived: selectedBucket?.archived ?? false)
-          if selectedBucket == nil { selectedBucket = key }
+          if selectedBucket == nil {
+            selectedBucket = key
+            await updateDraftAttachmentContext()
+            guard epoch == generation, selection == selected else { return }
+          }
           mergeBucket(
             key, rows: value.threads, cursor: value.threadsNextCursor, older: false,
             fresh: observation == began, fetchedAt: fetchedAt)

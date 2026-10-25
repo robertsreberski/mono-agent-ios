@@ -47,7 +47,9 @@ Screens must not instantiate API clients or submit directly.
   the authored draft still belongs to a source's new-conversation context; pass the staged
   attachment IDs as `retainingAttachments` so creation's own selection change keeps them.
   Reselecting the same context, run-state changes, refresh/reconnect and scene suspension keep
-  staged files and in-flight uploads in memory. Only explicit context abandonment (including
+  staged files and in-flight uploads in memory. Draft attachment ownership is keyed by source
+  and thread, not the sidebar archive filter. Archive/delete selection exits abandon that context
+  too. Only explicit context abandonment (including
   terminal Store stop), removal or confirmed admission clears them; suspension does not.
   Switching context cancels uploads and disposes reservations; bytes and capability URLs are
   never restored. `canSend`/`canUpload` mirror the web console: live connection, agent online

@@ -10,6 +10,8 @@ actor ControlledRepository: ConsoleRepository {
   let base: FileConsoleRepository
   var failAuthoredSaves: Set<Int> = []
   var authoredSaves = 0
+  var pauseAuthored = false
+  var authoredWaiter: CheckedContinuation<Void, Never>?
   var failJournalSaves: Set<Int> = []
   var journalSaves = 0
   var pauseJournal = false
@@ -19,6 +21,12 @@ actor ControlledRepository: ConsoleRepository {
   var cacheWaiter: CheckedContinuation<Void, Never>?
   init(directory: URL) { base = FileConsoleRepository(directory: directory) }
   func failAuthored(_ saves: Set<Int>) { failAuthoredSaves = saves }
+  func pauseNextAuthoredSave() { pauseAuthored = true }
+  func isAuthoredPaused() -> Bool { authoredWaiter != nil }
+  func releaseAuthored() {
+    authoredWaiter?.resume()
+    authoredWaiter = nil
+  }
   func failJournal(_ saves: Set<Int>) { failJournalSaves = saves }
   func pauseNextJournalSave() { pauseJournal = true }
   func isJournalPaused() -> Bool { journalWaiter != nil }
@@ -59,6 +67,10 @@ actor ControlledRepository: ConsoleRepository {
     async throws -> RepositorySaveResult
   {
     authoredSaves += 1
+    if pauseAuthored {
+      pauseAuthored = false
+      await withCheckedContinuation { authoredWaiter = $0 }
+    }
     if failAuthoredSaves.contains(authoredSaves) { throw ConsoleStorageError.unavailable }
     return try await base.saveAuthored(record, namespace: namespace)
   }

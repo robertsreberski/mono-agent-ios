@@ -11,7 +11,23 @@ public struct UploadProgressItem: Sendable, Equatable, Identifiable {
   public internal(set) var fraction: Double
 }
 
+/// Draft ownership is independent of the sidebar's active/archive listing filter.
+struct DraftAttachmentContext: Equatable {
+  var sourceID: String
+  var threadID: String?
+}
+
 extension ConsoleStore {
+  /// Call whenever the selected agent/thread changes, before any authored/network suspension.
+  func updateDraftAttachmentContext() async {
+    let next = selectedBucket.map {
+      DraftAttachmentContext(sourceID: $0.sourceID, threadID: selectedThreadID)
+    }
+    guard next != draftAttachmentContext else { return }
+    draftAttachmentContext = next
+    await discardStagedUploads()
+  }
+
   /// The agent that owns the selected composer context (a conversation or a new one).
   public var selectedAgent: WebAgentSummary? {
     let source = selectedConversation?.thread.sourceId ?? selectedBucket?.sourceID
@@ -39,7 +55,7 @@ extension ConsoleStore {
   /// Uploads and reservations are visible-context memory only. Nothing here enters a disk record.
   public func stageUploads(_ files: [UploadFile]) async throws {
     guard let limits = bootstrap?.limits, canUpload else { throw SubmissionError.notReady }
-    let selected = selection
+    let context = draftAttachmentContext
     let service = UploadService(api: api)
     let existing = stagedAttachments
     // Validate before any progress row appears, so a rejected pick shows only its error.
@@ -65,7 +81,7 @@ extension ConsoleStore {
     let attachments = try await task.value
     // Upload ownership follows the composer context, not the stream/scene epoch.
     // Cancellation still rejects a late transport completion after explicit abandonment.
-    guard selection == selected, !task.isCancelled, !stopped, !stopping else {
+    guard draftAttachmentContext == context, !task.isCancelled, !stopped, !stopping else {
       await service.discard(attachments)
       throw CancellationError()
     }

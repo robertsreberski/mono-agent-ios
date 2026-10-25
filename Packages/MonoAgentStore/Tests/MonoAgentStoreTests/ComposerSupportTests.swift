@@ -71,6 +71,45 @@ struct ComposerSupportTests {
     await h.store.stop()
   }
 
+  @Test func backgroundDuringSelectionFlushCannotMoveAttachmentsToTheNextConversation() async throws
+  {
+    let h = CorrectionHarness()
+    await h.store.hydrate()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    h.store.bootstrap = try JSONDecoder().decode(ApiBootstrap.self, from: Scenario.bootstrap.data)
+    h.store.started = true
+    h.store.connection = .live
+    await h.store.setDraft(
+      sourceID: "agent-example", threadID: "thread-example", text: "Sample draft")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    await h.repository.pauseNextAuthoredSave()
+    let selection = Task {
+      await h.store.select(sourceID: "agent-example", threadID: "thread-other")
+    }
+    await eventually { await h.repository.isAuthoredPaused() }
+    await h.store.scenePhaseChanged(.background)
+    await h.repository.releaseAuthored()
+    await selection.value
+    await h.store.scenePhaseChanged(.active)
+    await h.store.select(sourceID: "agent-example", threadID: "thread-other")
+    #expect(h.store.selectedThreadID == "thread-other")
+    #expect(h.store.stagedAttachments.isEmpty)
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 1)
+    await h.store.stop()
+  }
+
+  @Test func sidebarArchiveFilterDoesNotAbandonTheVisibleComposer() async throws {
+    let h = Harness()
+    try await live(h)
+    try h.seed()
+    await h.store.select(sourceID: "agent-example", threadID: "thread-example")
+    h.store.stagedAttachments = [try exampleAttachment()]
+    await h.store.select(sourceID: "agent-example", archived: true, threadID: "thread-example")
+    #expect(h.store.stagedAttachments.map(\.id) == ["upload-example"])
+    #expect(await h.transport.count("/api/v1/uploads/upload-example", method: "DELETE") == 0)
+    await h.store.stop()
+  }
+
   @Test func backgroundDoesNotAbandonStagedAttachments() async throws {
     let h = Harness()
     try await live(h)
@@ -87,7 +126,7 @@ struct ComposerSupportTests {
     await h.store.stop()
   }
 
-  @Test(arguments: [0, 1, 2, 3, 4])
+  @Test(arguments: [0, 1, 2, 3, 4, 5])
   func stagingReportsProgressAndSingleChipRemovalDeletesOnlyThatFile(transition: Int) async throws {
     let routes = RouteTransport()
     let transport = UploadRouteTransport(routes)
@@ -137,10 +176,11 @@ struct ComposerSupportTests {
     case 1: await store.scenePhaseChanged(.background)
     case 2: await store.stopEffects()  // A stream epoch change is not upload abandonment.
     case 3: await store.discardStagedUploads()
-    default: await store.select(sourceID: "other-agent")
+    case 4: await store.select(sourceID: "other-agent")
+    default: await store.select(sourceID: "agent-example", archived: true)
     }
     await routes.release(try response(uploaded))
-    if transition >= 3 {
+    if [3, 4].contains(transition) {
       do {
         try await staging.value
         Issue.record("Abandoned uploads must reject late completion")

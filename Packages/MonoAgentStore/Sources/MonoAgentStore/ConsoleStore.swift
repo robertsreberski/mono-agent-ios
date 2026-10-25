@@ -80,6 +80,7 @@ public final class ConsoleStore {
   public internal(set) var uploadProgress: [UploadProgressItem] = []
   /// Per-agent skill registries for the composer; memory only, refreshed on demand.
   public internal(set) var skillRegistries: [String: SkillRegistryState] = [:]
+  @ObservationIgnored var draftAttachmentContext: DraftAttachmentContext?
   @ObservationIgnored var uploadTasks: [UUID: Task<[WebAttachment], any Error>] = [:]
 
   @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
@@ -252,9 +253,13 @@ public final class ConsoleStore {
   public func select(sourceID: String, archived: Bool = false, threadID: String? = nil) async {
     // Reappearing may refresh detail, but is not a context abandonment.
     let bucket = BucketKey(sourceID: sourceID, archived: archived)
-    let changingContext = selectedBucket != bucket || selectedThreadID != threadID
+    let changingSelection = selectedBucket != bucket || selectedThreadID != threadID
+    let changingContext =
+      draftAttachmentContext
+      != DraftAttachmentContext(
+        sourceID: sourceID, threadID: threadID)
     pruneTombstones()
-    if changingContext {
+    if changingSelection {
       selection &+= 1
       invalidateMcpApps()
       visible = false
@@ -264,10 +269,11 @@ public final class ConsoleStore {
     let generation = epoch
     let selected = selection
     if changingContext {
+      // Abandon the old context before a background/epoch change can interrupt the flush.
+      await updateDraftAttachmentContext()
+      guard selection == selected else { return }
       draftTask?.cancel()
       await flushAuthored()
-      guard epoch == generation, selection == selected else { return }
-      await discardStagedUploads()
     }
     guard epoch == generation, selection == selected else { return }
     // The disk cache has 24 entries but memory holds eight. Restore a cold selection

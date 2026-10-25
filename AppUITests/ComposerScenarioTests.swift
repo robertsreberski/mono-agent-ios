@@ -75,7 +75,7 @@ import XCTest
       field.tap()
       field.typeText("Plan the sample launch")
     }
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Plan the sample launch”"))
     XCTAssertTrue(element(app, "conversation-transcript").exists, "The created thread is shown")
     XCTAssertEqual(fieldText(app), "", "Admission clears the sent draft")
@@ -90,7 +90,7 @@ import XCTest
     let nextField = composerField(app)
     nextField.tap()
     nextField.typeText("Plan a second sample")
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Plan a second sample”"))
     XCTAssertFalse(
       waitForText(app, "Synthetic reply: received “Plan the sample launch”", timeout: 1),
@@ -100,7 +100,7 @@ import XCTest
   private func draftAttachments(_ app: XCUIApplication, capture: () -> Void) {
     let field = composerField(app)
     XCTAssertTrue(fieldText(app).contains("Draft kept from an earlier visit"), "Draft restored")
-    element(app, "composer-attach").tap()
+    enabledElement(app, "composer-attach").tap()
     XCTAssertTrue(element(app, "attach-samples").waitForExistence(timeout: 5))
     XCTAssertTrue(element(app, "attach-files").exists && element(app, "attach-photos").exists)
     element(app, "attach-samples").tap()
@@ -109,7 +109,7 @@ import XCTest
     capture()
     field.tap()
     field.typeText(" Thanks.")
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "with 2 attachments"))
     XCTAssertFalse(element(app, "attachment-field-notes.txt").exists, "Admission clears chips")
   }
@@ -127,7 +127,7 @@ import XCTest
     field.typeText(" Keep this draft.")
     XCTAssertTrue(waitFor(app, "composer-field", containing: "Keep this draft."))
     dismissKeyboard(app)
-    element(app, "composer-attach").tap()
+    enabledElement(app, "composer-attach").tap()
     XCTAssertTrue(element(app, "attach-samples").waitForExistence(timeout: 5))
     element(app, "attach-samples").tap()
 
@@ -165,7 +165,7 @@ import XCTest
     retained()
     capture()
     transition("fixture-toggle-run", revision: 6, primary: "composer-send")
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "with 2 attachments"))
     let clearedField = element(app, "composer-field")
     let cleared = XCTNSPredicateExpectation(
@@ -197,7 +197,7 @@ import XCTest
     element(app, "skill-browse-weekly-digest").tap()
     XCTAssertTrue(fieldText(app).contains("$weekly-digest"))
     field.typeText("for this week")
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Please use $release-notes"))
   }
 
@@ -227,7 +227,7 @@ import XCTest
     let field = composerField(app)
     field.tap()
     field.typeText("Try the small model")
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Try the small model”"))
   }
 
@@ -257,7 +257,7 @@ import XCTest
     assertDraftRetained()
     capture()
     assertDraftRetained()
-    element(app, "composer-queue").tap()
+    enabledElement(app, "composer-queue").tap()
     // Admission's status is ephemeral (4 seconds); a slow AX snapshot can miss it.
     // The durable applied live-input message proves admission without that timing race.
     XCTAssertTrue(waitForText(app, "Follow-up · applied"))
@@ -274,7 +274,7 @@ import XCTest
     let field = composerField(app)
     field.tap()
     field.typeText("Publish the sample")
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Not confirmed"))
     XCTAssertEqual(fieldText(app), "Publish the sample", "Uncertain text is retained")
     dismissKeyboard(app)
@@ -306,7 +306,7 @@ import XCTest
     field.typeText("Which file needs attention?")
     dismissKeyboard(app)
     capture()
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply about “The sample is ready."))
     XCTAssertFalse(element(app, "quote-preview").exists, "Admission clears the quote")
   }
@@ -371,7 +371,7 @@ import XCTest
     element(app, "peer-submit").tap()
     XCTAssertTrue(
       waitFor(app, "composer-field", containing: "Answer for the seed-bank peer question"))
-    element(app, "composer-send").tap()
+    enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Answer for the seed-bank peer"))
   }
 
@@ -409,6 +409,13 @@ import XCTest
 
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
     app.descendants(matching: .any)[id].firstMatch
+  }
+  private func enabledElement(_ app: XCUIApplication, _ id: String) -> XCUIElement {
+    let target = element(app, id)
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND enabled == true"), object: target)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
+    return target
   }
   private func composerField(_ app: XCUIApplication) -> XCUIElement {
     let field =

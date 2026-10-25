@@ -29,6 +29,27 @@ import Testing
       #expect(condition())
     }
 
+    @Test func remountingTheSameRouteRetainsTheControllerTextAndQuote() async throws {
+      let (_, store) = try await store(.composerQuote, select: open)
+      let route = AppRoute.conversation(
+        profile: store.profile.id, sourceID: atlas, threadID: open, archived: false)
+      let mount = ComposerMountState()
+      let first = try #require(mount.mount(store: store, route: route))
+      first.text = "Unsent sample draft"
+      let quote = WebQuote(text: "Sample quotation", messageId: "sample-assistant")
+      first.setQuote(quote)
+      let remounted = try #require(mount.mount(store: store, route: route))
+      #expect(remounted === first)
+      #expect(remounted.text == "Unsent sample draft" && remounted.quote == quote)
+      let other = try #require(
+        mount.mount(
+          store: store, route: .newConversation(profile: store.profile.id, sourceID: atlas)))
+      #expect(other !== first)
+      #expect(other.text.isEmpty && other.quote == nil)
+      await first.flushDraft()
+      await store.stop()
+    }
+
     @Test func idleSendConfirmsClearsTheDraftAndReturnsToIdle() async throws {
       let (_, store) = try await store(.composerQuote, select: open)
       let composer = ComposerController(store: store, sourceID: atlas, threadID: open)
