@@ -93,14 +93,15 @@ extension ConsoleStore {
 
   /// Web header dot: a draft whose model or effort differs from the saved override.
   public func hasUnsavedRunDefaults(_ sourceID: String) -> Bool {
-    guard let draft = agentSettings[sourceID]?.draft else { return false }
+    // Reading through the state object registers observation even before the first draft.
+    guard let draft = agentSettingsState(sourceID).draft else { return false }
     let saved = savedRunDefaults(sourceID)
     return draft.model != saved.model || draft.effort != saved.effort
   }
 
   /// Web section `dirty`: any difference from the saved override, including the 1M choice.
   public func runDefaultsDirty(_ sourceID: String) -> Bool {
-    guard let draft = agentSettings[sourceID]?.draft else { return false }
+    guard let draft = agentSettingsState(sourceID).draft else { return false }
     return draft != savedRunDefaults(sourceID)
   }
 

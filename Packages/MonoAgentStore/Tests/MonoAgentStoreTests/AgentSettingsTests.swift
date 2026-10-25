@@ -2,9 +2,17 @@
 import Foundation
 import MonoAgentKit
 import MonoAgentTestSupport
+import Observation
 import Testing
+import os
 
 @testable import MonoAgentStore
+
+struct ObservedFlag: Sendable {
+  private let lock = OSAllocatedUnfairLock(initialState: false)
+  func set() { lock.withLock { $0 = true } }
+  var value: Bool { lock.withLock { $0 } }
+}
 
 func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
   try response(
@@ -66,6 +74,18 @@ func agentEnvelope(_ agent: WebAgentSummary) throws -> HTTPResponse {
     h.store.reconcileRunDefaultsDraft(sourceID: source)
     #expect(h.store.agentSettingsState(source).draft == nil)
     #expect(await h.transport.requests.isEmpty)
+  }
+
+  @Test func headerDotIsObservableBeforeTheFirstDraft() async throws {
+    let h = try await live()
+    let changed = ObservedFlag()
+    withObservationTracking {
+      _ = h.store.hasUnsavedRunDefaults(source)
+    } onChange: {
+      changed.set()
+    }
+    h.store.editRunDefaults(sourceID: source, .init(model: "sample:small"))
+    #expect(changed.value, "a dashboard that read no draft yet still learns about the first one")
   }
 
   @Test func customSavePutsNullsForBlankFieldsAndPublishesTheReturnedAgent() async throws {
