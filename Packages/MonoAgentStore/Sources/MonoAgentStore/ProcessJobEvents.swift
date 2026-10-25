@@ -213,6 +213,7 @@ public enum ProcessJobEvents {
     var byCall: [String: [ProcessJobActivityEvent]] = [:]
     for event in events { byCall[event.toolCallId, default: []].append(event) }
     var items: [TranscriptEntry] = []
+    var emittedLaunchEvents = Set<String>()
     for (index, part) in message.parts.enumerated() {
       func append(_ item: TranscriptItem, suffix: String = "") {
         items.append(.init(id: "part-\(index)" + suffix, sourcePartID: "part-\(index)", item: item))
@@ -232,7 +233,7 @@ public enum ProcessJobEvents {
         }
         let folds = call.status == "complete" && launch.contains { $0.phase == .started }
         if !folds { append(.part(part)) }
-        for var event in launch {
+        for var event in launch where emittedLaunchEvents.insert(event.id).inserted {
           if folds && event.phase == .started && call.args != nil {
             event.launchArgs = call.args
             event.launchArgsTruncated = call.argsTruncated == true ? true : nil
@@ -255,22 +256,82 @@ public enum ProcessJobEvents {
   /// Only rows that actually appear in an existing shelf group are suppressed. Unmatched,
   /// malformed and foreground calls remain reachable in the transcript.
   public static func shelfOwnedCalls(messages: [WebMessage], items: [JobShelfItem]) -> Set<String> {
-    Set(
-      items.filter { $0.family != nil }.flatMap { item in
-        JobShelf.timeline(item, messages: messages).compactMap { step -> String? in
-          guard case .call(let parent) = step else { return nil }
-          let call = parent.call
-          // The shelf currently exposes only the header and authored input. Keep diagnostics,
-          // output and preview-repair metadata on the ordinary row until it can render them too.
-          guard call.status == "complete", call.result == nil, call.structuredResult == nil,
-            call.argsTruncated != true, call.resultTruncated != true,
-            call.argsBytes == nil, call.argsDigest == nil,
-            call.resultBytes == nil, call.resultDigest == nil,
-            call.history?.persistence != "failed"
-          else { return nil }
-          return callKey(parent.messageID, call.toolCallId)
+    // Eligible calls have no result/receipt to claim an unnamed launch: their explicit address,
+    // family and retained thread completely determine timeline membership. Index those groups
+    // once rather than rebuilding every group's timeline over every parent on each tool update.
+    var groupThreads: [String: Set<String>] = [:]
+    var unrestricted = Set<String>()
+    for item in items {
+      guard let family = item.family, let instance = item.instanceID else { continue }
+      let key = family + "\u{0}" + instance
+      let threads = item.jobs.compactMap { job -> String? in
+        let origin = String(
+          job.origin.conversationId.split(separator: "#", maxSplits: 1).first ?? "")
+        return origin.hasPrefix("web:") ? String(origin.dropFirst(4)) : nil
+      }
+      if threads.isEmpty { unrestricted.insert(key) }
+      groupThreads[key, default: []].formUnion(threads)
+    }
+    var owned = Set<String>()
+    for message in messages where message.role == "assistant" {
+      for part in message.parts {
+        let call: WebToolCall
+        switch part {
+        case .toolCall(let value), .subagent(let value): call = value
+        default: continue
         }
-      })
+        // The shelf exposes only header/authored input, not output, nested calls or repairs.
+        guard call.status == "complete", call.result == nil, call.structuredResult == nil,
+          call.argsTruncated != true, call.resultTruncated != true,
+          call.argsBytes == nil, call.argsDigest == nil,
+          call.resultBytes == nil, call.resultDigest == nil,
+          call.history?.persistence != "failed", call.calls?.isEmpty != false
+        else { continue }
+        let tool = call.toolName ?? call.name ?? ""
+        let family =
+          tool == "PeerAgent" || tool.hasSuffix("__PeerAgent")
+          ? "peer" : ["Agent", "AgentManage", "AgentSend"].contains(tool) ? "agent" : nil
+        guard let family,
+          let addressed = UsagePresentation.text(
+            UsagePresentation.layers(call.args),
+            family == "peer" ? ["peer"] : ["id"])
+        else { continue }
+        let key = family + "\u{0}" + addressed
+        if unrestricted.contains(key) || groupThreads[key]?.contains(message.threadId) == true {
+          owned.insert(callKey(message.id, call.toolCallId))
+        }
+      }
+    }
+    return owned
+  }
+
+  /// Per-message semantic version of the cross-message projection. Ordinary output/status and
+  /// foreground child-call deltas cannot affect receipt pairing; cache these inputs at publication.
+  struct Input: Equatable {
+    enum Part: Equatable {
+      case carried(WebMessagePart)
+      case receipt(String, ProcessJobStartReceipt)
+    }
+    var threadID: String
+    var role: String
+    var parts: [Part]
+    init(_ message: WebMessage) {
+      threadID = message.threadId
+      role = message.role
+      parts = message.parts.compactMap { part in
+        switch part {
+        case .processJob, .processJobWake, .steer: return .carried(part)
+        case .toolCall(let call):
+          guard
+            let receipt = ProcessJobEvents.receipt(
+              call.structuredResult,
+              containingTool: call.toolName)
+          else { return nil }
+          return .receipt(call.toolCallId, receipt)
+        default: return nil
+        }
+      }
+    }
   }
 
   public static func showsAttribution(_ value: WebRunAttribution?, status: String) -> Bool {

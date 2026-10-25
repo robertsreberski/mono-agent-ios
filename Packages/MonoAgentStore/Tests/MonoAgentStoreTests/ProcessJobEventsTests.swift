@@ -359,6 +359,172 @@ struct ProcessJobEventsTests {
     call.resultBytes = 50000
     try retained(call)
   }
+  @Test func identicalDuplicateReceiptsProduceOnlyOneCopyOfEachLaunchEvent() throws {
+    let job = try job()
+    let call = try launch(job)
+    let origin = try message("origin", [.toolCall(call), .toolCall(call)])
+    let messages = try [origin, carrier(job)]
+    let projection = project(messages)
+    #expect(projection.eventsByMessageID[origin.id]?.map(\.phase) == [.started, .terminal])
+    #expect(project(messages + [origin]) == projection)
+    let entries = ProcessJobEvents.entries(for: origin, projection: projection)
+    #expect(entries.count == 2)
+    #expect(Set(entries.map(\.id)).count == 2)
+  }
+  @MainActor @Test func repeatedReconciliationDoesNotAccumulateEventsOrReplaceHeldRows() throws {
+    let job = try job()
+    let origin = try message("origin", [.toolCall(launch(job))])
+    let messages = try [origin, carrier(job)]
+    let state = ConversationState(
+      .init(thread: try sampleThread(), messages: messages, savedAt: Date()))
+    let row = try #require(state.messageStates[origin.id])
+    let entries = row.transcriptEntries
+    for _ in 0..<4 {
+      state.publish()
+      #expect(state.messageStates[origin.id] === row)
+      #expect(row.transcriptEntries == entries)
+      #expect(state.transcriptMessageIDs == [origin.id])
+      #expect(state.record.messages == messages)
+    }
+  }
+  @Test(arguments: ["queued", "starting", "running", "unknown", "future-state"])
+  func partialWakeProjectionsDoNotInventTerminalFacts(state: String) throws {
+    var job = try job(state)
+    job.timestamps.completedAt = nil
+    job.durationMs = nil
+    job.exitCode = nil
+    job.signal = nil
+    let wake: ProcessJobWakePart = try decode(
+      #"{"type":"process-job-wake","jobId":"sample-job","deliveryKey":"sample-delivery","disposition":"follow_up"}"#
+    )
+    let delivery = try message("wake", [.processJobWake(wake)])
+    let entries = ProcessJobEvents.entries(
+      for: delivery, projection: project(try [carrier(job), delivery]))
+    guard case .jobEvent(let event) = try #require(entries.first).item else {
+      Issue.record("Expected a projected wake event")
+      return
+    }
+    #expect(event.state == state)
+    #expect(event.occurredAt == nil)
+    #expect(event.durationMs == nil)
+    #expect(event.exitCode == nil)
+    #expect(event.signal == nil)
+    #expect(ProcessJobEvents.entries(for: delivery, projection: .init()).isEmpty)
+  }
+  @Test func droppedCarriersKeepAttachmentAndErrorSiblingsAndMessageUploads() throws {
+    var source = try carrier(job())
+    let attachment: WebMessagePart = try decode(
+      #"{"type":"attachment","id":"sample-file","artifactId":"sample-artifact","name":"sample.txt","mediaType":"text/plain","sizeBytes":3,"integrityId":"sample-digest"}"#
+    )
+    let error: WebMessagePart = try decode(
+      #"{"type":"error","code":"sample_error","message":"Fictional report unavailable"}"#)
+    for sibling in [attachment, error] {
+      source.parts = [source.parts[0], sibling]
+      let entries = ProcessJobEvents.entries(for: source, projection: project([source]))
+      #expect(entries.map(\.item) == [.part(sibling)])
+      #expect(entries.first?.sourcePartID == "part-1")
+      #expect(ProcessJobEvents.visible(source, entries: entries))
+    }
+    source.parts.removeLast()
+    source.attachments = [
+      try decode(
+        #"{"id":"sample-upload","name":"sample.txt","contentType":"text/plain","sizeBytes":3,"kind":"file","status":"committed","uploaded":true,"createdAt":"2030-01-02T11:59:00.000Z"}"#
+      )
+    ]
+    #expect(ProcessJobEvents.entries(for: source, projection: project([source])).isEmpty)
+    #expect(ProcessJobEvents.visible(source, entries: []))
+  }
+  @MainActor @Test func toolAndChildDeltasReuseCachedPairingButReceiptsAndJobsInvalidateIt() throws
+  {
+    var job = try job("running")
+    var receiptCall = try launch(job)
+    let origin = try message("origin", [.toolCall(receiptCall)])
+    var file: WebToolCall = try decode(
+      #"{"type":"tool-call","toolCallId":"sample-file","toolName":"read_file","status":"running","args":{"path":"sample.md"}}"#
+    )
+    var child = file
+    child.toolCallId = "sample-child"
+    child.toolName = "Agent"
+    child.calls = [file]
+    let live = try message("live", [.toolCall(file), .subagent(child)])
+    let state = ConversationState(
+      .init(
+        thread: try sampleThread(),
+        messages: try [origin, carrier(job), live], savedAt: Date()))
+    let revision = state.jobProjectionRevision
+    let row = try #require(state.messageStates[live.id])
+    for n in 0..<10 {
+      file.result = .string("Fictional partial output \(n)")
+      child.calls = [file]
+      state.record.messages[2].parts = [.toolCall(file), .subagent(child)]
+      state.pendingMessageIndices = [2]
+      state.publishPending()
+      #expect(state.jobProjectionRevision == revision)
+      #expect(
+        row.transcriptEntries.map(\.item) == [.part(.toolCall(file)), .part(.subagent(child))])
+    }
+    receiptCall.args = .object(["command": .string("sample-check --changed")])
+    state.record.messages[0].parts = [.toolCall(receiptCall)]
+    state.pendingMessageIndices = [0]
+    state.publishPending()
+    #expect(state.jobProjectionRevision == revision)
+    guard
+      case .jobEvent(let launch) = try #require(
+        state.messageStates[origin.id]?.transcriptEntries.first
+      ).item
+    else {
+      Issue.record("Expected folded launch")
+      return
+    }
+    #expect(launch.launchArgs == receiptCall.args)
+    job.state = "succeeded"
+    state.record.messages[1] = try carrier(job)
+    state.pendingMessageIndices = [1]
+    state.publishPending()
+    #expect(state.jobProjectionRevision == revision + 1)
+    #expect(state.messageStates[origin.id]?.transcriptEntries.count == 2)
+    receiptCall.structuredResult = nil
+    state.record.messages[0].parts = [.toolCall(receiptCall)]
+    state.pendingMessageIndices = [0]
+    state.publishPending()
+    #expect(state.jobProjectionRevision == revision + 2)
+    #expect(
+      state.messageStates[origin.id]?.transcriptEntries.map(\.item) == [
+        .part(.toolCall(receiptCall))
+      ])
+  }
+  @Test func shelfOwnershipRequiresExactFamilyAddressThreadAndNoHiddenChildren() throws {
+    var job = try self.job()
+    job.kind = "internal"
+    job.tool = "Agent"
+    job.instanceId = "sample-helper"
+    var call: WebToolCall = try decode(
+      #"{"type":"tool-call","toolCallId":"sample-control","toolName":"AgentManage","status":"complete","args":{"id":"sample-helper","message":"Review fictional samples"}}"#
+    )
+    let raw = try carrier(job)
+    func owned(_ call: WebToolCall, role: String = "assistant", thread: String = "thread-example")
+      throws -> Bool
+    {
+      var parent = try message("parent", [.toolCall(call)], role: role)
+      parent.threadId = thread
+      let messages = [parent, raw]
+      let items = JobShelf.items(messages: messages)
+      return ProcessJobEvents.shelfOwnedCalls(messages: messages, items: items)
+        .contains(ProcessJobEvents.callKey(parent.id, call.toolCallId))
+    }
+    #expect(try owned(call))
+    #expect(try !owned(call, role: "user"))
+    #expect(try !owned(call, thread: "other-thread"))
+    var peer = call
+    peer.toolName = "PeerAgent"
+    peer.args = .object(["peer": .string("sample-helper")])
+    #expect(try !owned(peer))
+    call.calls = [try launch(job)]
+    #expect(try !owned(call))
+    call.calls = nil
+    call.args = .object(["id": .string("other-helper")])
+    #expect(try !owned(call))
+  }
   @MainActor @Test func proseArrivingOnAHiddenCarrierPublishesBeforeTheTurnSettles() throws {
     var source = try carrier(job("running"))
     source.status = "running"
