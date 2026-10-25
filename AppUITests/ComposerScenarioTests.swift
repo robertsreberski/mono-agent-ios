@@ -204,7 +204,7 @@ import XCTest
   private func modelSelector(_ app: XCUIApplication, capture: () -> Void) {
     let menu = element(app, "composer-model")
     XCTAssertTrue(menu.waitForExistence(timeout: 10))
-    XCTAssertTrue((menu.value as? String ?? "").contains("Sample Large"), "agent default shown")
+    WaitFor.value(menu, contains: "Sample Large")  // the agent default is shown
     menu.tap()
     let small = menuButton(app, "Sample Small")
     XCTAssertTrue(small.waitForExistence(timeout: 5))
@@ -223,7 +223,7 @@ import XCTest
     XCTAssertTrue(low.waitForExistence(timeout: 5))
     low.tap()
     XCTAssertTrue(waitFor(app, "route-badge", containing: "sample:small"))
-    XCTAssertTrue((menu.value as? String ?? "").contains("Low"))
+    WaitFor.value(menu, contains: "Low")
     let field = composerField(app)
     field.tap()
     field.typeText("Try the small model")
