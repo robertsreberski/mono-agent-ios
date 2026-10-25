@@ -101,6 +101,8 @@ class ToolingTests(unittest.TestCase):
                 (root / "AppUITests").mkdir()
                 (root / "AppUITests/AccessibilityReviewTests.swift").write_text(
                     "func testFirst() {}\nfunc testSecond() {}\nfunc testThird() {}\n")
+                (root / "AppUITests/AgentSettingsScenarioTests.swift").write_text(
+                    "func testPage() {}\nfunc testPicker() {}\nfunc testNotifications() {}\n")
             calls = []
             run_options = []
 
@@ -154,7 +156,7 @@ class ToolingTests(unittest.TestCase):
 
             argv = ["screenshots", "--iphone", "phone", "--ipad", "pad"] + (["--family", family] if family else [])
             if focus:
-                argv.append(focus)
+                argv.extend(focus.split())
             if batch_size:
                 argv.extend(["--batch-size", str(batch_size)])
             index_name = f"index-{family}" if family else "index"
@@ -231,7 +233,7 @@ class ToolingTests(unittest.TestCase):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
         connection = {(s, a) for s, a, v in keys
-                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-"))
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-", "agent-settings", "notifications-"))
                       and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
@@ -323,10 +325,74 @@ class ToolingTests(unittest.TestCase):
                   (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
                    and entry.get("variant") in {"ax3", "opaque"})
                   or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
-        self.assertEqual(len(matrix), 13)
+        expected = {(scenario, "light", variant)
+                    for scenario in ("composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet")
+                    for variant in ("ax3", "opaque")} | {("connection-empty", "light", "editorax3"), ("connection-empty", "dark", "editorax3"),
+                                                         ("connection-empty", "light", "editoropaque")}
+        self.assertEqual({(e["scenario"], e["appearance"], e.get("variant")) for e in matrix}, expected)
         self.export(family="iPhone", focus="--accessibility-only", matrix=matrix)
         command = next(call for call in self.calls if call[0] == "xcodebuild")
         self.assertIn("-only-testing:MonoAgentUITests/AccessibilityReviewTests", command)
+
+    AGENT_SETTINGS_BASE = ("agent-settings", "agent-settings-unsaved", "agent-settings-save-error",
+                           "agent-settings-offline", "agent-settings-degraded",
+                           "notifications-explainer", "notifications-insecure")
+
+    def agent_settings_keys(self):
+        keys = {(scenario, appearance, None) for scenario in self.AGENT_SETTINGS_BASE for appearance in ("light", "dark")}
+        keys |= {("agent-settings", appearance, variant) for appearance in ("light", "dark") for variant in ("ax3", "opaque", "picker")}
+        return keys
+
+    def test_matrix_covers_exact_agent_settings_scenarios_and_metadata(self):
+        entries = {(e["scenario"], e["appearance"], e.get("variant")): e for e in MATRIX
+                   if e["scenario"].startswith(("agent-settings", "notifications-"))}
+        self.assertEqual(set(entries), self.agent_settings_keys())
+        for (scenario, appearance, variant), entry in entries.items():
+            self.assertEqual(entry["theme"], "evergreen")
+            self.assertEqual(entry["textSize"], "accessibility XL (AX3)" if variant == "ax3" else "standard")
+            self.assertEqual(entry["transparency"], "opaque fallback" if variant == "opaque" else "system")
+
+    def test_export_classifies_agent_settings_and_notifications(self):
+        index = self.export(family="iPad")
+        for prefix, surface in (("agent-settings", "agent settings"), ("notifications-", "notifications")):
+            rows = [item for item in index if item["scenario"].startswith(prefix)]
+            self.assertTrue(rows)
+            self.assertTrue(all(item["surface"] == surface for item in rows))
+        ax3 = next(item for item in index if item["scenario"] == "agent-settings" and item["variant"] == "ax3")
+        self.assertEqual(ax3["textSize"], "accessibility XL (AX3)")
+
+    def test_agent_settings_only_runs_its_suite_and_exact_matrix_on_both_families(self):
+        matrix = [entry for entry in MATRIX if entry["scenario"].startswith(("agent-settings", "notifications-"))]
+        self.assertEqual({(e["scenario"], e["appearance"], e.get("variant")) for e in matrix}, self.agent_settings_keys())
+        for family in ("iPhone", "iPad"):
+            with self.subTest(family=family):
+                index = self.export(family=family, focus="--agent-settings-only", matrix=matrix)
+                self.assertEqual(len(index), len(matrix))
+                command = next(call for call in self.calls if call[0] == "xcodebuild")
+                self.assertIn("-only-testing:MonoAgentUITests/AgentSettingsScenarioTests", command)
+                self.assertEqual(sum(arg.startswith("-only-testing:") for arg in command), 1)
+
+    def test_agent_settings_only_batches_enumerate_only_its_suite(self):
+        matrix = [entry for entry in MATRIX if entry["scenario"].startswith(("agent-settings", "notifications-"))]
+        index = self.export(family="iPad", focus="--agent-settings-only", matrix=matrix, batch_size=2)
+        self.assertEqual({(row["scenario"], row["appearance"], row["variant"]) for row in index},
+                         self.agent_settings_keys())
+        builds = [command for command in self.calls if command[0] == "xcodebuild"]
+        selectors = [arg for command in builds for arg in command if arg.startswith("-only-testing:")]
+        self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/AgentSettingsScenarioTests/testPage",
+                                    "-only-testing:MonoAgentUITests/AgentSettingsScenarioTests/testPicker",
+                                    "-only-testing:MonoAgentUITests/AgentSettingsScenarioTests/testNotifications"])
+        self.assertTrue(all(options["timeout"] == 19 * 60 for call, options in
+                            zip(self.calls, self.run_options) if call[0] == "xcodebuild"))
+
+    def test_default_run_keeps_the_whole_test_plan(self):
+        self.export(family="iPhone")
+        command = next(call for call in self.calls if call[0] == "xcodebuild")
+        self.assertFalse(any(arg.startswith("-only-testing:") for arg in command))
+
+    def test_focus_flags_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit):
+            self.export(family="iPhone", focus="--agent-settings-only --accessibility-only")
 
     def test_export_requires_and_indexes_complete_matrix(self):
         index = self.export()
