@@ -184,37 +184,42 @@ def capture(family, device):
             test_failures.append(f"{result.name}: no result bundle")
             continue
         exported = ARTIFACTS / (f"Attachments-{family}" if number == 1 else f"Attachments-{family}-batch-{number}")
-        run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result),
-            "--output-path", str(exported))
-        manifest = json.loads((exported / "manifest.json").read_text())
-        for test in manifest:
-            for attachment in test["attachments"]:
-                match = re.match(r"synthetic-fixture__([a-z0-9-]+)__(light|dark)(?:__([a-z0-9]+))?(?:_\d+_[0-9A-Fa-f-]+)?(?:\.png)?$", attachment["suggestedHumanReadableName"])
-                if not match:
-                    continue
-                scenario, appearance, variant = match.groups()
-                entry = EXPECTED.get((scenario, appearance, variant))
-                if entry is None:
-                    raise MatrixError(f"Screenshot not in Tools/screenshot-matrix.json: {family} {match.group(0)}")
-                if key(entry) in found:
-                    raise MatrixError(f"Duplicate screenshot: {family} {key(entry)}")
-                found.add(key(entry))
-                source = exported / attachment["exportedFileName"]
-                if source.suffix.lower() != ".png":
-                    raise MatrixError("Expected PNG screenshot attachment")
-                name = f"{family}__{scenario}__{appearance}" + (f"__{variant}" if variant else "") + ".png"
-                target = output / name
-                shutil.copyfile(source, target)
-                run("sips", "-Z", "2000", str(target))
-                dimensions = list(map(int, re.findall(r"pixel(?:Width|Height): (\d+)", run("sips", "-g", "pixelWidth", "-g", "pixelHeight", str(target), capture=True))))
-                if len(dimensions) != 2 or not all(0 < dimension <= 2000 for dimension in dimensions):
-                    raise MatrixError(f"Invalid screenshot dimensions: {name}")
-                index.append(dict(file=name, device=device["name"], runtime=device["runtime"],
-                                  scenario=scenario, appearance=appearance, variant=variant,
-                                  textSize=entry["textSize"],
-                                  transparency=entry["transparency"], theme=entry["theme"],
-                                  surface=surface(scenario, variant),
-                                  label="synthetic fixture", dimensions=dimensions))
+        try:
+            run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result),
+                "--output-path", str(exported))
+            manifest = json.loads((exported / "manifest.json").read_text())
+            for test in manifest:
+                for attachment in test["attachments"]:
+                    match = re.match(r"synthetic-fixture__([a-z0-9-]+)__(light|dark)(?:__([a-z0-9]+))?(?:_\d+_[0-9A-Fa-f-]+)?(?:\.png)?$", attachment["suggestedHumanReadableName"])
+                    if not match:
+                        continue
+                    scenario, appearance, variant = match.groups()
+                    entry = EXPECTED.get((scenario, appearance, variant))
+                    if entry is None:
+                        raise MatrixError(f"Screenshot not in Tools/screenshot-matrix.json: {family} {match.group(0)}")
+                    if key(entry) in found:
+                        raise MatrixError(f"Duplicate screenshot: {family} {key(entry)}")
+                    found.add(key(entry))
+                    source = exported / attachment["exportedFileName"]
+                    if source.suffix.lower() != ".png":
+                        raise MatrixError("Expected PNG screenshot attachment")
+                    name = f"{family}__{scenario}__{appearance}" + (f"__{variant}" if variant else "") + ".png"
+                    target = output / name
+                    shutil.copyfile(source, target)
+                    run("sips", "-Z", "2000", str(target))
+                    dimensions = list(map(int, re.findall(r"pixel(?:Width|Height): (\d+)", run("sips", "-g", "pixelWidth", "-g", "pixelHeight", str(target), capture=True))))
+                    if len(dimensions) != 2 or not all(0 < dimension <= 2000 for dimension in dimensions):
+                        raise MatrixError(f"Invalid screenshot dimensions: {name}")
+                    index.append(dict(file=name, device=device["name"], runtime=device["runtime"],
+                                      scenario=scenario, appearance=appearance, variant=variant,
+                                      textSize=entry["textSize"],
+                                      transparency=entry["transparency"], theme=entry["theme"],
+                                      surface=surface(scenario, variant),
+                                      label="synthetic fixture", dimensions=dimensions))
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError,
+                ValueError, KeyError, TypeError, MatrixError) as error:
+            test_failures.append(f"{result.name}: export/manifest validation failed: {error}")
+            continue
     if test_failures:
         raise MatrixError(f"{family}: test batches failed: {'; '.join(test_failures)}")
     if found != set(EXPECTED):

@@ -88,7 +88,7 @@ class ToolingTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 runpy.run_path(str(ROOT / "Tools/select-simulators"), run_name="__main__")
 
-    def export(self, omit_last=False, extra=None, fail_family=None, family=None, focus=None, matrix=None, batch_size=None):
+    def export(self, omit_last=False, extra=None, fail_family=None, family=None, focus=None, matrix=None, batch_size=None, export_failure=None, timeout_first=False):
         matrix = MATRIX if matrix is None else matrix
         # Copy only the executable into an isolated root; no real Artifacts or simulator use.
         (ROOT / ".build").mkdir(exist_ok=True)
@@ -102,15 +102,19 @@ class ToolingTests(unittest.TestCase):
                 (root / "AppUITests/AccessibilityReviewTests.swift").write_text(
                     "func testFirst() {}\nfunc testSecond() {}\nfunc testThird() {}\n")
             calls = []
+            run_options = []
 
             def fake_run(command, **kwargs):
                 calls.append(command)
+                run_options.append(kwargs)
                 stdout = ""
                 if command[0] == "xcodebuild":
                     bundle = pathlib.Path(command[command.index("-resultBundlePath") + 1])
                     bundle.mkdir(parents=True)
                     self.assertIn("-collect-test-diagnostics", command)
                     self.assertEqual(command[command.index("-collect-test-diagnostics") + 1], "never")
+                    if timeout_first and bundle.name == "iPhone.xcresult":
+                        raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
                     if fail_family and bundle.name == f"{fail_family}.xcresult":
                         raise subprocess.CalledProcessError(65, command)
                 if command[:3] == ("xcrun", "simctl", "list"):
@@ -118,6 +122,9 @@ class ToolingTests(unittest.TestCase):
                 if command[:4] == ("xcrun", "xcresulttool", "export", "attachments"):
                     destination = pathlib.Path(command[command.index("--output-path") + 1])
                     destination.mkdir()
+                    first_bundle = pathlib.Path(command[command.index("--path") + 1]).name == "iPhone.xcresult"
+                    if first_bundle and export_failure == "command":
+                        raise subprocess.CalledProcessError(65, command)
                     attachments = []
                     entries = matrix[:-1] if omit_last else matrix
                     if batch_size:
@@ -132,7 +139,15 @@ class ToolingTests(unittest.TestCase):
                         (destination / name).write_bytes(b"synthetic export stub")
                         # xcresulttool appends an index and UUID to the attachment name.
                         attachments.append({"suggestedHumanReadableName": f"{label}_0_0F0E0D0C-0000-4000-8000-00000000000{number % 10}.png", "exportedFileName": name})
-                    (destination / "manifest.json").write_text(json.dumps([{"attachments": attachments}]))
+                    manifest = destination / "manifest.json"
+                    manifest.write_text(json.dumps([{"attachments": attachments}]))
+                    if first_bundle:
+                        if export_failure == "missing":
+                            manifest.unlink()
+                        elif export_failure == "json":
+                            manifest.write_text("not JSON")
+                        elif export_failure == "shape":
+                            manifest.write_text('[{"unexpected": []}]')
                 if command[0] == "sips" and "-g" in command:
                     stdout = "pixelWidth: 1000\npixelHeight: 2000\n"
                 return subprocess.CompletedProcess(command, 0, stdout=stdout)
@@ -148,6 +163,7 @@ class ToolingTests(unittest.TestCase):
                     runpy.run_path(str(root / "Tools/screenshots"), run_name="__main__")
                 finally:
                     self.calls = calls
+                    self.run_options = run_options
                     index_path = root / f"Artifacts/Screenshots/{index_name}.json"
                     self.partial_index = json.loads(index_path.read_text()) if index_path.exists() else None
             index = json.loads((root / f"Artifacts/Screenshots/{index_name}.json").read_text())
@@ -174,6 +190,42 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/AccessibilityReviewTests/testFirst",
                                     "-only-testing:MonoAgentUITests/AccessibilityReviewTests/testSecond",
                                     "-only-testing:MonoAgentUITests/AccessibilityReviewTests/testThird"])
+
+    def review_matrix(self):
+        return [entry for entry in MATRIX if
+                (entry["scenario"] in {"composer-model-selector", "skill-browser", "conversation-ask-form", "conversation-quick-replies", "peer-question-sheet"}
+                 and entry.get("variant") in {"ax3", "opaque"})
+                or (entry["scenario"] == "connection-empty" and entry.get("variant") in {"editorax3", "editoropaque"})]
+
+    def test_bad_early_export_or_manifest_preserves_and_validates_later_bundle(self):
+        matrix = self.review_matrix()
+        for failure in ("command", "missing", "json", "shape"):
+            with self.subTest(failure=failure), self.assertRaises(SystemExit) as raised:
+                self.export(family="iPhone", focus="--accessibility-only", matrix=matrix,
+                            batch_size=2, export_failure=failure)
+            self.assertIn("iPhone.xcresult: export/manifest validation failed", str(raised.exception))
+            self.assertEqual(len(self.partial_index), len(matrix[1::2]))
+            self.assertEqual({(row["scenario"], row["appearance"], row["variant"]) for row in self.partial_index},
+                             {(row["scenario"], row["appearance"], row.get("variant")) for row in matrix[1::2]})
+            resized = [call for call in self.calls if call[:3] == ("sips", "-Z", "2000")]
+            self.assertEqual(len(resized), len(matrix[1::2]))
+
+    def test_timeout_records_failure_and_runs_later_batches_with_bounded_timeout(self):
+        matrix = self.review_matrix()
+        with self.assertRaises(SystemExit) as raised:
+            self.export(family="iPhone", focus="--accessibility-only", matrix=matrix,
+                        batch_size=2, timeout_first=True)
+        self.assertIn("timed out after 1140 seconds", str(raised.exception))
+        builds = [(call, options) for call, options in zip(self.calls, self.run_options)
+                  if call[0] == "xcodebuild"]
+        self.assertEqual(len(builds), 2)
+        self.assertTrue(all(options["timeout"] == 19 * 60 for _, options in builds))
+        self.assertEqual(len(self.partial_index), len(matrix))
+        self.assertTrue(any("-only-testing:MonoAgentUITests/AccessibilityReviewTests/testThird" in call
+                            for call, _ in builds))
+        self.export(family="iPhone", focus="--accessibility-only", matrix=matrix)
+        self.assertTrue(all(options.get("timeout") is None for call, options in
+                            zip(self.calls, self.run_options) if call[0] == "xcodebuild"))
 
     def test_matrix_keeps_connection_screens_and_covers_the_catalog(self):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
