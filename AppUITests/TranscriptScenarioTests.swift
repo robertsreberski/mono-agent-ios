@@ -70,7 +70,9 @@ import XCTest
     let scroll = transcriptScroll(app)
     // Bands occur at indices 1 modulo 100. Scope to this row: the list can retain another
     // band's accessibility node outside the viewport during a scroll.
-    let row = element(app, "message-long-401")
+    // Thirty-eight rows separate this band from the bottom: well beyond the lazy viewport,
+    // but reachable without relying on a device-dependent count of hundreds of swipes.
+    let row = element(app, "message-long-501")
     let band = row.descendants(matching: .button)["activity-band"].firstMatch
     XCTAssertTrue(reveal(row, in: scroll), "The older band's message must come into view")
     XCTAssertTrue(reveal(band, in: scroll), "The older band must come into view")
