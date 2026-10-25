@@ -12,6 +12,8 @@ import XCTest
   func testJobsPlum() { capture("conversation-jobs", "dark", variant: "plum") }
   func testJobsAccessibility() { capture("conversation-jobs", "light", variant: "ax3") }
   func testStackLight() { capture("conversation-job-stack", "light") }
+  func testStackOverCodeLight() { capture("conversation-job-stack", "light", variant: "bleed") }
+  func testStackOverCodeDark() { capture("conversation-job-stack", "dark", variant: "bleed") }
   func testStackDark() { capture("conversation-job-stack", "dark") }
   func testStackPlum() { capture("conversation-job-stack", "dark", variant: "plum") }
   func testStackAccessibility() { capture("conversation-job-stack", "light", variant: "ax3") }
@@ -23,6 +25,10 @@ import XCTest
   func testContextDark() { capture("conversation-context", "dark") }
   func testContextPlum() { capture("conversation-context", "dark", variant: "plum") }
   func testContextAccessibility() { capture("conversation-context", "light", variant: "ax3") }
+  func testContextLargeLight() { capture("conversation-context", "light", variant: "large") }
+  func testContextLargeDark() { capture("conversation-context", "dark", variant: "large") }
+  func testContextOverMarkdownLight() { captureContextOver("conversation-markdown", "light") }
+  func testContextOverMarkdownDark() { captureContextOver("conversation-markdown", "dark") }
 
   func testFailedJobCard() {
     let app = XCUIApplication()
@@ -143,6 +149,10 @@ import XCTest
       }
       XCTAssertTrue(app.staticTexts["/ 200k tokens"].firstMatch.exists)
       XCTAssertTrue(app.staticTexts["42%"].firstMatch.exists)
+      if variant == "large" && UIDevice.current.userInterfaceIdiom == .phone {
+        // The large detent: the system makes the sheet opaque; its content must still read.
+        expandSheet(app, title: app.staticTexts["Context and cost"].firstMatch)
+      }
     } else {
       if scenario == "conversation-job-stack" && variant == nil {
         // The closed shelf (current jobs inline, count chips) before it opens.
@@ -200,6 +210,44 @@ import XCTest
     attachment.lifetime = .keepAlways
     add(attachment)
     app.terminate()
+  }
+
+  /// Sheet legibility over busy content: the context sheet opened above a rich transcript.
+  private func captureContextOver(_ scenario: String, _ appearance: String) {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", scenario, "--appearance", appearance, "--reset-test-data",
+      "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    XCTAssertTrue(scroll(app).waitForExistence(timeout: 10))
+    let trigger = element(app, "context-display")
+    XCTAssertTrue(trigger.waitForExistence(timeout: 10))
+    trigger.tap()
+    XCTAssertTrue(app.staticTexts["Context and cost"].firstMatch.waitForExistence(timeout: 10))
+    let rendered = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        screenshotHasContent(XCUIScreen.main.screenshot())
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
+    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    attachment.name = "synthetic-fixture__\(scenario)__\(appearance)__context"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    app.terminate()
+  }
+
+  /// Drags a medium-detent sheet by its header to the large detent and waits for it to settle.
+  private func expandSheet(_ app: XCUIApplication, title: XCUIElement) {
+    XCTAssertTrue(title.waitForExistence(timeout: 10))
+    let start = title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    start.press(
+      forDuration: 0.1,
+      thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)))
+    let expanded = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in title.frame.minY < app.frame.height * 0.25 }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 10), .completed)
   }
 
   /// A short, slow drag inside the dock's bounded scroll view (flicks overshoot it).

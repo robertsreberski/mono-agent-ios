@@ -3,6 +3,7 @@ import SwiftUI
 
 /// Value-only wake facts; the caller owns timezone and schedule decisions.
 public struct WakeSummaryView: View {
+  @Environment(\.webMaterial) private var material
   let state: String
   let sentence: String
   let next: String?
@@ -24,7 +25,7 @@ public struct WakeSummaryView: View {
         .webFont(.sheetTitle).foregroundStyle(WebColor.text.color)
       Text(sentence).webFont(.system).foregroundStyle(WebColor.text.color)
       if let next { Text(next).webFont(.sheetSubtitle).foregroundStyle(WebColor.textSoft.color) }
-      if let note { Text(note).webFont(.sheetSubtitle).foregroundStyle(WebColor.textMuted.color) }
+      if let note { Text(note).webFont(.sheetSubtitle).foregroundStyle(material.textMuted.color) }
       if let outcome {
         Label(outcome, systemImage: "info.circle").webFont(.sheetSubtitle).foregroundStyle(
           WebColor.textSoft.color)
@@ -34,11 +35,12 @@ public struct WakeSummaryView: View {
   }
 }
 public struct WakeScheduleStatus: View {
+  @Environment(\.webMaterial) private var material
   let text: String
   public init(_ text: String) { self.text = text }
   public var body: some View {
     Label(text, systemImage: "clock").webFont(.sheetSubtitle)
-      .foregroundStyle(WebColor.textMuted.color).accessibilityLabel(
+      .foregroundStyle(material.textMuted.color).accessibilityLabel(
         "Wake-up schedule status: \(text)")
   }
 }

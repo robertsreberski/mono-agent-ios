@@ -35,7 +35,7 @@ struct JobPeerQuestionView: View {
           Text(pending ? "expires " + date.formatted(.relative(presentation: .named)) : "expired")
         }
       }
-      .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+      .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
       .accessibilityElement(children: .combine)
       .accessibilityIdentifier("peer-question")
       Text(JobPresentation.preview(question.message, limit: 16_384).text)
@@ -46,20 +46,20 @@ struct JobPeerQuestionView: View {
           let label = Text(field.label).fontWeight(.semibold)
             .foregroundStyle(WebColor.textSoft.color)
           let required = Text(field.required ? " · required" : "")
-            .foregroundStyle(WebColor.textMuted.color)
+            .foregroundStyle(WebGlass.textMuted.color)
           Text("\(label)\(required)")
           if let detail = field.description {
-            Text(detail).font(.system(size: 12)).foregroundStyle(WebColor.textMuted.color)
+            Text(detail).font(.system(size: 12)).foregroundStyle(WebGlass.textMuted.color)
           }
           if field.options.isEmpty {
-            Text(field.freeText ? "free text" : "value").foregroundStyle(WebColor.textMuted.color)
+            Text(field.freeText ? "free text" : "value").foregroundStyle(WebGlass.textMuted.color)
           } else {
             ReferenceOptions(options: field.options)
           }
         }
       }
       Text("Untrusted peer text; not owner approval. The agent answers through PeerAgent.")
-        .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+        .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
       Button(onAnswerPeerQuestion == nil ? "Answer · unavailable here" : "Answer") {
         onAnswerPeerQuestion?(question)
       }
@@ -74,14 +74,14 @@ struct JobPeerQuestionView: View {
             .rotationEffect(.degrees(schemaOpen ? 90 : 0))
           Text("Raw form")
         }
-        .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+        .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
         .frame(minHeight: 28).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .accessibilityValue(schemaOpen ? "Expanded" : "Collapsed")
       if schemaOpen {
         Text("questionId " + question.questionId).webFont(.jobMono)
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(WebGlass.textMuted.color)
         JobOutputBox(TranscriptPresentation.json(.object(question.requestedSchema)), maxHeight: 140)
       }
     }
@@ -89,11 +89,12 @@ struct JobPeerQuestionView: View {
     .padding(.vertical, 10).padding(.horizontal, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
-      WebColor.surface.color, in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+      WebGlass.groupFill.color,
+      in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
     )
     .overlay(
       RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
-        .strokeBorder(WebColor.line.color, lineWidth: 1))
+        .strokeBorder(WebGlass.hairline.color, lineWidth: 1))
   }
 }
 
@@ -101,7 +102,7 @@ struct JobPeerQuestionView: View {
 private struct ReferenceOptions: View {
   let options: [String]
   var body: some View {
-    let label = Text("Options, for reference: ").foregroundStyle(WebColor.textMuted.color)
+    let label = Text("Options, for reference: ").foregroundStyle(WebGlass.textMuted.color)
     let values = Text(options.joined(separator: "  ·  ")).foregroundStyle(WebColor.textSoft.color)
     Text("\(label)\(values)").font(.system(size: 12))
   }
@@ -117,23 +118,24 @@ struct JobSubagentQuestionView: View {
           WebColor.textSoft.color)
         Text("when it finished")
       }
-      .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+      .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
       Text(question.question).foregroundStyle(WebColor.text.color).textSelection(.enabled)
       if let options = question.options, !options.isEmpty {
         ReferenceOptions(options: options)
       }
       Text("Untrusted child text; the parent agent answers it.")
-        .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+        .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
     }
     .webFont(.jobDetail)
     .padding(.vertical, 10).padding(.horizontal, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
-      WebColor.surface.color, in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
+      WebGlass.groupFill.color,
+      in: RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
     )
     .overlay(
       RoundedRectangle(cornerRadius: WebRadius.tile, style: .continuous)
-        .strokeBorder(WebColor.line.color, lineWidth: 1))
+        .strokeBorder(WebGlass.hairline.color, lineWidth: 1))
   }
 }
 
@@ -155,12 +157,12 @@ struct JobSubagentProgressView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if progress.recent.isEmpty {
-        Text("No tool calls yet.").webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+        Text("No tool calls yet.").webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
           .frame(minHeight: 28)
       }
       if progress.toolCalls > progress.recent.count {
         Text("Showing the latest \(progress.recent.count) of \(progress.toolCalls) calls.")
-          .font(.system(size: 11)).foregroundStyle(WebColor.textMuted.color)
+          .font(.system(size: 11)).foregroundStyle(WebGlass.textMuted.color)
           .padding(.top, 2).padding(.bottom, 4)
       }
       ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
@@ -183,7 +185,7 @@ struct JobSubagentProgressView: View {
             .padding(.bottom, 8)
           if progress.answerTruncated == true {
             Text("Only the answer head is available through this API.")
-              .webFont(.jobMeta).foregroundStyle(WebColor.textMuted.color)
+              .webFont(.jobMeta).foregroundStyle(WebGlass.textMuted.color)
           }
         }
       }
@@ -232,9 +234,9 @@ struct JobSubagentProgressView: View {
               call.status == "failed"
                 ? WebColor.danger.color
                 : call.status == "running"
-                  ? WebColor.jobProgressText.color : WebColor.textMuted.color)
+                  ? WebColor.jobProgressText.color : WebGlass.textMuted.color)
           }
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(WebGlass.textMuted.color)
         }
       }
       .padding(.leading, 8).padding(.trailing, 8).padding(.bottom, 8)
@@ -249,7 +251,7 @@ struct JobSubagentProgressView: View {
         .lineLimit(1)
         .frame(minWidth: 68, alignment: .leading)
       Text(summary).webFont(.stepSummary)
-        .foregroundStyle(running ? WebColor.text.color : WebColor.textMuted.color)
+        .foregroundStyle(running ? WebColor.text.color : WebGlass.textMuted.color)
         .lineLimit(1).truncationMode(.middle)
         .frame(maxWidth: .infinity, alignment: .leading)
       if failed > 0 {
@@ -261,7 +263,7 @@ struct JobSubagentProgressView: View {
       }
       if let time {
         Text(time).webFont(.stepTime)
-          .foregroundStyle(running ? WebColor.jobProgressText.color : WebColor.textMuted.color)
+          .foregroundStyle(running ? WebColor.jobProgressText.color : WebGlass.textMuted.color)
       }
     }
     .frame(minHeight: 28)

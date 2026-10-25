@@ -31,14 +31,14 @@ struct ModelSelectorMenu: View {
           if parts.count > 1 {
             Text(parts.dropFirst().joined(separator: " · "))
               .webFont(.effortBadge)
-              .foregroundStyle(theme.palette.accent.color)
+              .foregroundStyle(WebColor.text.color)
               .lineLimit(1)
               .padding(.horizontal, 6).padding(.vertical, 3)
-              .background(theme.palette.accentSoft.color, in: RoundedRectangle(cornerRadius: 5))
+              .background(theme.palette.accentInk, in: RoundedRectangle(cornerRadius: 5))
               .fixedSize()
           }
           if controller.hasRunOverride && sizeClass == .regular {
-            Text("custom").webFont(.composerHint).foregroundStyle(WebColor.textMuted.color)
+            Text("custom").webFont(.composerHint).foregroundStyle(WebGlass.textMuted.color)
               .fixedSize()
           }
         } else {
@@ -48,7 +48,7 @@ struct ModelSelectorMenu: View {
         Spacer(minLength: 0)
         Image(systemName: "chevron.down")
           .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(WebGlass.textMuted.color)
       }
       .padding(.leading, 7).padding(.trailing, 5)
       .frame(minHeight: WebMetrics.quietControl)
@@ -103,19 +103,18 @@ struct RunSettingsSheet: View {
             }
             if controller.threadID != nil {
               Text("Changing the model rebuilds context on the next reply. Effort changes don't.")
-                .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+                .webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color)
                 .padding(.vertical, 12).padding(.horizontal, 10)
             }
           }.padding(.vertical, 6).padding(.horizontal, 8)
         }
       }
       .scrollBounceBehavior(.basedOnSize)
-      .background(WebColor.surfaceRaised.color)
       if let agent = controller.agent {
         let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
         let efforts = (rows.first { $0.id == controller.runModel } ?? rows.first)?.efforts ?? []
         VStack(alignment: .leading, spacing: 6) {
-          Text("Thinking").webFont(.effortOption).foregroundStyle(WebColor.textMuted.color)
+          Text("Thinking").webFont(.effortOption).foregroundStyle(WebGlass.textMuted.color)
           if efforts.isEmpty {
             Text("This model has no reasoning effort setting").webFont(.contextNote)
           }
@@ -132,17 +131,18 @@ struct RunSettingsSheet: View {
           }
           if controller.hasRunOverride {
             Button("Reset to Agent Default") { controller.resetRunSettings() }
-              .buttonStyle(WebSmallButtonStyle()).accessibilityIdentifier("model-reset")
+              .designButtonStyle(.secondary, placement: .floating)
+              .accessibilityIdentifier("model-reset")
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10).padding(.horizontal, 12)
-        .background(WebColor.surfaceSubtle.color)
-        .overlay(alignment: .top) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
+        // On the sheet material: a hairline above, no band of its own (GLASS-RULES.md).
+        .overlay(alignment: .top) { WebHairline() }
       }
     }
+    .webSheetVeil()
     .presentationDetents([.medium, .large])
-    .presentationCornerRadius(20)
   }
 }
 
@@ -167,10 +167,10 @@ struct SkillBrowserSheet: View {
       .accessibilityIdentifier("skills-header")
       WebSearchField("Search names and descriptions", text: $query)
       if let notice {
-        Text(notice).webFont(.sheetSubtitle).foregroundStyle(WebColor.textMuted.color)
+        Text(notice).webFont(.sheetSubtitle).foregroundStyle(WebGlass.textMuted.color)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.vertical, 9).padding(.horizontal, 15)
-          .background(WebColor.surfaceSubtle.color)
+          .overlay(alignment: .bottom) { WebHairline() }
       }
       ScrollView {
         let visible = SkillDiscovery.rank(
@@ -192,15 +192,14 @@ struct SkillBrowserSheet: View {
           }
           if case .ready(let items, _, _, _)? = registry, visible.isEmpty {
             Text(items.isEmpty ? "No skills are installed for this agent." : "No matching skills.")
-              .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color).padding(16)
+              .webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color).padding(16)
           }
         }.padding(7)
       }
       .refreshable { await onRefresh() }
-      .background(WebColor.surfaceRaised.color)
     }
+    .webSheetVeil()
     .presentationDetents([.medium, .large])
-    .presentationCornerRadius(16)
     .accessibilityIdentifier("skill-browser")
   }
 

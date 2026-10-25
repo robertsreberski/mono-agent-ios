@@ -18,6 +18,39 @@ import XCTest
     XCTAssertFalse(element(app, "jump-to-latest").exists)
     app.terminate()
   }
+  func testPullToRefreshBelowPhoneHeaderKeepsContentReachable() {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-transcript", "--appearance", "light", "--reset-test-data",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    let scroll = transcriptScroll(app)
+    let first = element(app, "message-sample-user")
+    XCTAssertTrue(first.waitForExistence(timeout: 5))
+    let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+    start.press(
+      forDuration: 0.1,
+      thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)))
+    let header = element(app, "conversation-header")
+    let settled = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        first.isHittable && first.frame.minY >= scroll.frame.minY
+          && header.isHittable
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
+    // A user drag can enter reading mode on phones; its Jump control must still resume following.
+    let jump = element(app, "jump-to-latest")
+    if jump.exists {
+      jump.tap()
+      let following = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in !jump.exists }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [following], timeout: 10), .completed)
+    }
+    XCTAssertTrue(element(app, "composer").isHittable)
+    app.terminate()
+  }
+
   func testTranscriptDark() { capture("conversation-transcript", "dark") }
   func testStreamingLight() { capture("conversation-streaming", "light") }
   func testStreamingDark() { capture("conversation-streaming", "dark") }

@@ -47,10 +47,13 @@ struct ProjectSettings: View {
           } else {
             VStack(alignment: .leading, spacing: 8) {
               Eyebrow("Name")
-              TextField("Project name", text: $name).accessibilityIdentifier("project-name")
+              TextField(
+                "Project name", text: $name,
+                prompt: Text("Project name").foregroundStyle(WebGlass.textMuted.color)
+              ).accessibilityIdentifier("project-name")
                 .disabled(created != nil)
                 .padding(12).background(
-                  WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                  WebGlass.groupFill.color, in: RoundedRectangle(cornerRadius: 8))
             }
             VStack(alignment: .leading, spacing: 8) {
               Eyebrow("Color")
@@ -64,20 +67,22 @@ struct ProjectSettings: View {
                 Eyebrow("Context")
                 Spacer()
                 Text("\(context.count) chars").webFont(.contextNote)
+                  .foregroundStyle(WebGlass.textMuted.color)
               }
               TextField(
                 "Shared briefing for every conversation in this project", text: $context,
-                axis: .vertical
+                prompt: Text("Shared briefing for every conversation in this project")
+                  .foregroundStyle(WebGlass.textMuted.color), axis: .vertical
               )
               .lineLimit(5...10).padding(12)
               .background(
-                WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8)
+                WebGlass.groupFill.color, in: RoundedRectangle(cornerRadius: 8)
               )
               .accessibilityLabel("Project context").accessibilityIdentifier("project-context")
               Text(
                 "Prepended to every conversation in this project. Existing conversations pick it up on their next turn."
               )
-              .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+              .webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color)
             }
             .disabled(created != nil)
             if editing, let project {
@@ -90,11 +95,11 @@ struct ProjectSettings: View {
                 ) { store.requestProjectConfirmation(id: project.id) }
                 .accessibilityIdentifier("delete-project")
               }.background(
-                WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                WebGlass.groupFill.color, in: RoundedRectangle(cornerRadius: 8))
               Text(
                 "Created \(createdLabel(project.createdAt)) · \(store.agents.first { $0.sourceId == request.sourceID }?.label ?? "agent")"
               )
-              .webFont(.contextNote).foregroundStyle(WebColor.textMuted.color)
+              .webFont(.contextNote).foregroundStyle(WebGlass.textMuted.color)
             }
           }
           if let error {
@@ -105,6 +110,8 @@ struct ProjectSettings: View {
         .webFont(.system).padding(17).disabled(saving)
       }
     }
+    .foregroundStyle(WebColor.text.color)
+    .webSheetVeil()
     .presentationDragIndicator(.visible)
     .presentationDetents([.height(editing ? 680 : 540), .large])
     .accessibilityElement(children: .contain)

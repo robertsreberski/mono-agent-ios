@@ -573,6 +573,34 @@ final class ScenarioTests: XCTestCase {
     app.terminate()
   }
 
+  func testDashboardLastRowClearsFooterLight() { captureDashboardLastRow("light") }
+  func testDashboardLastRowClearsFooterDark() { captureDashboardLastRow("dark") }
+
+  private func captureDashboardLastRow(_ appearance: String) {
+    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "footerlast") {
+      app in
+      XCTAssertTrue(self.scrollTo(app, "load-older"))
+      self.element(app, "load-older").tap()
+      XCTAssertTrue(self.scrollTo(app, "recent-row-t-atlas-older"))
+      let list = app.scrollViews.matching(identifier: "dashboard-list").firstMatch
+      let last = self.element(app, "recent-row-t-atlas-older")
+      let footer = self.element(app, "archive-toggle")
+      // Scroll to the actual end, not merely an AX-instantiated row behind floating pills.
+      for _ in 0..<4 {
+        if last.isHittable && last.frame.maxY < footer.frame.minY { break }
+        list.swipeUp()
+      }
+      let clearance = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in
+          last.isHittable && last.frame.minY >= list.frame.minY
+            && last.frame.maxY < footer.frame.minY
+        }, object: nil)
+      XCTAssertEqual(
+        XCTWaiter.wait(for: [clearance], timeout: 10), .completed,
+        "Last row must settle fully above footer pills")
+    }
+  }
+
   func testDashboardOpensConversationNewConversationAndArchive() {
     let app = launch("dashboard-populated")
     XCTAssertTrue(element(app, "running-row-t-atlas-launch").waitForExistence(timeout: 10))
@@ -630,6 +658,18 @@ final class ScenarioTests: XCTestCase {
     element(app, "consoles-done").tap()
     XCTAssertTrue(element(app, "agent-strip").waitForExistence(timeout: 10))
     app.terminate()
+  }
+
+  func testConsoleManagerSheetLight() { captureConsoles("light") }
+  func testConsoleManagerSheetDark() { captureConsoles("dark") }
+  /// The console list as a sheet over the dashboard (a floating, text-carrying surface).
+  private func captureConsoles(_ appearance: String) {
+    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "consoles") {
+      app in
+      app.descendants(matching: .any)["consoles-button"].firstMatch.tap()
+      XCTAssertTrue(
+        app.descendants(matching: .any)["add-console"].firstMatch.waitForExistence(timeout: 10))
+    }
   }
 
   func testOfflineEmptyAndSearchScenarios() {

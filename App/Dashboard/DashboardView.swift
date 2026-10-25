@@ -163,6 +163,7 @@ struct DashboardView: View {
       .refreshable { await refresh() }
     }
     .safeAreaBar(edge: .bottom) { footer }
+    .scrollEdgeEffectStyle(.hard, for: .bottom)
   }
 
   @ViewBuilder private func sections(now: Date) -> some View {
@@ -721,17 +722,11 @@ struct DashboardView: View {
 
   // MARK: Footer
 
-  /// Web `.dashboard-footer`: data mode and Archived as quiet 32 pt pills, below a 28 pt fade
-  /// from the transparent list into the panel.
+  /// Web `.dashboard-footer`: data mode and Archived as quiet 32 pt glass pills. They float
+  /// over the list with the system scroll-edge effect, not on a solid panel band (the web's
+  /// 28 pt fade into the panel); GLASS-RULES.md.
   private var footer: some View {
     VStack(spacing: 0) {
-      LinearGradient(
-        colors: [theme.palette.panel.color.opacity(0), theme.palette.panel.color],
-        startPoint: .top, endPoint: .bottom
-      )
-      .frame(height: 28)
-      .allowsHitTesting(false)
-      .accessibilityHidden(true)
       GlassEffectContainer(spacing: 8) {
         HStack(spacing: 8) {
           dataModeMenu
@@ -741,7 +736,6 @@ struct DashboardView: View {
       }
       .padding(.horizontal, WebSpace.dashboardGutter - 7)
       .frame(minHeight: 44)
-      .background(theme.palette.panel.color.ignoresSafeArea(edges: .bottom))
     }
   }
 

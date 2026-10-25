@@ -83,14 +83,13 @@ struct ConversationScreen: View {
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
     .modifier(
-      ConversationTopBar(compact: sizeClass != .regular, panel: theme.palette.panel) {
+      ConversationTopBar(compact: sizeClass != .regular) {
         compactHeader
       }
     )
     .toolbar { headerToolbar }
-    // iPad: the web chat header in the system bar (panel at 94%), no back button there.
-    .toolbarBackground(theme.palette.panel.color.opacity(0.94), for: .navigationBar)
-    .toolbarBackgroundVisibility(.visible, for: .navigationBar)
+    // iPad: the web chat header in the system bar, which supplies its own Liquid Glass and
+    // scroll-edge effect (no custom bar background; GLASS-RULES.md). No back button there.
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(
       model.isReady && store.hydrated ? "scenario-ready" : "conversation-loading"
@@ -226,7 +225,7 @@ struct ConversationScreen: View {
       .accessibilityLabel("Back")
       .accessibilityIdentifier("conversation-back")
       header.frame(maxWidth: .infinity, alignment: .leading)
-      detailsMenu(glass: false)
+      detailsMenu(glass: true)
         .padding(.trailing, -4)
     }
     .padding(.horizontal, WebSpace.headerGutter)
@@ -407,7 +406,7 @@ struct ConversationScreen: View {
       .disabled(!store.canOrganize)
       .padding(4)
       .frame(width: 280)
-
+      .webSheetVeil()
       .presentationCompactAdaptation(.popover)
       .task { if let thread { await store.refreshOrganizeLabels(sourceID: thread.sourceId) } }
       .onDisappear {
@@ -459,27 +458,19 @@ struct ConversationScreen: View {
 }
 
 /// Phones: hides the system bar (and its glass back button) and pins the web mobile chat header
-/// above the content: the chat panel flowing up through the status-bar band, with a 1 px
-/// bottom line and no blur or glass. Swipe-back stays available through `InteractivePopRestorer`.
+/// above the content as a navigation-layer bar: no solid panel band; the transcript scrolls
+/// beneath it under the system hard scroll-edge effect, and the "…" tile is glass
+/// (GLASS-RULES.md). Swipe-back stays available through `InteractivePopRestorer`.
 private struct ConversationTopBar<Bar: View>: ViewModifier {
   let compact: Bool
-  let panel: AdaptiveColor
   @ViewBuilder let bar: () -> Bar
 
   func body(content: Content) -> some View {
     if compact {
       content
         .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-          bar()
-            // The status-bar band is opaque panel, as the web's fixed band; the header is the
-            // panel too (the web's 94% mix reads as opaque, and any show-through ghosts text).
-            .background { panel.color.ignoresSafeArea(edges: .top) }
-            .overlay(alignment: .bottom) {
-              Rectangle().fill(WebColor.line.color).frame(height: 1)
-                .accessibilityHidden(true)
-            }
-        }
+        .safeAreaBar(edge: .top, spacing: 0) { bar().webGlassContent() }
+        .scrollEdgeEffectStyle(.hard, for: .top)
         .background { InteractivePopRestorer().frame(width: 0, height: 0) }
     } else {
       content

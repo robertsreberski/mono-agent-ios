@@ -8,7 +8,7 @@ import UIKit
 
 /// The floating composer (web Composer.tsx): a Liquid Glass bar with attach, the multiline
 /// field, model/effort and skills, and Send / Queue / Stop. Suggestions and submission status
-/// sit above it on an opaque surface, because they are content, not controls.
+/// sit above it on their own glass surface with a frosted reading veil.
 struct ComposerBar: View {
   @Bindable var controller: ComposerController
   @Environment(\.composerSampleAttachments) private var sampleAttachments
@@ -149,9 +149,10 @@ struct ComposerBar: View {
 
   // MARK: Composer root (web `.composer-root`)
 
-  /// Radius 14 on phones / 16 on tablets, 1 px line-strong edge, subtle fill; focus raises it
-  /// with an accent edge and the 3 px accent glow. It floats above the transcript, so the fill
-  /// is Liquid Glass tinted with the web surface (opaque web fill under Reduce Transparency).
+  /// Radius 14 on phones / 16 on tablets; focus adds an accent edge and the 3 px accent glow.
+  /// It floats above the transcript: one untinted Liquid Glass surface (GLASS-RULES.md), a
+  /// light-mode line-strong stroke for the web edge, and the opaque web fill under Reduce
+  /// Transparency. Everything inside uses glass inks, never a solid web surface.
   private var composerRoot: some View {
     let regular = sizeClass == .regular
     let shape = RoundedRectangle(
@@ -168,7 +169,7 @@ struct ComposerBar: View {
       toolbar
       if regular {
         Text("⌘↩ to send · / commands · $ skills")
-          .webFont(.composerHint).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.composerHint).foregroundStyle(WebGlass.textMuted.color)
           .lineLimit(1)
           .padding(.horizontal, 2)
           .accessibilityHidden(true)
@@ -177,10 +178,13 @@ struct ComposerBar: View {
     .padding(.top, regular ? 10 : 8)
     .padding(.horizontal, regular ? 10 : 8)
     .padding(.bottom, regular ? 8 : 6)
-    .floatingGlass(in: shape, tint: fill.color.opacity(0.55), opaqueFill: fill.color)
+    .webGlassContent()
+    .floatingGlass(in: shape, opaqueFill: fill.color, opaqueStroke: WebColor.lineStrong.color)
     .overlay(
       shape.strokeBorder(
-        focused ? theme.palette.accent.color : WebColor.lineStrong.color, lineWidth: 1)
+        focused
+          ? theme.palette.accent.color
+          : WebColor.lineStrong.color(lightOpacity: 1, darkOpacity: 0), lineWidth: 1)
     )
     .background { if focused { shape.inset(by: -3).fill(theme.palette.accentGlow) } }
   }
@@ -188,7 +192,7 @@ struct ComposerBar: View {
   private var field: some View {
     TextField(
       "Message", text: $controller.text, selection: $controller.selection,
-      prompt: Text(affordances.placeholder).foregroundStyle(WebColor.textMuted.color),
+      prompt: Text(affordances.placeholder).foregroundStyle(WebGlass.textMuted.color),
       axis: .vertical
     )
     .lineLimit(1...8)
@@ -290,9 +294,9 @@ struct ComposerBar: View {
       } label: {
         Image(systemName: affordances.primary == .queue ? "text.append" : "paperplane")
           .font(.system(size: 14, weight: .medium))
-          .foregroundStyle(palette.accent.color)
+          .foregroundStyle(WebGlass.accentText(palette).color)
           .frame(width: WebMetrics.send, height: WebMetrics.send)
-          .background(palette.accentSoft.color, in: tile)
+          .background(palette.accentInk, in: tile)
           .opacity(affordances.primaryEnabled ? 1 : 0.45)
           .frame(minWidth: 40, minHeight: DesignMetrics.minimumHitTarget)
           .contentShape(Rectangle())
@@ -311,7 +315,7 @@ struct ComposerBar: View {
             .font(.system(size: 13, weight: .regular))
             .foregroundStyle(WebColor.text.color)
             .frame(width: WebMetrics.send, height: WebMetrics.send)
-            .background(WebColor.surfaceHover.color, in: tile)
+            .background(WebGlass.selectedFill.color, in: tile)
             .opacity(controller.stopping ? 0.45 : 1)
             .frame(minWidth: 40, minHeight: DesignMetrics.minimumHitTarget)
             .contentShape(Rectangle())
@@ -482,7 +486,8 @@ struct ComposerAttachments: View {
   }
 }
 
-/// Suggestions and the submission status above the glass bar, on an opaque surface.
+/// Suggestions and the submission status above the glass bar. Both float over the transcript
+/// and carry text: one glass surface each with the frosted sheet veil (GLASS-RULES.md).
 struct ComposerOverlay: View {
   let controller: ComposerController
   let onCommand: (ComposerCommand) -> Void
@@ -522,17 +527,23 @@ struct ComposerOverlay: View {
         }
         .frame(maxHeight: 310)
         .fixedSize(horizontal: false, vertical: true)
-        // Web `.composer-trigger-popover`: raised, 1 px line-strong, radius 12, shadow-lg,
-        // padding 5, at most 320 pt wide, anchored 9 pt in from the composer's leading edge.
+        // Web `.composer-trigger-popover` geometry: radius 12, padding 5, at most 320 pt wide,
+        // anchored 9 pt in from the composer's leading edge. Glass + veil replace the raised
+        // fill and shadow-lg; light mode keeps the line-strong edge as a stroke.
         .padding(5)
+        .webGlassContent()
         .background(
-          WebColor.surfaceRaised.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+          WebGlass.sheetVeil.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .floatingGlass(
+          in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+          opaqueFill: WebColor.surfaceRaised.color, opaqueStroke: WebColor.lineStrong.color
         )
         .overlay(
           RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(WebColor.lineStrong.color, lineWidth: 1)
+            .strokeBorder(
+              WebColor.lineStrong.color(lightOpacity: 1, darkOpacity: 0), lineWidth: 1)
         )
-        .webShadow(.large)
         .frame(maxWidth: 320)
         .padding(.leading, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -578,7 +589,16 @@ struct ComposerStatusLine: View {
           StatusIndicator(.failed, label: message).fixedSize(horizontal: false, vertical: true)
         }
       }
-      .contentSurface(padding: DesignSpacing.sm)
+      .padding(DesignSpacing.sm)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .webGlassContent()
+      .background(
+        WebGlass.sheetVeil.color,
+        in: RoundedRectangle(cornerRadius: DesignRadius.md, style: .continuous)
+      )
+      .floatingGlass(
+        in: RoundedRectangle(cornerRadius: DesignRadius.md, style: .continuous),
+        opaqueFill: DesignColor.contentSurface)
     }
   }
 

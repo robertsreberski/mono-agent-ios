@@ -34,7 +34,7 @@ struct ConsoleShell: View {
         NavigationStack {
           LoadingStateView("Opening console…")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(theme.palette.panel.color)
+            .webPanelBackground(theme.palette.panel)
             .accessibilityIdentifier("connection-loading")
         }
       } else {
@@ -43,7 +43,9 @@ struct ConsoleShell: View {
     }
     .consoleTheme(theme)
     .sheet(isPresented: $managingConsoles) {
-      ConsoleManager(model: model, presentation: .sheet)
+      // A sheet over the dashboard: the frosted veil on the system material; the same screens
+      // drop their panel fills and settings cards become glass inks (GLASS-RULES.md).
+      ConsoleManager(model: model, presentation: .sheet).webSheetVeil()
     }
     .onChange(of: model.expectsStore) { _, expects in
       // The dashboard behind the sheet is gone (removed, edited or never-connected console):
@@ -89,7 +91,7 @@ struct ConsoleManager: View {
         NavigationStack(path: path) {
           sidebar
             .scrollContentBackground(.hidden)
-            .background(theme.palette.panel.color)
+            .webPanelBackground(theme.palette.panel)
             .navigationDestination(for: AppRoute.self) { destination($0) }
         }
       }
@@ -100,6 +102,7 @@ struct ConsoleManager: View {
         route = .console(id)
       }
       .consoleTheme(theme)
+      .webSheetVeil()
     }
     .confirmationDialog(
       "Remove saved console and all its retained local data?",
@@ -179,7 +182,7 @@ struct ConsoleManager: View {
       .frame(maxWidth: 674)
       .frame(maxWidth: .infinity)
     }
-    .background(theme.palette.panel.color)
+    .webPanelBackground(theme.palette.panel)
     // Identifier metadata on an existing container adds no visible or spoken content.
     .accessibilityIdentifier(model.isReady ? "scenario-ready" : "connection-loading")
     .navigationTitle("Consoles")
@@ -212,7 +215,7 @@ struct ConsoleManager: View {
         message: "Saved consoles stay separate on this device."
       )
       .frame(maxHeight: .infinity)
-      .background(theme.palette.panel.color)
+      .webPanelBackground(theme.palette.panel)
     }
   }
 }
@@ -239,6 +242,7 @@ private struct ConsoleRow: View {
   let open: () -> Void
   let edit: () -> Void
   let remove: () -> Void
+  @Environment(\.webMaterial) private var material
 
   private var title: String {
     console.name.isEmpty
@@ -251,7 +255,7 @@ private struct ConsoleRow: View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
           Text(title).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
           // One line in the list; the detail screen shows the full, selectable address.
-          Text(console.endpoint.origin).webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+          Text(console.endpoint.origin).webFont(.notice).foregroundStyle(material.textMuted.color)
             .lineLimit(1).truncationMode(.middle)
           ViewThatFits(in: .horizontal) {
             HStack(spacing: DesignSpacing.md) { indicators }
@@ -286,6 +290,7 @@ private struct ConsoleDetail: View {
   let registry: ConnectionRegistry
   let ready: Bool
   let dashboardOpen: Bool
+  @Environment(\.webMaterial) private var material
   @Environment(\.consoleTheme) private var theme
 
   private var state: ConnectionState { registry.states[console.id] ?? .disconnected }
@@ -297,7 +302,7 @@ private struct ConsoleDetail: View {
           ConnectionBanner(.storage, title: "Storage warning", message: error)
         }
         VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-          Text("Address").webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+          Text("Address").webFont(.notice).foregroundStyle(material.textMuted.color)
           Text(console.endpoint.origin).webFont(.code).textSelection(.enabled)
         }
         .modifier(ConsoleSettingsSurface())
@@ -312,7 +317,7 @@ private struct ConsoleDetail: View {
       .frame(maxWidth: DesignMetrics.readableWidth, alignment: .leading)
       .frame(maxWidth: .infinity)
     }
-    .background(theme.palette.panel.color)
+    .webPanelBackground(theme.palette.panel)
     .safeAreaBar(edge: .bottom) { actionBar }
     .scrollEdgeEffectStyle(.hard, for: .bottom)
     .accessibilityIdentifier(ready ? "scenario-ready" : "connection-loading")
@@ -326,7 +331,7 @@ private struct ConsoleDetail: View {
       VStack(alignment: .leading, spacing: DesignSpacing.sm) {
         StatusIndicator(.disconnected)
         Text("A saved identity does not confirm connectivity.")
-          .webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+          .webFont(.notice).foregroundStyle(material.textMuted.color)
       }
       .modifier(ConsoleSettingsSurface())
     case .connecting:
@@ -346,7 +351,7 @@ private struct ConsoleDetail: View {
             ? "Its agents and conversations are on the dashboard behind this sheet."
             : "Its dashboard opens as soon as this console is selected."
         )
-        .webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+        .webFont(.notice).foregroundStyle(material.textMuted.color)
       }
       .modifier(ConsoleSettingsSurface())
     }

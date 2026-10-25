@@ -9,6 +9,7 @@ struct ConnectionEditor: View {
   let console: SavedConsole?
   let onSaved: (UUID) -> Void
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.webMaterial) private var material
   @Environment(\.consoleTheme) private var theme
   @State private var name: String
   @State private var address: String
@@ -39,7 +40,7 @@ struct ConnectionEditor: View {
             Text(
               "Use a hostname or IP and optional port, with no path prefix. No request is made until you tap Connect."
             )
-            .webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+            .webFont(.notice).foregroundStyle(material.textMuted.color)
           }
           if let endpoint, endpoint.isInsecure {
             SettingsGroup("Insecure HTTP") {
@@ -58,10 +59,10 @@ struct ConnectionEditor: View {
           SettingsGroup {
             Text(
               "Use only a trusted network or secure private tunnel. The console has no application login and grants powerful access to its agents."
-            ).webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+            ).webFont(.notice).foregroundStyle(material.textMuted.color)
             Text(
               "On a physical device, localhost and loopback point to that device. Use your computer's LAN IP or Tailscale HTTPS URL instead."
-            ).webFont(.notice).foregroundStyle(WebColor.textMuted.color)
+            ).webFont(.notice).foregroundStyle(material.textMuted.color)
           }
           if let error {
             SettingsGroup("Could not save") { StatusIndicator(.failed, label: error) }
@@ -73,7 +74,7 @@ struct ConnectionEditor: View {
         .frame(maxWidth: 674)
         .frame(maxWidth: .infinity)
       }
-      .background(theme.palette.panel.color)
+      .webPanelBackground(theme.palette.panel)
       .navigationTitle(console == nil ? "Add console" : "Edit console")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

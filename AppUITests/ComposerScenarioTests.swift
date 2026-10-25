@@ -43,7 +43,7 @@ import XCTest
     case "composer-model-selector": modelSelector(app, capture: capture)
     case "composer-running": running(app, capture: capture)
     case "composer-send-failed": sendFailed(app, capture: capture)
-    case "composer-quote": quote(app, capture: capture)
+    case "composer-quote": quote(app, appearance: appearance, capture: capture)
     case "conversation-ask-form": askForm(app, capture: capture)
     case "conversation-quick-replies": quickReplies(app, capture: capture)
     case "peer-question-sheet": peerQuestion(app, capture: capture)
@@ -198,9 +198,17 @@ import XCTest
     XCTAssertFalse(waitForText(app, "rejected", timeout: 1))
   }
 
-  private func quote(_ app: XCUIApplication, capture: () -> Void) {
+  private func quote(_ app: XCUIApplication, appearance: String, capture: () -> Void) {
     let message = element(app, "message-sample-assistant")
     XCTAssertTrue(message.waitForExistence(timeout: 10))
+    message.press(forDuration: 1.2)
+    let selection = app.buttons["Quote Selection…"].firstMatch
+    XCTAssertTrue(selection.waitForExistence(timeout: 5))
+    selection.tap()
+    XCTAssertTrue(app.navigationBars["Select text to quote"].waitForExistence(timeout: 5))
+    self.capture(app, "composer-quote-selection", appearance, variant: nil)
+    app.buttons["Cancel"].firstMatch.tap()
+    XCTAssertTrue(message.waitForExistence(timeout: 5))
     message.press(forDuration: 1.2)
     let quote = app.buttons["Quote"].firstMatch
     XCTAssertTrue(quote.waitForExistence(timeout: 5))

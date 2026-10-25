@@ -57,18 +57,26 @@ struct ConversationContextView: View {
     VStack(alignment: .leading, spacing: DesignSpacing.sm) {
       ContextDisplay(Self.content(state), expanded: $expanded, detailOnly: detailOnly)
       if expanded {
-        if state.usageRevision != nil && state.usageRevision != state.thread.revision {
-          Text("Last reported totals; conversation has changed.").webFont(.contextNote)
+        // Notes on the sheet material: muted glass text on the 16 pt section gutter; Retry is
+        // a secondary glass action (GLASS-RULES.md).
+        Group {
+          if state.usageRevision != nil && state.usageRevision != state.thread.revision {
+            Text("Last reported totals; conversation has changed.").webFont(.contextNote)
+          }
+          if loading { ProgressView("Loading totals…").webFont(.contextNote) }
+          if failed {
+            Text("Totals could not be refreshed. Unknown values are not zero.").webFont(
+              .contextNote)
+            Button("Retry totals") { Task { await refresh() } }
+              .designButtonStyle(.secondary, placement: .floating)
+          }
         }
-        if loading { ProgressView("Loading totals…").webFont(.contextNote) }
-        if failed {
-          Text("Totals could not be refreshed. Unknown values are not zero.").webFont(.contextNote)
-          Button("Retry totals") { Task { await refresh() } }
-        }
+        .foregroundStyle(WebGlass.textMuted.color)
+        .padding(.horizontal, 16)
         if store.agents.first(where: { $0.sourceId == state.thread.sourceId })?
           .supportsManualCompaction == true
         {
-          Divider()
+          WebHairline()
           let busy =
             store.manualCompactions[state.thread.id] == .pending
             || state.thread.compaction?.status == "running"
@@ -89,10 +97,13 @@ struct ConversationContextView: View {
             Button(busy ? "Compacting…" : "Compact") {
               store.compactConversation(threadID: state.thread.id)
             }
-            .buttonStyle(.glassProminent).tint(theme.palette.accent.color)
+            .designButtonStyle(.primary, placement: .floating)
+            .foregroundStyle(theme.palette.onAccent.color)
             .disabled(!store.canCompactConversation(state.thread) || busy)
             .accessibilityIdentifier("compact-context")
           }
+          .foregroundStyle(WebGlass.textMuted.color)
+          .padding(.horizontal, 16)
         }
       }
     }

@@ -6,7 +6,8 @@ import SwiftUI
 
 /// The conversation's background-job shelf in the composer dock, directly above the input
 /// (web Chat.tsx `ProcessJobStack`). Collapsed it names the current jobs; expanded it scrolls
-/// within a bounded height so the input stays reachable. Content, so it sits on an opaque card.
+/// within a bounded height so the input stays reachable. It floats above the transcript, so it
+/// is one Liquid Glass surface with translucent rows inside (GLASS-RULES.md).
 struct ComposerJobDock: View {
   let state: ConversationState
   let store: ConsoleStore
@@ -31,26 +32,33 @@ struct ComposerJobDock: View {
       .scrollBounceBehavior(.basedOnSize)
       .frame(height: min(max(contentHeight, 1), verticalSizeClass == .compact ? 150 : 300))
       .accessibilityIdentifier("composer-dock-scroll")
-      // Web `.process-job-stack`: stack-bg (panel 55% + surface), 1 px line-strong, radius 13
-      // on phones (14 tablet), shadow-sm. It floats above the transcript: tinted glass.
+      // Web `.process-job-stack` geometry (radius 13 on phones). It floats above the
+      // transcript: one veiled glass surface keeps shelf text legible over code. Reduce
+      // Transparency keeps the web stack-bg fill with its 1 px line-strong edge.
       .padding(.horizontal, 10)
+      .webGlassContent()
+      .background(
+        WebGlass.sheetVeil.color,
+        in: RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous)
+      )
       .floatingGlass(
         in: RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous),
-        tint: theme.palette.jobStackBackground.color.opacity(0.6),
-        opaqueFill: theme.palette.jobStackBackground.color
+        opaqueFill: theme.palette.jobStackBackground.color,
+        opaqueStroke: WebColor.lineStrong.color
       )
+      // Light mode keeps the web 1 px line-strong edge as a stroke only (no fill); dark glass
+      // already reads against the dark transcript.
       .overlay(
         RoundedRectangle(cornerRadius: WebRadius.shelf, style: .continuous)
-          .strokeBorder(WebColor.lineStrong.color, lineWidth: 1)
+          .strokeBorder(WebColor.lineStrong.color(lightOpacity: 1, darkOpacity: 0), lineWidth: 1)
       )
-      .webShadow(.small)
     }
   }
 }
 
 /// Context/cost beside the model and effort selector (web "Next turn settings" row). The
-/// Design `ContextDisplay` label is the trigger; its full disclosure opens in a popover so the
-/// glass bar never carries dense content.
+/// Design `ContextDisplay` label is the trigger; its full disclosure opens in a popover (iPad) or
+/// sheet (iPhone) drawn directly on the system presentation material: no solid body or band.
 struct ComposerContextControl: View {
   let state: ConversationState
   let store: ConsoleStore
@@ -58,6 +66,7 @@ struct ComposerContextControl: View {
   var fixed = true
   @State private var open = false
   @Environment(\.horizontalSizeClass) private var sizeClass
+  @Environment(\.webMaterial) private var material
 
   var body: some View {
     let content = ConversationContextView.content(state)
@@ -70,7 +79,7 @@ struct ComposerContextControl: View {
         ContextRing(percent: content.percent)
         Text(content.percent == nil ? "–" : content.badge)
           .webFont(.contextTrigger).fontWeight(.bold)
-          .foregroundStyle(WebColor.textMuted.color)
+          .foregroundStyle(material.textMuted.color)
           .lineLimit(fixed ? 1 : 2)
       }
       .padding(.horizontal, 7)
@@ -90,7 +99,6 @@ struct ComposerContextControl: View {
     .sheet(isPresented: Binding(get: { open && sizeClass != .regular }, set: { open = $0 })) {
       contextDetail
         .presentationDetents([.medium, .large])
-        .presentationCornerRadius(20)
     }
   }
   private var contextDetail: some View {
@@ -100,9 +108,8 @@ struct ComposerContextControl: View {
         ConversationContextView(state: state, store: store, expanded: true)
       }
       .scrollBounceBehavior(.basedOnSize)
-      .background(WebColor.surfaceRaised.color)
     }
-
+    .webSheetVeil()
   }
 }
 

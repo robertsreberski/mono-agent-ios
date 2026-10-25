@@ -551,6 +551,7 @@ public struct WebRowButtonStyle: ButtonStyle {
 
 /// An uppercase eyebrow label (`.eyebrow`): 10 / 700 / .14em, muted.
 public struct Eyebrow: View {
+  @Environment(\.webMaterial) private var material
   private let text: String
   private let color: Color?
   public init(_ text: String, color: Color? = nil) {
@@ -558,7 +559,7 @@ public struct Eyebrow: View {
     self.color = color
   }
   public var body: some View {
-    Text(text).webFont(.eyebrow).foregroundStyle(color ?? WebColor.textMuted.color)
+    Text(text).webFont(.eyebrow).foregroundStyle(color ?? material.textMuted.color)
       .lineLimit(1)
   }
 }

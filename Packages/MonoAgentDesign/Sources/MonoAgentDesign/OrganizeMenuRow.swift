@@ -8,6 +8,7 @@ public struct OrganizeMenuRow: View {
   let detail: String?
   let destructive: Bool
   let action: () -> Void
+  @Environment(\.webMaterial) private var material
 
   public init(
     _ title: String, systemImage: String, detail: String? = nil,
@@ -27,7 +28,7 @@ public struct OrganizeMenuRow: View {
         VStack(alignment: .leading, spacing: 3) {
           Text(title).webFont(.system)
           if let detail {
-            Text(detail).webFont(.rowSubtitle).foregroundStyle(WebColor.textMuted.color)
+            Text(detail).webFont(.rowSubtitle).foregroundStyle(material.textMuted.color)
           }
         }
         Spacer(minLength: 0)

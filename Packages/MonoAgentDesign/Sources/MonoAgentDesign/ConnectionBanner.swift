@@ -3,7 +3,7 @@ import SwiftUI
 
 /// A full-width notice inside content: insecure HTTP, offline, storage, a refresh problem or
 /// trust guidance.
-/// Opaque by design; banners carry reading text, so they are never glass.
+/// Solid in content; inside a sheet the existing material carries the text with quiet ink.
 public struct ConnectionBanner: View {
   public enum Kind: CaseIterable, Sendable {
     case insecureHTTP
@@ -38,6 +38,7 @@ public struct ConnectionBanner: View {
   private let actionTitle: String?
   private let action: (@MainActor () -> Void)?
   @Environment(\.consoleTheme) private var theme
+  @Environment(\.webMaterial) private var material
   @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.horizontalSizeClass) private var sizeClass
@@ -87,7 +88,13 @@ public struct ConnectionBanner: View {
     .padding(.horizontal, 16)
     .frame(minHeight: 34)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(theme.palette.panel.color.overlay(tone.opacity(0.09)))
+    .background {
+      if material == .glass {
+        tone.opacity(0.09)
+      } else {
+        theme.palette.panel.color.overlay(tone.opacity(0.09))
+      }
+    }
     .overlay(alignment: .bottom) {
       Rectangle().fill(tone.opacity(contrast == .increased ? 1 : 0.25)).frame(height: 1)
     }

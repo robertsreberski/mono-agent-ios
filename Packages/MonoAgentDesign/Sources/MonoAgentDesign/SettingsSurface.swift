@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import SwiftUI
 
-/// Opaque web `.settings-group`: raised surface, line border, 12 px corners.
-/// Settings content never adopts the glass of its surrounding native sheet.
+/// Web `.settings-group`: raised surface, line border, 12 px corners in the content layer. In a
+/// sheet (`webMaterial == .glass`) it becomes quiet group ink with a hairline (GLASS-RULES.md).
 public struct SettingsGroup<Content: View>: View {
   private let title: String?
   private let content: Content
@@ -21,12 +21,9 @@ public struct SettingsGroup<Content: View>: View {
         .webFont(.rowTitle)
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(WebColor.surfaceRaised.color, in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-          RoundedRectangle(cornerRadius: 12).strokeBorder(WebColor.line.color, lineWidth: 1)
-        }
-        .compositingGroup()
-        .webShadow(.small)
+        .webLayeredSurface(
+          RoundedRectangle(cornerRadius: 12), fill: WebColor.surfaceRaised.color,
+          stroke: WebColor.line.color, shadow: .small)
     }
     .foregroundStyle(WebColor.text.color)
   }
@@ -40,10 +37,9 @@ extension View {
       .padding(.horizontal, 14)
       .padding(.vertical, 10)
       .frame(minHeight: 44)
-      .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 12))
-      .overlay {
-        RoundedRectangle(cornerRadius: 12).strokeBorder(WebColor.lineStrong.color, lineWidth: 1)
-      }
+      .webLayeredSurface(
+        RoundedRectangle(cornerRadius: 12), fill: WebColor.surfaceSubtle.color,
+        stroke: WebColor.lineStrong.color)
   }
 }
 

@@ -20,17 +20,23 @@ public struct OrganizeSheetHeader: View {
   }
   public var body: some View {
     HStack(spacing: 12) {
-      Button("Cancel", action: cancel).buttonStyle(.glass).foregroundStyle(WebColor.textSoft.color)
+      Button(action: cancel) {
+        Image(systemName: "xmark").font(.system(size: 16))
+          .frame(width: DesignMetrics.minimumHitTarget, height: DesignMetrics.minimumHitTarget)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain).foregroundStyle(WebGlass.textSoft.color)
+      .accessibilityLabel("Cancel")
       Spacer(minLength: 0)
       Text(title).webFont(.sheetTitle).accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)
       Button(saving ? "Saving…" : "Save", action: save)
-        .buttonStyle(.glassProminent).tint(theme.palette.accent.color)
+        .designButtonStyle(.primary, placement: .floating)
         .foregroundStyle(theme.palette.onAccent.color).disabled(!canSave || saving)
         .accessibilityIdentifier("organize-save")
     }
     .webFont(.system).frame(minHeight: 52).padding(.horizontal, 17)
-    .overlay(alignment: .bottom) { Rectangle().fill(WebColor.line.color).frame(height: 1) }
+    .overlay(alignment: .bottom) { WebHairline() }
   }
 }
 

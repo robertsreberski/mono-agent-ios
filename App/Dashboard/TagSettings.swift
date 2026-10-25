@@ -45,9 +45,12 @@ struct TagSettings: View {
           } else {
             VStack(alignment: .leading, spacing: 8) {
               Eyebrow("Name")
-              TextField("Tag name", text: $name).accessibilityIdentifier("tag-name")
+              TextField(
+                "Tag name", text: $name,
+                prompt: Text("Tag name").foregroundStyle(WebGlass.textMuted.color)
+              ).accessibilityIdentifier("tag-name")
                 .padding(12).background(
-                  WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                  WebGlass.groupFill.color, in: RoundedRectangle(cornerRadius: 8))
             }.disabled(createdID != nil)
             VStack(alignment: .leading, spacing: 8) {
               Eyebrow("Color")
@@ -58,7 +61,7 @@ struct TagSettings: View {
                 "Delete tag", systemImage: "trash", detail: "Keeps chats", destructive: true
               ) { store.requestTagDeletion(id: tag.id) }
               .background(
-                WebColor.surfaceSubtle.color.opacity(0.3), in: RoundedRectangle(cornerRadius: 8)
+                WebGlass.groupFill.color, in: RoundedRectangle(cornerRadius: 8)
               )
               .accessibilityIdentifier("delete-tag")
             }
@@ -69,6 +72,8 @@ struct TagSettings: View {
         }.webFont(.system).padding(17).disabled(saving)
       }
     }
+    .foregroundStyle(WebColor.text.color)
+    .webSheetVeil()
     .presentationDragIndicator(.visible)
     .presentationDetents([.height(editing ? 360 : 300), .large])
     .accessibilityElement(children: .contain).accessibilityIdentifier("tag-settings")

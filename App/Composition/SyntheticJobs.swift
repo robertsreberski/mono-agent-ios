@@ -168,6 +168,9 @@
           #"{"type":"tool-call","toolCallId":"launch-garden-helper","toolName":"Agent","args":{"id":"garden-helper","prompt":"Review the sample planting plan","persist":true,"background":true},"structuredResult":{"schema":"mono-agent.process-job-start-receipt.v1","jobId":"turn-1","tool":"Agent","state":"running","startedAt":"2030-01-02T11:59:00Z"},"status":"complete"}"#
         )
         message.parts.insert(.toolCall(call), at: 0)
+        // A tall code backdrop exercises the floating shelf/composer over busy web content.
+        let code = String(repeating: "let sample = 42 // Fictional planting zone\n", count: 80)
+        message.parts.append(.text(.init(text: "## Sample code\n```swift\n" + code + "```")))
       }
       if scenario == .conversationSubagents {
         for status in ["running", "complete", "failed"] {
