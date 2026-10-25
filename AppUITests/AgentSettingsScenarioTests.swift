@@ -458,11 +458,17 @@ import XCTest
   private func capture(
     _ app: XCUIApplication, _ scenario: String, _ appearance: String, variant: String? = nil
   ) {
+    // Resolved once, outside the poll: accessibility queries can exceed the poll's deadline.
+    let checkSidebar = screenshotChecksSidebar(app)
     let rendered = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in screenshotHasContent(XCUIScreen.main.screenshot()) },
+      predicate: NSPredicate { _, _ in
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
+      },
       object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 10), .completed)
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    XCTAssertEqual(XCTWaiter.wait(for: [rendered], timeout: 30), .completed)
+    let screenshot = XCUIScreen.main.screenshot()
+    XCTAssertTrue(screenshotHasContent(screenshot, checkSidebar: checkSidebar))
+    let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name =
       "synthetic-fixture__\(scenario)__\(appearance)" + (variant.map { "__" + $0 } ?? "")
     attachment.lifetime = .keepAlways
