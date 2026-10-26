@@ -436,7 +436,9 @@ extension ConsoleStore {
         } else {
           try await self.api.cancelAuth(id: source, sessionId: id)
         }
-      } catch { /* Expiry is the fallback; never log auth material. */  }
+      } catch {
+        // Expiry is the fallback; never log auth material.
+      }
     }
     Task { [clock] in
       do {
