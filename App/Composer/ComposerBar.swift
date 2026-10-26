@@ -36,12 +36,6 @@ struct ComposerBar: View {
   private var hasSuggestions: Bool {
     !controller.skillSuggestions.isEmpty || !controller.commandSuggestions.isEmpty
   }
-  private var hasOverlay: Bool {
-    hasSuggestions || ComposerStatusLine(controller: controller).hasContent
-  }
-  /// The 44 pt jump target extends 24 pt into the first floating surface. Keep that
-  /// entire area non-interactive, including suggestions, attachments and job toggles.
-  private var jumpClearance: CGFloat { jumpControl?.available == true ? 24 : 0 }
 
   private var limits: UploadLimits? { store.bootstrap?.limits }
   private var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
@@ -57,13 +51,12 @@ struct ComposerBar: View {
     let regular = sizeClass == .regular
     VStack(spacing: 6) {
       if let state = conversation {
-        ComposerJobDock(state: state, store: store, topClearance: jumpClearance) {
+        ComposerJobDock(state: state, store: store) {
           peerQuestion = .init(question: $0)
         }
       }
       ComposerOverlay(
-        controller: controller, topClearance: hasJobs ? 0 : jumpClearance, onCommand: perform,
-        onSkill: { controller.insertSkill($0) })
+        controller: controller, onCommand: perform, onSkill: { controller.insertSkill($0) })
       composerRoot
     }
     .padding(.horizontal, regular ? WebSpace.dockGutterRegular : WebSpace.dockGutter)
@@ -124,15 +117,19 @@ struct ComposerBar: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("composer")
-    .overlay(alignment: .top) {
-      if let jumpControl, jumpControl.available {
-        // Full-width dock surfaces supply the lower circle's material. Clip that portion
-        // of the jump's own glass rather than stacking two materials on the shelf.
-        TranscriptJumpButton(sharesDockMaterial: hasJobs || !hasSuggestions) {
-          jumpControl.jump?()
-        }.offset(y: -20)
-      }
+    // Jump to latest is drawn above the dock by the conversation (`TranscriptJumpOverlay`),
+    // never inside it, so the dock's geometry never depends on it. The dock publishes where
+    // it is and whether its first surface is full-width material: that material supplies
+    // the circle's lower part instead of stacking two glasses on the shelf.
+    .onGeometryChange(for: CGRect.self) {
+      $0.frame(in: .global)
+    } action: {
+      jumpControl?.dockFrame = $0
     }
+    .onChange(of: hasJobs || !hasSuggestions, initial: true) { _, shares in
+      jumpControl?.sharesDockMaterial = shares
+    }
+    .onDisappear { jumpControl?.dockFrame = nil }
   }
 
   // MARK: Leading
@@ -205,7 +202,7 @@ struct ComposerBar: View {
           .accessibilityHidden(true)
       }
     }
-    .padding(.top, max(regular ? 10 : 8, hasJobs || hasOverlay ? 0 : jumpClearance))
+    .padding(.top, regular ? 10 : 8)
     .padding(.horizontal, regular ? 10 : 8)
     .padding(.bottom, regular ? 8 : 6)
     .webGlassContent()
@@ -517,7 +514,6 @@ struct ComposerAttachments: View {
 /// and carry text: one glass surface each with the frosted sheet veil (GLASS-RULES.md).
 struct ComposerOverlay: View {
   let controller: ComposerController
-  var topClearance: CGFloat = 0
   let onCommand: (ComposerCommand) -> Void
   let onSkill: (String) -> Void
 
@@ -559,7 +555,6 @@ struct ComposerOverlay: View {
         // anchored 9 pt in from the composer's leading edge. Glass + veil replace the raised
         // fill and shadow-lg; light mode keeps the line-strong edge as a stroke.
         .padding(5)
-        .padding(.top, topClearance)
         .webGlassContent()
         .background(
           WebGlass.sheetVeil.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -582,8 +577,7 @@ struct ComposerOverlay: View {
         )
         .accessibilityIdentifier("composer-suggestions")
       }
-      ComposerStatusLine(
-        controller: controller, topClearance: skills.isEmpty && commands.isEmpty ? topClearance : 0)
+      ComposerStatusLine(controller: controller)
     }
   }
 }
@@ -592,8 +586,6 @@ struct ComposerOverlay: View {
 /// compaction. Each has a symbol and words, never colour alone; Retry is explicit.
 struct ComposerStatusLine: View {
   let controller: ComposerController
-  var topClearance: CGFloat = 0
-  var hasContent: Bool { controller.phase != .idle || !lines.isEmpty }
   var body: some View {
     let phase = controller.phase
     let messages = lines
@@ -622,7 +614,6 @@ struct ComposerStatusLine: View {
         }
       }
       .padding(DesignSpacing.sm)
-      .padding(.top, topClearance)
       .frame(maxWidth: .infinity, alignment: .leading)
       .webGlassContent()
       .background(

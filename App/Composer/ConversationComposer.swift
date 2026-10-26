@@ -12,6 +12,10 @@ import UIKit
 final class TranscriptJumpControl {
   var available = false
   var jump: (() -> Void)?
+  /// The dock's frame in global coordinates, published by the dock; Jump straddles its top.
+  var dockFrame: CGRect?
+  /// The dock's first surface is full-width material that supplies the circle's lower part.
+  var sharesDockMaterial = false
 }
 
 /// What transcript surfaces may ask of the visible composer: quote a message, send a suggested
@@ -89,6 +93,9 @@ private struct ConversationComposerMount: ViewModifier {
             .environment(\.composerSampleAttachments, sampleAttachments)
         }
       }
+      // Above the bar rather than inside it: a safe-area bar's host can clip touches to the
+      // bar's bounds (iPad), which would cut off the target's part above the dock edge.
+      .overlay { TranscriptJumpOverlay(control: jumpControl) }
       .task(id: route) {
         guard let source = route.sourceID, let next = mountState.mount(store: store, route: route)
         else { return }

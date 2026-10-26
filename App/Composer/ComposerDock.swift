@@ -11,7 +11,6 @@ import SwiftUI
 struct ComposerJobDock: View {
   let state: ConversationState
   let store: ConsoleStore
-  var topClearance: CGFloat = 0
   let onAnswer: (PeerProcessJobQuestion) -> Void
   @Environment(\.verticalSizeClass) private var verticalSizeClass
   @Environment(\.consoleTheme) private var theme
@@ -37,7 +36,6 @@ struct ComposerJobDock: View {
       // transcript: one veiled glass surface keeps shelf text legible over code. Reduce
       // Transparency keeps the web stack-bg fill with its 1 px line-strong edge.
       .padding(.horizontal, 10)
-      .padding(.top, topClearance)
       .webGlassContent()
       .background(
         WebGlass.sheetVeil.color,
@@ -59,7 +57,16 @@ struct ComposerJobDock: View {
 }
 
 /// Pure glass, straddling the dock rather than floating over transcript prose. No extra bar.
+/// The dock never makes room for it: the circle overlaps the first dock surface's top edge,
+/// and only the visible circle is interactive below that edge (GLASS-RULES.md rule 10).
 struct TranscriptJumpButton: View {
+  /// The visible circle's height above the dock's top edge.
+  static let aboveDock: CGFloat = 16
+  /// Extra hit height above the circle, completing the 44 pt minimum target.
+  static let reach = DesignMetrics.minimumHitTarget - WebMetrics.tile
+  /// The button's top relative to the dock's top edge.
+  static let mountOffset = -(aboveDock + reach)
+
   var sharesDockMaterial = false
   let jump: () -> Void
   var body: some View {
@@ -73,21 +80,67 @@ struct TranscriptJumpButton: View {
           Circle().fill(.clear)
             .floatingGlass(in: Circle(), opaqueFill: WebColor.surfaceRaised.color)
             .mask(alignment: .top) {
-              // Label inset 4, mount offset −20: only its upper 16 pt are above the
-              // dock. The dock supplies the lower 20 pt's single material.
-              Rectangle().frame(height: sharesDockMaterial ? 16 : WebMetrics.tile)
+              // Only the circle's upper 16 pt are above the dock. The full-width dock
+              // surface supplies the lower 20 pt's single material.
+              Rectangle().frame(height: sharesDockMaterial ? Self.aboveDock : WebMetrics.tile)
             }
         }
         .overlay {
           Circle().strokeBorder(
             WebColor.lineStrong.color(lightOpacity: 1, darkOpacity: 0), lineWidth: 1)
         }
-        .frame(minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget)
-        .contentShape(Circle())
+        // 44 × 44: the circle sits at the bottom; the 8 pt above it is transcript-side reach.
+        .padding(.top, Self.reach)
+        .frame(width: DesignMetrics.minimumHitTarget, alignment: .bottom)
+        .contentShape(
+          JumpHitShape(diameter: WebMetrics.tile, dockEdge: Self.reach + Self.aboveDock))
     }
     .buttonStyle(.plain)
     .accessibilityLabel("Jump to latest")
+    // VoiceOver activates the visible circle's centre, never the reach above it.
+    .accessibilityActivationPoint(
+      UnitPoint(
+        x: 0.5,
+        y: (Self.reach + WebMetrics.tile / 2) / DesignMetrics.minimumHitTarget)
+    )
     .accessibilityIdentifier("jump-to-latest")
+  }
+}
+
+/// Places Jump to latest over the conversation, straddling the dock's top edge. It is not
+/// part of the dock's layout, so the dock never changes size when it appears.
+struct TranscriptJumpOverlay: View {
+  let control: TranscriptJumpControl
+  var body: some View {
+    GeometryReader { proxy in
+      if control.available, let dock = control.dockFrame {
+        let origin = proxy.frame(in: .global).origin
+        TranscriptJumpButton(sharesDockMaterial: control.sharesDockMaterial) {
+          control.jump?()
+        }
+        .position(
+          x: dock.midX - origin.x,
+          y: dock.minY - origin.y + TranscriptJumpButton.mountOffset
+            + DesignMetrics.minimumHitTarget / 2)
+      }
+    }
+    .ignoresSafeArea()
+  }
+}
+
+/// The jump's hit region: the visible circle (bottom-centred), plus the full width above the
+/// dock's top edge so the target stays at least 44 × 44. Below the edge, only the circle is
+/// interactive, so taps beside it reach the dock's own rows.
+struct JumpHitShape: Shape {
+  let diameter: CGFloat
+  /// The dock's top edge, measured from this shape's top.
+  let dockEdge: CGFloat
+
+  func path(in rect: CGRect) -> Path {
+    let circle = CGRect(
+      x: rect.midX - diameter / 2, y: rect.maxY - diameter, width: diameter, height: diameter)
+    let above = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: dockEdge)
+    return Path(above).union(Path(ellipseIn: circle))
   }
 }
 

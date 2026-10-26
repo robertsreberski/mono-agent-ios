@@ -68,10 +68,15 @@ There are two kinds of floating surface:
     glass, with no `toolbarBackground`. The two standalone dashboard footer buttons are a
     bottom overlay: content scrolls beneath them, with bottom content margins so the last row
     clears their hit targets. No shared pill, hard scroll-edge effect, band or fade. Jump to
-    latest overlays the dock's top edge at −20 pt, with no reserved safe-area band. While
-    shown, the first dock surface has 24 pt of non-interactive top padding, clear of its full
-    44 pt target. The circle's lower glass is clipped over full-width dock material (especially
-    the job shelf), so the dock supplies that part's material rather than stacking two glasses.
+    latest overlays the dock's top edge, with no reserved safe-area band: its 36 pt circle
+    straddles the first dock surface's edge, and no dock surface changes size, padding or
+    position when it appears. It is drawn over the conversation, not inside the bar, so the
+    bar's host cannot clip its target. Its hit shape (`JumpHitShape`) is the visible circle
+    plus, above the dock edge only, an upward and sideways reach to a 44 × 44 target. Below
+    the edge nothing outside the circle is interactive, so taps beside it reach the dock's
+    rows; the VoiceOver activation point is the circle's centre. The circle's lower glass is
+    clipped over full-width dock material (especially the job shelf), so the dock supplies
+    that part's material rather than stacking two glasses.
 11. **Text keeps the web scale, spacing and hierarchy.** The web colour is used unless it
     fails AA on the material. In that case use the `WebGlass` adjustment (table below).
 12. **The large detent is opaque** (the system does this). The veil and inks are translucent,
