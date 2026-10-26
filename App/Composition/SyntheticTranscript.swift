@@ -89,6 +89,9 @@
             text:
               "Sample message \(index) · A fictional field note for the scrolling performance fixture.",
             turn: "turn-\(index / 2)")
+          if ProcessInfo.processInfo.arguments.contains("--fixture-long-markdown") {
+            row.parts = [.text(.init(text: String(repeating: markdown + "\n\n", count: 3)))]
+          }
           if index % 100 == 1 {
             var call = try tool(index, full: true)
             call.result = .string(String(repeating: "Large synthetic output line.\n", count: 2000))
