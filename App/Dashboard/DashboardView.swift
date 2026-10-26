@@ -159,13 +159,13 @@ struct DashboardView: View {
         .padding(.top, typeSize.isAccessibilitySize ? 0 : 8)
         .padding(.bottom, 28)
       }
+      .contentMargins(.bottom, 60, for: .scrollContent)
       .scrollIndicators(.hidden)
       .scrollDismissesKeyboard(.immediately)
       .accessibilityIdentifier("dashboard-list")
       .refreshable { await refresh() }
     }
-    .safeAreaBar(edge: .bottom) { footer }
-    .scrollEdgeEffectStyle(.hard, for: .bottom)
+    .overlay(alignment: .bottom) { footer }
   }
 
   @ViewBuilder private func sections(now: Date) -> some View {
@@ -780,21 +780,17 @@ struct DashboardView: View {
 
   // MARK: Footer
 
-  /// Web `.dashboard-footer`: data mode and Archived as quiet 32 pt glass pills. They float
-  /// over the list with the system scroll-edge effect, not on a solid panel band (the web's
-  /// 28 pt fade into the panel); GLASS-RULES.md.
+  /// Two standalone pure-glass controls. The list scrolls beneath them; content margins let
+  /// its final row clear the hit targets. No shared pill, band or hard scroll edge.
   private var footer: some View {
-    VStack(spacing: 0) {
-      GlassEffectContainer(spacing: 8) {
-        HStack(spacing: 8) {
-          dataModeMenu
-          Spacer(minLength: 0)
-          archiveToggle
-        }
-      }
-      .padding(.horizontal, WebSpace.dashboardGutter - 7)
-      .frame(minHeight: 44)
+    HStack(spacing: 8) {
+      dataModeMenu
+      Spacer(minLength: 0)
+      archiveToggle
     }
+    .padding(.horizontal, WebSpace.dashboardGutter - 7)
+    .padding(.bottom, 4)
+    .frame(minHeight: 44)
   }
 
   private var dataModeMenu: some View {
@@ -816,9 +812,6 @@ struct DashboardView: View {
         Image(systemName: store.effectiveDataMode == .lean ? "leaf" : "waveform.path.ecg")
           .font(.system(size: 11, weight: .medium))
         Text(label).fontWeight(.semibold)
-          .foregroundStyle(
-            store.effectiveDataMode == .lean ? theme.palette.accent.color : WebColor.textMuted.color
-          )
       }
       .webQuietPill(hitTarget: false)
     }

@@ -130,8 +130,9 @@ material per surface, with no solid web fill on or inside it. Its glass tokens a
 - System navigation bars, toolbars, tab bars and sheets adopt Liquid Glass automatically.
   Prefer them.
 - Custom glass (`.floating` buttons, floating chips, `floatingGlass`, `ComposerBarShell`)
-  is only for controls that float above content. Place bottom bars with
-  `.safeAreaBar(edge: .bottom)`. Text-heavy screens add
+  is only for controls that float above content. The composer uses
+  `.safeAreaBar(edge: .bottom)`; dashboard footer buttons overlay scrolling content with bottom
+  content margins (no band). Native `Menu`s have no veil or custom background. Text-heavy screens add
   `.scrollEdgeEffectStyle(.hard, for: .bottom)` so the bar stays legible over text.
 - Never put transcripts, forms, dense lists or banners on glass. Never nest glass in glass.
   Group neighbouring custom glass in one `GlassEffectContainer`.

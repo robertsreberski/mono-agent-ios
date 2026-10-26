@@ -299,7 +299,7 @@ struct ComposerBar: View {
       Button {
         Task { await controller.send() }
       } label: {
-        Image(systemName: affordances.primary == .queue ? "text.append" : "paperplane")
+        Image(systemName: "paperplane")
           .font(.system(size: 14, weight: .medium))
           .foregroundStyle(WebGlass.accentText(palette).color)
           .frame(width: WebMetrics.send, height: WebMetrics.send)
@@ -318,8 +318,8 @@ struct ComposerBar: View {
         Button {
           Task { await controller.stop() }
         } label: {
-          Image(systemName: "stop")
-            .font(.system(size: 13, weight: .regular))
+          Image(systemName: "stop.fill")
+            .font(.system(size: 11, weight: .regular))
             .foregroundStyle(WebColor.text.color)
             .frame(width: WebMetrics.send, height: WebMetrics.send)
             .background(WebGlass.selectedFill.color, in: tile)
@@ -338,9 +338,6 @@ struct ComposerBar: View {
 
   private var primaryTitle: String {
     affordances.primary == .queue ? "Send as live input" : "Send message"
-  }
-  private var primaryImage: String {
-    affordances.primary == .queue ? "text.append" : "arrow.up"
   }
 
   // MARK: Suggestions keyboard

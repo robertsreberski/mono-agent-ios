@@ -27,15 +27,20 @@ struct ModelSelectorMenu: View {
         if !compact {
           Text(parts.first ?? summary)
             .webFont(.modelName).foregroundStyle(WebColor.text.color)
-            .lineLimit(1).truncationMode(.middle)
+            .lineLimit(1).truncationMode(.tail).layoutPriority(1)
           if parts.count > 1 {
-            Text(parts.dropFirst().joined(separator: " · "))
-              .webFont(.effortBadge)
-              .foregroundStyle(WebColor.text.color)
-              .lineLimit(1)
-              .padding(.horizontal, 6).padding(.vertical, 3)
-              .background(theme.palette.accentInk, in: RoundedRectangle(cornerRadius: 5))
-              .fixedSize()
+            Text(
+              sizeClass == .regular
+                ? parts.dropFirst().joined(separator: " · ")
+                : ModelOptions.compactEffortLabel(
+                  agent, model: controller.runModel, effort: controller.runEffort)
+            )
+            .webFont(.effortBadge)
+            .foregroundStyle(WebGlass.accentText(theme.palette).color)
+            .lineLimit(1)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(theme.palette.accentInk, in: RoundedRectangle(cornerRadius: 5))
+            .fixedSize()
           }
           if controller.hasRunOverride && sizeClass == .regular {
             Text("custom").webFont(.composerHint).foregroundStyle(WebGlass.textMuted.color)
@@ -75,6 +80,7 @@ struct RunSettingsSheet: View {
   var dismissOnSelection = false
   @Environment(\.dismiss) private var dismiss
   @State private var query = ""
+  @Environment(\.consoleTheme) private var theme
   var body: some View {
     VStack(spacing: 0) {
       WebSheetHeader("Run settings", closeLabel: "Done") { dismiss() }
@@ -114,7 +120,17 @@ struct RunSettingsSheet: View {
         let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
         let efforts = (rows.first { $0.id == controller.runModel } ?? rows.first)?.efforts ?? []
         VStack(alignment: .leading, spacing: 6) {
-          Text("Thinking").webFont(.effortOption).foregroundStyle(WebGlass.textMuted.color)
+          HStack {
+            Text("Thinking").webFont(.effortOption).foregroundStyle(WebGlass.textMuted.color)
+            Spacer(minLength: 8)
+            if controller.hasRunOverride {
+              Button("Reset to agent default") { controller.resetRunSettings() }
+                .buttonStyle(.plain).webFont(.effortOption)
+                .foregroundStyle(WebGlass.accentText(theme.palette).color)
+                .frame(minHeight: DesignMetrics.minimumHitTarget)
+                .accessibilityIdentifier("model-reset")
+            }
+          }
           if efforts.isEmpty {
             Text("This model has no reasoning effort setting").webFont(.contextNote)
           }
@@ -128,11 +144,6 @@ struct RunSettingsSheet: View {
               .accessibilityIdentifier(
                 "effort-option-" + (effort.id.isEmpty ? "default" : effort.id))
             }
-          }
-          if controller.hasRunOverride {
-            Button("Reset to Agent Default") { controller.resetRunSettings() }
-              .designButtonStyle(.secondary, placement: .floating)
-              .accessibilityIdentifier("model-reset")
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

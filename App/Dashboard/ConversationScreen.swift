@@ -21,15 +21,10 @@ struct ConversationScreen: View {
   /// A new conversation created by this screen's composer (C8); the route stays unchanged.
   @State private var createdThreadID: String?
   @State private var screenWidth: CGFloat = 402
-  @State private var actionsOpen = false
   @State private var renaming = false
   @State private var renamedTitle = ""
-  @State private var pendingAction: ConversationAction?
-  @State private var projectPicker = false
   @State private var projectEditor: ProjectEditorRequest?
   @State private var wakeRequest: WakeEditorRequest?
-  @State private var pendingWake = false
-  @State private var pendingProjectEditor: ProjectEditorRequest?
 
   private var threadID: String? { route.threadID ?? createdThreadID }
   private var sourceID: String { route.sourceID ?? "" }
@@ -123,8 +118,6 @@ struct ConversationScreen: View {
     }
     .onChange(of: scenePhase) { applyVisibility() }
     .onChange(of: store.selectedThreadID) {
-      actionsOpen = false
-      pendingAction = nil
       renaming = false
       store.cancelConversationAction()
       applyVisibility()
@@ -208,7 +201,7 @@ struct ConversationScreen: View {
         header.frame(width: max(120, screenWidth - (16 + 60)), alignment: .leading)
       }
       .sharedBackgroundVisibility(.hidden)
-      ToolbarItem(placement: .topBarTrailing) { detailsMenu(glass: true) }
+      ToolbarItem(placement: .topBarTrailing) { detailsMenu }
         .sharedBackgroundVisibility(.hidden)
     }
   }
@@ -231,7 +224,7 @@ struct ConversationScreen: View {
       .accessibilityLabel("Back")
       .accessibilityIdentifier("conversation-back")
       header.frame(maxWidth: .infinity, alignment: .leading)
-      detailsMenu(glass: true)
+      detailsMenu
         .padding(.trailing, -4)
     }
     .padding(.horizontal, WebSpace.headerGutter)
@@ -241,197 +234,142 @@ struct ConversationScreen: View {
     .accessibilityIdentifier("conversation-top-bar")
   }
 
-  /// Breadcrumb (project · tags) above the 13 pt title and its run state, left-aligned beside
-  /// the back button as on the web phone header.
+  /// The title has the full available width. Status and route remain spoken, not visible.
   private var header: some View {
     VStack(alignment: .leading, spacing: 3) {
       breadcrumb
-      HStack(alignment: .firstTextBaseline, spacing: 7) {
-        Button {
-          renamedTitle = title
-          renaming = true
-        } label: {
-          Text(title)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityHint("Rename conversation")
-        .disabled(
-          !store.canOrganize || thread == nil
-            || threadID.flatMap { store.pendingConversationActions[$0] } != nil
-        )
-        .accessibilityIdentifier("rename-conversation")
-        .webFont(.conversationTitle)
-        .foregroundStyle(WebColor.text.color)
-        .lineLimit(1)
-        .accessibilityAddTraits(.isHeader)
-        if let runStatus { runStateBadge(runStatus) }
+      Button {
+        renamedTitle = title
+        renaming = true
+      } label: {
+        Text(title).frame(maxWidth: .infinity, alignment: .leading)
       }
+      .buttonStyle(.plain)
+      .accessibilityLabel(title)
+      .accessibilityValue(
+        [runStatus?.label, knownRoute?.detail].compactMap { $0 }.joined(separator: ", ")
+      )
+      .accessibilityHint("Rename conversation")
+      .disabled(
+        !store.canOrganize || thread == nil
+          || threadID.flatMap { store.pendingConversationActions[$0] } != nil
+      )
+      .accessibilityIdentifier("rename-conversation")
+      .webFont(.conversationTitle)
+      .foregroundStyle(WebColor.text.color)
+      .lineLimit(1)
+      .accessibilityAddTraits(.isHeader)
     }
     .padding(.horizontal, 2)
-    .frame(maxWidth: 560, alignment: .leading)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("conversation-header")
   }
 
-  @ViewBuilder private var breadcrumb: some View {
-    let project = thread.flatMap { DashboardModel.projectLabel($0, projects: store.projects) }
-    let tags =
-      thread.map { thread in
-        thread.tagIds.compactMap { id in
-          store.tags.first { $0.id == id && $0.sourceId == thread.sourceId }
+  private var breadcrumb: some View {
+    ScrollView(.horizontal) {
+      HStack(spacing: 6) {
+        if let project = thread.flatMap({
+          DashboardModel.projectLabel($0, projects: store.projects)
+        }) {
+          ProjectBadge(project.name, color: LabelColor(serverValue: project.color))
+            .fixedSize()
         }
-      } ?? []
-    HStack(spacing: 6) {
-      if let project {
-        ProjectBadge(project.name, color: LabelColor(serverValue: project.color))
+        if let thread { ConversationTags(store: store, thread: thread) }
       }
-      if project != nil {
-        Text("·").webFont(.breadcrumb).foregroundStyle(WebColor.textMuted.color)
-      }
-      if let thread { ConversationTags(store: store, thread: thread) }
-      // The last reported route (model · effort) the old header carried, quietly.
-      if let route = knownRoute {
-        if project != nil || !tags.isEmpty {
-          Text("·").webFont(.breadcrumb).foregroundStyle(WebColor.textMuted.color)
-        }
-        RouteBadge(model: route.label, effort: route.effort ?? "", detail: route.detail)
-          .layoutPriority(-1)
-      }
+      .fixedSize(horizontal: true, vertical: false)
     }
-    .lineLimit(1)
+    .scrollIndicators(.hidden)
+    .accessibilityIdentifier("conversation-metadata")
   }
 
-  /// Web `.chat-status`: a dot and the uppercase state.
-  private func runStateBadge(_ status: (kind: StatusKind, label: String)) -> some View {
-    let label = status.label
-    let color: Color =
-      switch status.kind {
-      case .connecting: WebColor.jobProgress.color
-      case .failed: WebColor.danger.color
-      case .stale: WebColor.textMuted.color
-      default: theme.palette.accent.color
+  /// Native menus supply their own Liquid Glass; never add a veil or custom menu background.
+  private var detailsMenu: some View {
+    Menu {
+      if let thread {
+        Button("Rename conversation", systemImage: "pencil") {
+          renamedTitle = title
+          renaming = true
+        }
+        .accessibilityIdentifier("action-rename")
+        .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
+        Menu {
+          ForEach(
+            store.projects.filter { $0.sourceId == thread.sourceId && $0.archivedAt == nil },
+            id: \.id
+          ) { project in
+            Button {
+              store.setConversationProject(threadID: thread.id, projectID: project.id)
+            } label: {
+              Label(
+                project.name, systemImage: thread.projectId == project.id ? "checkmark" : "folder")
+            }
+            .accessibilityIdentifier("assign-project-\(project.id)")
+          }
+        } label: {
+          Label(
+            thread.projectId == nil ? "Add to project" : "Move to project", systemImage: "folder")
+        }
+        .accessibilityIdentifier("action-project")
+        .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
+        Button("New project from this chat", systemImage: "plus") {
+          projectEditor = .init(sourceID: thread.sourceId, threadID: thread.id)
+        }
+        .accessibilityIdentifier("action-new-project")
+        .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
+        if thread.projectId != nil {
+          Button("Remove from project", systemImage: "xmark") {
+            store.setConversationProject(threadID: thread.id, projectID: nil)
+          }
+          .accessibilityIdentifier("action-remove-project")
+          .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
+        }
+        if thread.trigger == nil {
+          Button {
+            if let id = store.openWakeEditor(threadID: thread.id) {
+              wakeRequest = .init(id: id, threadID: thread.id)
+            }
+          } label: {
+            Label {
+              Text(thread.wakeSchedule == nil ? "Schedule wake-up" : "Edit wake-up schedule")
+              if let schedule = thread.wakeSchedule { Text(WakeScheduleModel.status(schedule)) }
+            } icon: {
+              Image(systemName: "clock")
+            }
+          }
+          .accessibilityIdentifier("action-wake")
+          .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
+        }
+        Divider()
+        Button(
+          thread.archivedAt == nil ? "Archive conversation" : "Restore conversation",
+          systemImage: thread.archivedAt == nil ? "archivebox" : "arrow.uturn.backward"
+        ) {
+          if thread.archivedAt == nil {
+            store.requestConversationAction(.archive, threadID: thread.id)
+          } else {
+            store.restoreConversation(threadID: thread.id)
+          }
+        }
+        .accessibilityIdentifier("action-archive")
+        .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
+        if store.canDeleteConversation(thread) {
+          Button("Permanently delete", systemImage: "trash", role: .destructive) {
+            store.requestConversationAction(.delete, threadID: thread.id)
+          }
+          .accessibilityIdentifier("action-delete")
+          .disabled(!store.canOrganize || store.conversationDeletionPending(thread.id))
+        }
       }
-    return HStack(spacing: 5) {
-      Image(systemName: status.kind == .stale ? "circle.dotted" : "circle.fill")
-        .font(.system(size: 6, weight: .bold))
-        .foregroundStyle(color)
-      Text(label)
-        .font(.system(size: 10, weight: .semibold)).tracking(0.7).textCase(.uppercase)
-        .foregroundStyle(WebColor.textMuted.color)
-        .lineLimit(1)
+    } label: {
+      Label("Conversation actions", systemImage: "ellipsis")
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(status.label)
-    .accessibilityIdentifier("conversation-run-state")
-  }
-
-  /// The web header's trailing conversation menu; no read-only details dead end.
-  private func detailsMenu(glass: Bool) -> some View {
-    Button("Conversation actions", systemImage: "ellipsis") {
-      projectPicker = false
-      actionsOpen = true
-    }
-    .buttonStyle(WebTileButtonStyle(material: glass ? .glass : .flat))
+    .buttonStyle(WebTileButtonStyle())
+    .accessibilityLabel("Conversation actions")
     .accessibilityIdentifier("conversation-actions")
     .disabled(thread == nil)
-    .popover(isPresented: $actionsOpen, arrowEdge: .top) {
-      VStack(spacing: 0) {
-        if let thread {
-          if projectPicker {
-            OrganizeMenuScroll {
-              OrganizeMenuRow("Projects", systemImage: "chevron.left") { projectPicker = false }
-              ForEach(
-                store.projects.filter { $0.sourceId == thread.sourceId && $0.archivedAt == nil },
-                id: \.id
-              ) { project in
-                OrganizeMenuRow(
-                  project.name, systemImage: thread.projectId == project.id ? "checkmark" : "folder"
-                ) {
-                  store.setConversationProject(threadID: thread.id, projectID: project.id)
-                  actionsOpen = false
-                }.accessibilityIdentifier("assign-project-\(project.id)")
-              }
-            }.accessibilityIdentifier("project-picker-scroll").disabled(
-              store.pendingConversationActions[thread.id] != nil)
-          } else {
-            OrganizeMenuRow(
-              thread.projectId == nil ? "Add to project" : "Move to project", systemImage: "folder",
-              detail: thread.projectId.flatMap { id in store.projects.first { $0.id == id }?.name }
-            ) { projectPicker = true }
-            .accessibilityIdentifier("action-project").disabled(
-              store.pendingConversationActions[thread.id] != nil)
-            OrganizeMenuRow("New project from this chat", systemImage: "plus") {
-              pendingProjectEditor = .init(sourceID: thread.sourceId, threadID: thread.id)
-              actionsOpen = false
-            }.accessibilityIdentifier("action-new-project").disabled(
-              store.pendingConversationActions[thread.id] != nil)
-            if thread.projectId != nil {
-              OrganizeMenuRow("Remove from project", systemImage: "xmark") {
-                store.setConversationProject(threadID: thread.id, projectID: nil)
-                actionsOpen = false
-              }.accessibilityIdentifier("action-remove-project").disabled(
-                store.pendingConversationActions[thread.id] != nil)
-            }
-
-            if thread.trigger == nil {
-              OrganizeMenuRow(
-                thread.wakeSchedule == nil ? "Schedule wake-up" : "Edit wake-up schedule",
-                systemImage: "clock",
-                detail: thread.wakeSchedule.map { WakeScheduleModel.status($0) }
-              ) {
-                pendingWake = true
-                actionsOpen = false
-              }.accessibilityIdentifier("action-wake").disabled(
-                store.pendingConversationActions[thread.id] != nil)
-            }
-            OrganizeMenuRow(
-              thread.archivedAt == nil ? "Archive conversation" : "Restore conversation",
-              systemImage: thread.archivedAt == nil ? "archivebox" : "arrow.uturn.backward"
-            ) {
-              actionsOpen = false
-              if thread.archivedAt == nil {
-                pendingAction = .archive
-              } else {
-                store.restoreConversation(threadID: thread.id)
-              }
-            }
-            .accessibilityIdentifier("action-archive").disabled(
-              store.pendingConversationActions[thread.id] != nil)
-            if store.canDeleteConversation(thread) {
-              OrganizeMenuRow("Permanently delete", systemImage: "trash", destructive: true) {
-                actionsOpen = false
-                pendingAction = .delete
-              }
-              .accessibilityIdentifier("action-delete").disabled(
-                store.conversationDeletionPending(thread.id))
-            }
-          }
-        }
-      }
-      .disabled(!store.canOrganize)
-      .padding(4)
-      .frame(width: 280)
-      .webSheetVeil()
-      .presentationCompactAdaptation(.popover)
-      .task { if let thread { await store.refreshOrganizeLabels(sourceID: thread.sourceId) } }
-      .onDisappear {
-        // Present only after the toolbar popover releases its presentation owner (iPad).
-        if pendingWake, let threadID {
-          pendingWake = false
-          if let id = store.openWakeEditor(threadID: threadID) {
-            wakeRequest = .init(id: id, threadID: threadID)
-          }
-        }
-        if let pendingProjectEditor {
-          self.pendingProjectEditor = nil
-          projectEditor = pendingProjectEditor
-        }
-        if let pendingAction, let threadID {
-          self.pendingAction = nil
-          store.requestConversationAction(pendingAction, threadID: threadID)
-        }
-      }
+    .task(id: thread?.sourceId) {
+      if let thread { await store.refreshOrganizeLabels(sourceID: thread.sourceId) }
     }
   }
 
