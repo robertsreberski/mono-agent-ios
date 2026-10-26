@@ -51,6 +51,17 @@ import XCTest
     app.terminate()
   }
 
+  func testCompactionMarkersLight() {
+    capture("conversation-transcript", "light", variant: "markers")
+  }
+  func testCompactionMarkersDark() {
+    capture("conversation-transcript", "dark", variant: "markers")
+  }
+  func testMessageStatusesLight() {
+    capture("conversation-transcript", "light", variant: "statuses")
+  }
+  func testMessageStatusesDark() { capture("conversation-transcript", "dark", variant: "statuses") }
+  func testToolsLargerText() { capture("conversation-tools", "light", variant: "ax3") }
   func testTranscriptDark() { capture("conversation-transcript", "dark") }
   func testStreamingLight() { capture("conversation-streaming", "light") }
   func testStreamingDark() { capture("conversation-streaming", "dark") }
@@ -256,6 +267,8 @@ import XCTest
       "--scenario", scenario, "--appearance", appearance, "--reset-test-data",
       "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
     ]
+    if variant == "markers" { app.launchArguments += ["--fixture-markers"] }
+    if variant == "statuses" { app.launchArguments += ["--fixture-message-statuses"] }
     if variant == "plum" { app.launchArguments += ["--fixture-theme", "plum"] }
     if variant == "ax3" {
       app.launchArguments += [
@@ -265,7 +278,18 @@ import XCTest
     app.launch()
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
     XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
-    if scenario == "conversation-streaming" {
+    if variant == "markers" {
+      let marker = app.staticTexts.containing(
+        NSPredicate(format: "label CONTAINS %@", "Context compacted")
+      ).firstMatch
+      XCTAssertTrue(marker.waitForExistence(timeout: 10))
+    } else if variant == "statuses" {
+      let applied = app.staticTexts.matching(identifier: "live-input-status").matching(
+        NSPredicate(format: "label == %@", "Consumed by current run")
+      ).firstMatch
+      XCTAssertTrue(applied.waitForExistence(timeout: 10))
+      XCTAssertTrue(element(app, "scheduled-wake-part").waitForExistence(timeout: 10))
+    } else if scenario == "conversation-streaming" {
       let complete = app.staticTexts.containing(
         NSPredicate(format: "label CONTAINS %@", "Stream complete")
       ).firstMatch
@@ -308,7 +332,9 @@ import XCTest
         element(app, "jump-to-latest").waitForNonExistence(timeout: 5),
         "Tools at the bottom must not offer Jump to latest")
     }
-    if scenario == "conversation-transcript" || scenario == "conversation-streaming" {
+    if (scenario == "conversation-transcript" && variant == nil)
+      || scenario == "conversation-streaming"
+    {
       let idle = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
           self.element(app, "conversation-run-state").label.contains("Idle")

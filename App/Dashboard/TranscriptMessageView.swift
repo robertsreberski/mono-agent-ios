@@ -7,6 +7,7 @@ import SwiftUI
 struct TranscriptMessageView: View {
   let row: TranscriptMessageState
   let store: ConsoleStore
+  @Environment(\.consoleTheme) private var theme
   @State private var gallery = ReplyMessageGallery()
   private var hasMcp: Bool {
     row.message.parts.contains { if case .mcpApp = $0 { true } else { false } }
@@ -35,6 +36,18 @@ struct TranscriptMessageView: View {
         UserBubble { messageContent(message) }
       } else {
         messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
+      }
+      if let status = message.liveInputStatus,
+        let label = TranscriptPresentation.liveInputLabel(status)
+      {
+        Text(label).webFont(.liveInput)
+          .foregroundStyle(
+            status == "applied"
+              ? theme.palette.accent.color
+              : status == "cancelled" ? DesignColor.danger.color : WebColor.textMuted.color
+          )
+          .padding(.top, 5)
+          .accessibilityIdentifier("live-input-status")
       }
       // Web: touch keeps Copy available even while the response is being written.
       if message.role != "system" {
@@ -93,7 +106,7 @@ struct TranscriptMessageView: View {
               }, message: message, store: store, gallery: gallery)
           } else if let item = band.parts.first {
             if message.role == "system", case .part(.text(let value)) = item {
-              Text(value.text).webFont(.prose).foregroundStyle(WebColor.text.color)
+              Text(value.text).webFont(.system).foregroundStyle(WebColor.textMuted.color)
                 .textSelection(.enabled)
             } else {
               TranscriptItemView(item: item, message: message, store: store)
@@ -107,10 +120,6 @@ struct TranscriptMessageView: View {
           && !TranscriptPresentation.endsWithProse(visible.last?.item.part.map { [$0] } ?? [])
         {
           ThinkingDots()
-        }
-        if let status = message.liveInputStatus {
-          Text("Follow-up · " + status).webFont(.messageAction)
-            .foregroundStyle(WebColor.textMuted.color)
         }
         if message.role == "assistant",
           TranscriptPresentation.showsRunAttribution(message.attribution, status: message.status)
@@ -203,12 +212,17 @@ struct TranscriptPartView: View {
         ToolCallView(call: call, message: message, store: store)
       }
     case .conversationMarker(let value):
-      TranscriptMarkerRow(
-        TranscriptPresentation.marker(value),
-        systemImage: value.kind == "project" ? "folder" : "sparkles"
-      )
-      .opacity(value.kind == "project" ? 0.62 : 1)
-      .accessibilityIdentifier("conversation-marker")
+      if value.kind == "compaction" {
+        CompactionMarkerRow(
+          TranscriptPresentation.compactionMarker(value, running: message.status == "running"))
+      } else {
+        TranscriptMarkerRow(
+          TranscriptPresentation.marker(value),
+          systemImage: value.kind == "project" ? "folder" : "sparkles"
+        )
+        .opacity(value.kind == "project" ? 0.62 : 1)
+        .accessibilityIdentifier("conversation-marker")
+      }
     case .steer(let value):
       UserBubble {
         VStack(alignment: .leading, spacing: 8) {
@@ -220,15 +234,17 @@ struct TranscriptPartView: View {
       .frame(maxWidth: .infinity, alignment: .trailing)
       .accessibilityIdentifier("inline-steer-" + value.inputId)
     case .scheduledWake(let value):
-      VStack(alignment: .leading) {
-        WakeScheduleStatus(
-          "Scheduled wake-up · "
-            + WakeScheduleModel.instant(value.scheduledAt, zone: value.timezone)
-            + " (\(value.timezone))")
-        Text("Ran " + WakeScheduleModel.instant(value.firedAt, zone: value.timezone))
-          .designFont(.caption)
-        if let text = value.message { Text(text).textSelection(.enabled) }
+      VStack(alignment: .leading, spacing: 5) {
+        Text("Scheduled wake-up").webFont(.system).fontWeight(.semibold)
+        Text(
+          WakeScheduleModel.instant(value.scheduledAt, zone: value.timezone)
+            + " (\(value.timezone))"
+        )
+        .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
+        if let text = value.message { Text(text).webFont(.system).textSelection(.enabled) }
       }
+      .foregroundStyle(WebColor.textSoft.color)
+      .accessibilityIdentifier("scheduled-wake-part")
     case .error(let value):
       MessageErrorCard(code: value.code ?? "Agent error", message: value.message)
         .accessibilityIdentifier("message-error-part")
@@ -268,10 +284,10 @@ struct TranscriptPartView: View {
         Text(text).webFont(.activityNote).foregroundStyle(WebColor.textSoft.color)
           .textSelection(.enabled).accessibilityIdentifier("runtime-warning-note")
       case .compaction:
-        if let marker = TranscriptPresentation.compaction(
+        if let marker = TranscriptPresentation.compactionContent(
           value, running: message.status == "running")
         {
-          TranscriptMarkerRow(marker, systemImage: "arrow.triangle.2.circlepath")
+          CompactionMarkerRow(marker)
         }
       case .cron(let run):
         CronRunTranscriptView(run: run)
@@ -282,7 +298,7 @@ struct TranscriptPartView: View {
           ? "Unsupported content" : "Unsupported content · unrecognized or unreadable part",
         systemImage: "questionmark.square.dashed"
       )
-      .designFont(.supporting).foregroundStyle(.secondary).accessibilityIdentifier(
+      .webFont(.notice).foregroundStyle(WebColor.textMuted.color).accessibilityIdentifier(
         "unsupported-content")
     }
   }

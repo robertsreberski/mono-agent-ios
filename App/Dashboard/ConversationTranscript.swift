@@ -80,8 +80,8 @@ struct ConversationTranscript<Header: View>: View {
           if store.manualCompactions[state.thread.id] == .pending
             || (heldCompaction.map { !hasCompactionResult(since: $0) } ?? false)
           {
-            TranscriptMarkerRow(
-              "Compacting context… · manual", systemImage: "arrow.triangle.2.circlepath"
+            CompactionMarkerRow(
+              .init(label: "Compacting context…", trigger: "manual", running: true)
             )
             .accessibilityIdentifier("manual-compaction-running")
             .padding(.horizontal, inset(regular: regular))

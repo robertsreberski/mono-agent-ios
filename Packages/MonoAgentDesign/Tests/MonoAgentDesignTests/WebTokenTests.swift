@@ -5,6 +5,16 @@ import Testing
 
 @Suite("Web console tokens")
 struct WebTokenTests {
+  @Test func transcriptChromeKeepsTheProseScalingCurve() {
+    for role: WebType in [
+      .conversationTitle, .breadcrumb, .chip, .messageAction, .liveInput, .marker,
+      .activityLabel, .activityRowLabel, .activityMeta, .stepTool, .stepSummary,
+      .stepTime, .failedTag, .payloadLabel, .payloadText, .modelName, .effortBadge,
+    ] {
+      #expect(role.followsProseScaling)
+    }
+    #expect(WebType.prose.spec.textStyle == .body)
+  }
   @Test func neutralRolesMirrorTheWebStylesheet() {
     let expected: [(AdaptiveColor, String, String)] = [
       (WebColor.surface, "#fdfdfb", "#191c1a"),

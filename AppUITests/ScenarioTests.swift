@@ -464,6 +464,11 @@ final class ScenarioTests: XCTestCase {
   func testFidelityChatLight() {
     capture("fidelity-chat", "light", expect: ["message-garden-plan", "composer-field"])
   }
+  func testFidelityChatLargerText() {
+    capture(
+      "fidelity-chat", "light", accessibilityText: true,
+      expect: ["message-garden-plan", "composer-field"])
+  }
   func testFidelityChatDark() {
     capture("fidelity-chat", "dark", expect: ["message-garden-plan", "composer-field"])
   }

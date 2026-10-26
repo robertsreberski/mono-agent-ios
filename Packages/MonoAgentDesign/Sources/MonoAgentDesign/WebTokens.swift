@@ -193,6 +193,8 @@ public enum WebType: CaseIterable, Sendable {
   case activityNote
   /// `.message-error`: 12; `.message-error strong`: 10 / 700 / .06em, uppercase.
   case messageError, messageErrorCode
+  /// Status below a live-input bubble.
+  case liveInput
   /// `.attachment-chip`: 11.
   case attachment
   /// `.connection-banner` (phone): 10.
@@ -220,6 +222,17 @@ public enum WebType: CaseIterable, Sendable {
     public var textStyle: Font.TextStyle = .body
   }
 
+  /// Transcript labels and adjacent chrome use the prose scaling curve: at AX sizes a
+  /// caption must not overtake the answer merely because UIKit scales captions faster.
+  public var followsProseScaling: Bool {
+    switch self {
+    case .conversationTitle, .breadcrumb, .chip, .messageAction, .liveInput, .marker,
+      .activityLabel, .activityRowLabel, .activityMeta, .stepTool, .stepSummary, .stepTime,
+      .failedTag, .payloadLabel, .payloadText, .modelName, .effortBadge:
+      true
+    default: false
+    }
+  }
   public var spec: Spec {
     switch self {
     case .projectName:
@@ -274,6 +287,7 @@ public enum WebType: CaseIterable, Sendable {
     case .prose: Spec(size: 13.5, weight: .regular, lineHeight: 1.62, textStyle: .body)
     case .table: Spec(size: 11.5, weight: .regular, textStyle: .footnote)
     case .code: Spec(size: 11.88, weight: .regular, lineHeight: 1.5, mono: true, textStyle: .body)
+    case .liveInput: Spec(size: 9.5, weight: .regular, textStyle: .caption2)
     case .messageAction: Spec(size: 10, weight: .regular, textStyle: .caption2)
     case .system: Spec(size: 12, weight: .regular, textStyle: .footnote)
     case .reasoningTrigger: Spec(size: 11, weight: .regular, textStyle: .caption)
@@ -348,7 +362,9 @@ struct WebFontModifier: ViewModifier {
 
   init(_ type: WebType) {
     spec = type.spec
-    _size = ScaledMetric(wrappedValue: type.spec.size, relativeTo: type.spec.textStyle)
+    _size = ScaledMetric(
+      wrappedValue: type.spec.size,
+      relativeTo: type.followsProseScaling ? .body : type.spec.textStyle)
   }
 
   func body(content: Content) -> some View {

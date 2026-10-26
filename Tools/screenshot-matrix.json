@@ -1700,6 +1700,54 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "foreground"
+    },
+    {
+      "scenario": "conversation-transcript",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "markers"
+    },
+    {
+      "scenario": "conversation-transcript",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "markers"
+    },
+    {
+      "scenario": "conversation-transcript",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "statuses"
+    },
+    {
+      "scenario": "conversation-transcript",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "statuses"
+    },
+    {
+      "scenario": "fidelity-chat",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
+    },
+    {
+      "scenario": "conversation-tools",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "ax3"
     }
   ]
 }
