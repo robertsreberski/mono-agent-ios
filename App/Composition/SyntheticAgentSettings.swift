@@ -123,6 +123,8 @@
         let atlas = try current(theme: theme)
         value.agents = value.agents.map { $0.sourceId == atlas.sourceId ? atlas : $0 }
         return HTTPResponse(data: try JSONEncoder().encode(value))
+      case ("GET", base + "/restart"):
+        return HTTPResponse(data: Data(#"{"operation":null}"#.utf8))
       case ("GET", base + "/provider-auth"):
         return HTTPResponse(
           data: Data(

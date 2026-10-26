@@ -57,6 +57,9 @@ struct AgentSettingsScreen: View {
   @AccessibilityFocusState private var focus: FocusTarget?
   @State private var shownTarget: AgentSettingsTarget?
   @State private var shownSource: String?
+  @State private var restartReveal = RestartRevealIntent()
+  @State private var restartTop: CGFloat = 0
+  @State private var viewportHeight: CGFloat = 0
 
   enum FocusTarget: Hashable {
     case title
@@ -126,6 +129,23 @@ struct AgentSettingsScreen: View {
               summary: "Sign in, check access and read subscription limits."
             ) {
               ProvidersSection(store: store, agent: agent, compact: !wide)
+                .onGeometryChange(for: CGFloat.self) {
+                  $0.size.height
+                } action: { _ in
+                  settleRestart(agent, proxy: proxy)
+                }
+            }
+            WebHairline().opacity(0.9)
+            section(
+              .agent, title: "Restart",
+              summary: "Restart this agent and review its latest operation."
+            ) {
+              RestartSection(store: store, agent: agent, wide: wide)
+            }
+            .onGeometryChange(for: CGFloat.self) {
+              $0.frame(in: .named("settings-scroll")).minY
+            } action: {
+              restartTop = $0
             }
             WebHairline().opacity(0.9)
             about(agent)
@@ -140,6 +160,30 @@ struct AgentSettingsScreen: View {
           .padding(.horizontal, layout == .split ? 32 : WebSpace.dashboardGutter)
           .padding(.top, layout == .split ? 26 : 18)
           .padding(.bottom, 40)
+        }
+        .coordinateSpace(name: "settings-scroll")
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          viewportHeight = $0
+        }
+        .onScrollPhaseChange { _, phase in
+          if phase == .interacting || phase == .tracking { restartReveal.stop() }
+        }
+        .simultaneousGesture(
+          DragGesture(minimumDistance: 0).onChanged { _ in restartReveal.stop() }
+        )
+        .onKeyPress { _ in
+          restartReveal.stop()
+          return .ignored
+        }
+        .onChange(of: agent.generation) { restartReveal.stop() }
+        .task(id: restartReveal.deadline) {
+          guard let deadline = restartReveal.deadline else { return }
+          do { try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow))) } catch {
+            return
+          }
+          restartReveal.stop()
         }
         .scrollDismissesKeyboard(.immediately)
         // Readiness for tests and screenshots, never a timer: hydrated and answered.
@@ -163,6 +207,7 @@ struct AgentSettingsScreen: View {
   private func apply(agent sourceID: String, proxy: ScrollViewProxy) {
     if shownSource != sourceID {
       let switching = shownSource != nil
+      restartReveal.stop()
       shownSource = sourceID
       if switching {
         proxy.scrollTo("settings-top", anchor: .top)
@@ -172,6 +217,10 @@ struct AgentSettingsScreen: View {
     }
     guard shownTarget != target else { return }
     shownTarget = target
+    restartReveal.stop()
+    if target.section == .agent {
+      restartReveal.begin(source: sourceID, generation: agent?.generation, now: Date())
+    }
     if let section = target.section {
       proxy.scrollTo(section.rawValue, anchor: .top)
       focus = .section(section)
@@ -179,6 +228,22 @@ struct AgentSettingsScreen: View {
       proxy.scrollTo("settings-top", anchor: .top)
       focus = .title
     }
+  }
+
+  private func settleRestart(_ agent: WebAgentSummary, proxy: ScrollViewProxy) {
+    guard restartReveal.isActive(source: agent.sourceId, generation: agent.generation, now: Date())
+    else { return }
+    if restartTop < 8 || restartTop > viewportHeight - 96 {
+      proxy.scrollTo(AgentSettingsSection.agent.rawValue, anchor: .top)
+    }
+    let provider = store.providerState(agent.sourceId)
+    let authDone =
+      agent.status == "offline" || agent.supportsProviderAuth != true
+      || provider.status != nil || provider.authError != nil
+    let usageDone =
+      agent.status == "offline" || agent.supportsProviderUsage != true
+      || provider.usage != nil || provider.usageError != nil
+    if authDone && usageDone { restartReveal.stop() }
   }
 
   // MARK: Header
@@ -445,7 +510,7 @@ struct SettingsChip: View {
 
 /// Web `.settings-button` variants, in the content layer (never glass).
 struct SettingsButtonStyle: ButtonStyle {
-  enum Kind { case standard, primary, ghost }
+  enum Kind { case standard, primary, ghost, danger }
   var kind: Kind = .standard
   @Environment(\.consoleTheme) private var theme
   @Environment(\.isEnabled) private var enabled
@@ -454,11 +519,13 @@ struct SettingsButtonStyle: ButtonStyle {
     let foreground: Color =
       switch kind {
       case .primary: theme.palette.onAccent.color
+      case .danger: WebColor.danger.color
       default: configuration.isPressed ? WebColor.text.color : WebColor.textSoft.color
       }
     let fill: Color =
       switch kind {
       case .primary: theme.palette.accentStrong.color
+      case .danger: WebColor.dangerSoft.color
       case .standard: configuration.isPressed ? WebColor.surfaceHover.color : WebColor.surface.color
       case .ghost: configuration.isPressed ? WebColor.surfaceHover.color : .clear
       }

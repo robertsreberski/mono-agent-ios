@@ -76,6 +76,14 @@
     case providerAuthSelect = "provider-auth-select"
     case providerChecks = "provider-checks"
     case providerUsageStale = "provider-usage-stale"
+    case agentRestart = "agent-restart"
+    case agentRestartConfirm = "agent-restart-confirm"
+    case agentRestartProgress = "agent-restart-progress"
+    case agentRestartSuccess = "agent-restart-success"
+    case agentRestartFailure = "agent-restart-failure"
+    case agentRestartUncertain = "agent-restart-uncertain"
+    case agentRestartNotConfirmed = "agent-restart-not-confirmed"
+    var isAgentRestart: Bool { rawValue.hasPrefix("agent-restart") }
     var isProviders: Bool { rawValue.hasPrefix("provider-") }
 
     /// Served by a stateful per-instance `AgentSettingsScript`.
@@ -149,7 +157,7 @@
         try await ComposerFixture.prepare(self, store: store, repository: repository, theme: theme)
         return
       }
-      if isAgentSettings || isProviders {
+      if isAgentSettings || isProviders || isAgentRestart {
         try await AgentSettingsFixture.prepare(
           self, store: store, repository: repository, theme: theme)
         return
@@ -203,6 +211,7 @@
     let organize: OrganizeScript?
     let settings: AgentSettingsScript?
     let providers: ProviderScript?
+    let restart: AgentRestartScript?
     init(
       _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
       mcp: McpUiScript? = nil
@@ -212,8 +221,9 @@
       self.script = script
       self.mcp = mcp
       settings = scenario.flatMap {
-        $0.isAgentSettings || $0.isProviders ? AgentSettingsScript($0) : nil
+        $0.isAgentSettings || $0.isProviders || $0.isAgentRestart ? AgentSettingsScript($0) : nil
       }
+      restart = scenario.flatMap { $0.isAgentRestart ? AgentRestartScript($0) : nil }
       providers = scenario.flatMap { $0.isProviders ? ProviderScript($0) : nil }
       organize =
         scenario?.isOrganize == true ? OrganizeScript(wakeScenario: scenario?.rawValue) : nil
@@ -228,6 +238,7 @@
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
       if let organize { return try await organize.response(request, theme: theme) }
+      if let response = try await restart?.response(request) { return response }
       if let response = try await providers?.response(request) { return response }
       if let settings { return try await settings.response(request, theme: theme) }
       if let response = try await mcp?.response(request) { return response }
