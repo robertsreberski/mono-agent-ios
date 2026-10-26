@@ -69,6 +69,15 @@
     case notificationsExplainer = "notifications-explainer"
     case notificationsInsecure = "notifications-insecure"
 
+    case providerAuthDense = "provider-auth-dense"
+    case providerAuthDeviceCode = "provider-auth-device-code"
+    case providerAuthSecret = "provider-auth-secret"
+    case providerAuthManualCode = "provider-auth-manual-code"
+    case providerAuthSelect = "provider-auth-select"
+    case providerChecks = "provider-checks"
+    case providerUsageStale = "provider-usage-stale"
+    var isProviders: Bool { rawValue.hasPrefix("provider-") }
+
     /// Served by a stateful per-instance `AgentSettingsScript`.
     var isAgentSettings: Bool {
       switch self {
@@ -140,7 +149,7 @@
         try await ComposerFixture.prepare(self, store: store, repository: repository, theme: theme)
         return
       }
-      if isAgentSettings {
+      if isAgentSettings || isProviders {
         try await AgentSettingsFixture.prepare(
           self, store: store, repository: repository, theme: theme)
         return
@@ -193,6 +202,7 @@
     let mcp: McpUiScript?
     let organize: OrganizeScript?
     let settings: AgentSettingsScript?
+    let providers: ProviderScript?
     init(
       _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
       mcp: McpUiScript? = nil
@@ -201,7 +211,10 @@
       self.theme = theme
       self.script = script
       self.mcp = mcp
-      settings = scenario.flatMap { $0.isAgentSettings ? AgentSettingsScript($0) : nil }
+      settings = scenario.flatMap {
+        $0.isAgentSettings || $0.isProviders ? AgentSettingsScript($0) : nil
+      }
+      providers = scenario.flatMap { $0.isProviders ? ProviderScript($0) : nil }
       organize =
         scenario?.isOrganize == true ? OrganizeScript(wakeScenario: scenario?.rawValue) : nil
     }
@@ -215,6 +228,7 @@
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
       if let organize { return try await organize.response(request, theme: theme) }
+      if let response = try await providers?.response(request) { return response }
       if let settings { return try await settings.response(request, theme: theme) }
       if let response = try await mcp?.response(request) { return response }
       if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }

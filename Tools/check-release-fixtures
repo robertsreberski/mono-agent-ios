@@ -31,7 +31,10 @@ MARKERS = (b"--performance-probe", b"--performance-streaming", b"--performance-d
            b"Sample files (synthetic)", b"McpGardenFixture", b"Garden planner (synthetic)", b"garden-invocation", b"mcpCompleteInitialLoad", b"mcpBufferState", b"debugSendAttempts", b"McpUiScript", b"McpUiDiagnostics", b"mcp-native-counters", b"Native tool POSTs", b"debugCreatedControllers", b"mcp-long-link", b"conversation-mcp-app", b"conversation-mcp-unavailable", b"conversation-mcp-long-title",
            b"AgentSettingsFixture", b"AgentSettingsScript", b"agent-settings-unsaved", b"agent-settings-save-error",
            b"agent-settings-offline", b"agent-settings-degraded", b"notifications-insecure", b"--open-settings",
-           b"fixture-external-url", b"Grove Fast", b"generation-1")
+           b"fixture-external-url", b"Grove Fast", b"generation-1",
+           b"ProviderFixture", b"ProviderScript", b"provider-auth-dense", b"provider-auth-device-code",
+           b"provider-auth-secret", b"provider-auth-manual-code", b"provider-auth-select",
+           b"provider-checks", b"provider-usage-stale", b"FLOCK-2048")
 # The SDK-derived conformance resources and original licence belong only to tests.
 for path in args.app.rglob("*"):
     if path.name in {"mcp-protocol-vectors.json", "ext-apps-LICENSE.txt"}:

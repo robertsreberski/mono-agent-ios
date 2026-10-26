@@ -38,6 +38,8 @@
       agent.supportsManualCompaction = true
       agent.supportsProviderAuth = true
       agent.supportsProviderUsage = true
+      agent.supportsProviderUsageRefresh = scenario.isProviders
+      agent.supportsProviderAuthChecks = scenario.isProviders
       agent.restart = try decode(#"{"supported":true}"#)
       agent.cron = try decode(#"{"read":true,"actions":true}"#)
       agent.runSettings = try decode(scenario == .agentSettingsDegraded ? overridden : configured)
@@ -121,6 +123,14 @@
         let atlas = try current(theme: theme)
         value.agents = value.agents.map { $0.sourceId == atlas.sourceId ? atlas : $0 }
         return HTTPResponse(data: try JSONEncoder().encode(value))
+      case ("GET", base + "/provider-auth"):
+        return HTTPResponse(
+          data: Data(
+            #"{"schema":"mono-agent.provider-auth.v1","generatedAt":"2030-01-02T12:00:00Z","providers":[]}"#
+              .utf8))
+      case ("GET", base + "/provider-usage"):
+        return HTTPResponse(
+          data: Data(#"{"schema":"mono-agent.provider-usage.v1","providers":[]}"#.utf8))
       case ("GET", base + "/models"):
         return HTTPResponse(
           data: Data(
