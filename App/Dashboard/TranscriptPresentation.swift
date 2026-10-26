@@ -182,6 +182,84 @@ enum TranscriptPresentation {
     }
     return "Requested \(route(value.requested.model, value.requested.effort)) — not a confirmed run"
   }
+  /// Web `canonicalEffort`: providers report the off level as "off" or "none".
+  static func canonicalEffort(_ effort: String) -> String {
+    let lower = effort.lowercased()
+    return lower == "none" ? "off" : lower
+  }
+  /// Web `shouldShowMessageRunAttribution`: only a run that deviated from what was asked keeps
+  /// the footer (fallback, a transition or retry, an effort the provider did not honour, or an
+  /// unsettled run already attempting another model). An ordinary turn carries none.
+  static func showsRunAttribution(_ value: WebRunAttribution?, status: String) -> Bool {
+    guard let value else { return false }
+    if value.disposition == "fallback" { return true }
+    if !value.transitions.isEmpty || !value.retries.isEmpty { return true }
+    let run = value.executed ?? value.attempted
+    if let effective = run?.effectiveEffort, let requested = value.requested.effort,
+      canonicalEffort(effective) != canonicalEffort(requested)
+    {
+      return true
+    }
+    guard status != "complete", let attempted = run?.model, !attempted.isEmpty,
+      let requested = value.requested.model, !requested.isEmpty
+    else { return false }
+    return attempted != requested
+  }
+  /// Web `effortChanged`: the effective effort differs from the requested one (or none was asked).
+  static func effortChange(_ value: WebRunAttribution) -> String? {
+    func label(_ effort: String?) -> String? {
+      guard let effort, !effort.isEmpty else { return nil }
+      return effort.prefix(1).uppercased() + effort.dropFirst()
+    }
+    func evidence(_ route: WebRunExecution?) -> WebRunExecution? {
+      guard let route, route.model != nil || route.effort != nil || route.effectiveEffort != nil
+      else { return nil }
+      return route
+    }
+    guard
+      let effective = label(
+        (evidence(value.executed) ?? evidence(value.attempted))?.effectiveEffort)
+    else { return nil }
+    guard let requested = label(value.requested.effort) else { return "Effective " + effective }
+    return canonicalEffort(effective) == canonicalEffort(requested)
+      ? nil : "Requested \(requested) → effective \(effective)"
+  }
+  /// Web `hasReadableThoughtContent`: a thought holding only punctuation or markdown decoration
+  /// is not a step; letters, numbers and other symbols (emoji) count.
+  static func hasReadableThought(_ text: String) -> Bool {
+    text.unicodeScalars.contains { scalar in
+      scalar.properties.isAlphabetic || scalar.properties.numericType != nil
+        || scalar.properties.generalCategory == .otherSymbol
+    }
+  }
+  /// Web `thinkingPreview` capped at 52 characters: fenced code and emphasis/heading markers
+  /// stripped so the row reads as prose.
+  static func thinkingPreview(_ text: String) -> String {
+    var value = text.replacingOccurrences(
+      of: "```[\\s\\S]*?```", with: " ", options: .regularExpression)
+    value = value.replacingOccurrences(of: "[*_`>#]+", with: "", options: .regularExpression)
+    value = value.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    return value.count > 52 ? String(value.prefix(51)) + "\u{2026}" : value
+  }
+  /// Whether a part is shown at all: unreadable thoughts are dropped like the web does.
+  static func isShown(_ part: WebMessagePart) -> Bool {
+    if case .reasoning(let value) = part { return hasReadableThought(value.text) }
+    return true
+  }
+  /// Web `activityStepCount`: every clustered call counts on its own; thoughts without readable
+  /// content never reach the band.
+  static func activityStepCount(_ parts: [WebMessagePart]) -> Int {
+    parts.filter { isActivity($0) && isShown($0) }.count
+  }
+  /// Whether the last shown part is prose, which ends the web's `no-text` running indicator.
+  static func endsWithProse(_ parts: [WebMessagePart]) -> Bool {
+    guard case .text(let value)? = parts.last else { return false }
+    return !value.text.isEmpty
+  }
+  /// Web `failedLabel`: one failure says "failed", a cluster counts them, zero says nothing.
+  static func failedLabel(_ count: Int, clustered: Bool) -> String? {
+    count == 0 ? nil : clustered ? "\(count) failed" : "failed"
+  }
   static func marker(_ marker: WebConversationMarkerPart) -> String {
     func selection(_ value: MarkerValue?) -> String {
       switch value {

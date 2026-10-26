@@ -115,6 +115,108 @@ struct TranscriptPresentationTests {
     value.disposition = "fallback"
     #expect(TranscriptPresentation.attribution(value, status: "running").hasPrefix("Fallback:"))
   }
+  /// Web `shouldShowMessageRunAttribution` cases: only a deviating run keeps the footer.
+  @Test func runAttributionShowsOnlyForDeviatingRuns() throws {
+    func attribution(_ json: String) throws -> WebRunAttribution {
+      try TranscriptFixture.decode(json)
+    }
+    let ordinary = try attribution(
+      #"{"requested":{"model":"sample:large","effort":"high"},"executed":{"model":"sample:large","effort":"high"},"disposition":"executed","transitions":[],"retries":[]}"#
+    )
+    #expect(!TranscriptPresentation.showsRunAttribution(nil, status: "complete"))
+    #expect(!TranscriptPresentation.showsRunAttribution(ordinary, status: "complete"))
+    #expect(!TranscriptPresentation.showsRunAttribution(ordinary, status: "running"))
+    var fallback = ordinary
+    fallback.disposition = "fallback"
+    #expect(TranscriptPresentation.showsRunAttribution(fallback, status: "complete"))
+    let transition = try attribution(
+      #"{"requested":{"model":"sample:large"},"executed":{"model":"sample:large"},"disposition":"executed","transitions":[{"from":"sample:large","to":"sample:small"}],"retries":[]}"#
+    )
+    #expect(TranscriptPresentation.showsRunAttribution(transition, status: "complete"))
+    let retry = try attribution(
+      #"{"requested":{"model":"sample:large"},"executed":{"model":"sample:large"},"disposition":"executed","transitions":[],"retries":[{"model":"sample:large","reason":"rate limited"}]}"#
+    )
+    #expect(TranscriptPresentation.showsRunAttribution(retry, status: "complete"))
+    // Effort the provider did not honour; "none" and "off" are the same level.
+    var effort = ordinary
+    effort.executed?.effectiveEffort = "medium"
+    #expect(TranscriptPresentation.showsRunAttribution(effort, status: "complete"))
+    #expect(TranscriptPresentation.effortChange(effort) == "Requested High → effective Medium")
+    var off = ordinary
+    off.requested.effort = "none"
+    off.executed?.effectiveEffort = "off"
+    #expect(!TranscriptPresentation.showsRunAttribution(off, status: "complete"))
+    #expect(TranscriptPresentation.effortChange(off) == nil)
+    // An unsettled run already attempting another model shows; once complete it does not.
+    let attempting = try attribution(
+      #"{"requested":{"model":"sample:large","effort":"high"},"attempted":{"model":"sample:small","effort":"high"},"disposition":"attempted","transitions":[],"retries":[]}"#
+    )
+    #expect(TranscriptPresentation.showsRunAttribution(attempting, status: "running"))
+    #expect(TranscriptPresentation.showsRunAttribution(attempting, status: "failed"))
+    #expect(!TranscriptPresentation.showsRunAttribution(attempting, status: "complete"))
+    let sameModel = try attribution(
+      #"{"requested":{"model":"sample:large"},"attempted":{"model":"sample:large"},"disposition":"attempted","transitions":[],"retries":[]}"#
+    )
+    #expect(!TranscriptPresentation.showsRunAttribution(sameModel, status: "running"))
+    let unreportedModel = try attribution(
+      #"{"requested":{},"attempted":{"model":"sample:small"},"disposition":"attempted","transitions":[],"retries":[]}"#
+    )
+    #expect(!TranscriptPresentation.showsRunAttribution(unreportedModel, status: "running"))
+  }
+
+  @Test func thoughtsPreviewAsProseAndUnreadableThoughtsAreNotSteps() throws {
+    #expect(!TranscriptPresentation.hasReadableThought("."))
+    #expect(!TranscriptPresentation.hasReadableThought("** -- ##"))
+    #expect(TranscriptPresentation.hasReadableThought("🌱"))
+    #expect(TranscriptPresentation.hasReadableThought("Plan 2"))
+    #expect(
+      TranscriptPresentation.thinkingPreview("## **Checking** the `sample`\n\n> outline")
+        == "Checking the sample outline")
+    #expect(
+      TranscriptPresentation.thinkingPreview("```\nlet x = 1\n``` After code") == "After code")
+    let long = String(repeating: "word ", count: 30)
+    let preview = TranscriptPresentation.thinkingPreview(long)
+    #expect(preview.count == 52)
+    #expect(preview.hasSuffix("\u{2026}"))
+    let dot = WebMessagePart.reasoning(.init(type: "reasoning", text: "."))
+    let thought = WebMessagePart.reasoning(.init(type: "reasoning", text: "Reading files"))
+    let tools = [
+      WebMessagePart.toolCall(try TranscriptFixture.tool(1)),
+      .toolCall(try TranscriptFixture.tool(2)),
+    ]
+    #expect(TranscriptPresentation.activityStepCount([dot, thought] + tools) == 3)
+    #expect(!TranscriptPresentation.isShown(dot))
+    #expect(TranscriptPresentation.failedLabel(0, clustered: true) == nil)
+    #expect(TranscriptPresentation.failedLabel(1, clustered: false) == "failed")
+    #expect(TranscriptPresentation.failedLabel(2, clustered: true) == "2 failed")
+  }
+
+  @MainActor @Test func bandChoicesOutliveRowsAndYieldToSettle() {
+    let disclosures = TranscriptDisclosures()
+    #expect(disclosures.isOpen("m#band-0", running: true))
+    #expect(!disclosures.isOpen("m#band-0", running: false))
+    // Collapsed while streaming, then the turn settles: still collapsed (web collapseOnSettle).
+    disclosures.choose("m#band-0", open: false, running: true)
+    #expect(!disclosures.isOpen("m#band-0", running: true))
+    // Opened while streaming: the settle collapses it.
+    disclosures.choose("m#band-0", open: true, running: true)
+    #expect(disclosures.isOpen("m#band-0", running: true))
+    #expect(!disclosures.isOpen("m#band-0", running: false))
+    // Reopened after settling: it stays open, independent of other bands.
+    disclosures.choose("m#band-0", open: true, running: false)
+    #expect(disclosures.isOpen("m#band-0", running: false))
+    #expect(!disclosures.isOpen("m#band-2", running: false))
+    #expect(!disclosures.isOpen("other#band-0", running: false))
+  }
+
+  @Test func runningIndicatorFollowsTheLastShownPart() throws {
+    let tool = WebMessagePart.toolCall(try TranscriptFixture.tool(1))
+    #expect(!TranscriptPresentation.endsWithProse([]))
+    #expect(!TranscriptPresentation.endsWithProse([.text(.init(text: "Hi")), tool]))
+    #expect(TranscriptPresentation.endsWithProse([tool, .text(.init(text: "Answer"))]))
+    #expect(!TranscriptPresentation.endsWithProse([tool, .text(.init(text: ""))]))
+  }
+
   @Test func scrollFollowRequiresUserProximityAndPagingNeverFollows() {
     var policy = TranscriptFollowPolicy()
     policy.update(

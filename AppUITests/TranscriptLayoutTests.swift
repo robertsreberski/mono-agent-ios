@@ -19,17 +19,26 @@ import XCTest
             .firstMatch.waitForExistence(timeout: 20))
       }
       let scroll = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
-      let notice = app.descendants(matching: .any)[
-        scenario == "conversation-streaming" ? "transcript-stale" : "transcript-fresh"
-      ].firstMatch
+      // The reading edge is the first transcript row: the stale notice, else the first message
+      // (the web shows no "up to date" marker).
+      let notice =
+        scenario == "conversation-streaming"
+        ? app.descendants(matching: .any)["transcript-stale"].firstMatch
+        : app.descendants(matching: .any).matching(
+          NSPredicate(
+            format:
+              "identifier BEGINSWITH 'message-' AND NOT (identifier IN {'message-copy', 'message-error', 'message-error-part'})"
+          )
+        ).firstMatch
       let header = app.descendants(matching: .any)["conversation-top-bar"].firstMatch
       let nativeHeader = app.navigationBars.firstMatch
       let headerBottom = header.exists ? header.frame.maxY : nativeHeader.frame.maxY
       let top = max(scroll.frame.minY, headerBottom)
       let aligned = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
-          notice.exists && notice.frame.midY >= top
-            && notice.frame.midY <= top + 80
+          // The row's top edge: a message row is taller than the notice it replaced.
+          notice.exists && notice.frame.minY >= top - 1
+            && notice.frame.minY <= top + 80
         }, object: nil)
       XCTAssertEqual(
         XCTWaiter.wait(for: [aligned], timeout: 10), .completed,

@@ -13,9 +13,9 @@ import XCTest
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
     let first = element(app, "message-sample-user")
     XCTAssertTrue(first.waitForExistence(timeout: 5))
-    XCTAssertTrue(first.isHittable)
-    XCTAssertGreaterThanOrEqual(first.frame.minY, transcriptScroll(app).frame.minY)
-    XCTAssertFalse(element(app, "jump-to-latest").exists)
+    XCTAssertTrue(waitUntil { first.exists && !first.frame.isEmpty && first.isHittable })
+    XCTAssertTrue(waitUntil { first.frame.minY >= self.transcriptScroll(app).frame.minY })
+    XCTAssertTrue(element(app, "jump-to-latest").waitForNonExistence(timeout: 5))
     app.terminate()
   }
   func testPullToRefreshBelowPhoneHeaderKeepsContentReachable() {
@@ -35,8 +35,8 @@ import XCTest
     let header = element(app, "conversation-header")
     let settled = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        first.isHittable && first.frame.minY >= scroll.frame.minY
-          && header.isHittable
+        first.exists && !first.frame.isEmpty && header.exists && !header.frame.isEmpty
+          && first.frame.minY >= scroll.frame.minY && first.isHittable && header.isHittable
       }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
     // A user drag can enter reading mode on phones; its Jump control must still resume following.
@@ -47,7 +47,7 @@ import XCTest
         predicate: NSPredicate { _, _ in !jump.exists }, object: nil)
       XCTAssertEqual(XCTWaiter.wait(for: [following], timeout: 10), .completed)
     }
-    XCTAssertTrue(element(app, "composer").isHittable)
+    XCTAssertTrue(waitUntil { self.element(app, "composer").isHittable })
     app.terminate()
   }
 
@@ -62,6 +62,126 @@ import XCTest
   func testMarkdownDark() { capture("conversation-markdown", "dark") }
   func testMarkdownPlumDark() { capture("conversation-markdown", "dark", variant: "plum") }
   func testMarkdownAccessibility() { capture("conversation-markdown", "light", variant: "ax3") }
+
+  /// A band the user opened stays open after its row scrolls far enough to be recycled.
+  func testOpenedBandSurvivesScrollingAwayAndBack() {
+    let app = launchScenario("conversation-long")
+    XCTAssertTrue(element(app, "message-long-539").waitForExistence(timeout: 10))
+    // Bands occur at indices 1 modulo 100. Scope to this row: the list can retain another
+    // band's accessibility node outside the viewport during a scroll.
+    // Thirty-eight rows separate this band from the bottom: well beyond the lazy viewport,
+    // but reachable without relying on a device-dependent count of hundreds of swipes.
+    let row = element(app, "message-long-501")
+    let band = row.descendants(matching: .button)["activity-band"].firstMatch
+    XCTAssertTrue(
+      position(band, in: app, centered: true), "The older band must be clear of the header")
+    XCTAssertTrue(wait(band, value: "Collapsed"), "A settled band starts collapsed")
+    band.tap()
+    XCTAssertTrue(wait(band, value: "Expanded"))
+    // Jump to the newest row, far past the lazy list's retained window, then come back.
+    let jump = element(app, "jump-to-latest")
+    XCTAssertTrue(waitUntil { jump.exists && !jump.frame.isEmpty && jump.isHittable })
+    jump.tap()
+    let latest = element(app, "message-long-539")
+    // Jump switches to following immediately, but lazy bottom-edge layout and AX publication
+    // can settle later. Keep the newest-row proof: disappearance of Jump alone is not enough.
+    XCTAssertTrue(jump.waitForNonExistence(timeout: 30), "Jump resumes following")
+    XCTAssertTrue(latest.waitForExistence(timeout: 30), "The newest row must materialize")
+    XCTAssertTrue(position(latest, in: app), "The newest row must be clear of overlays")
+    XCTAssertTrue(
+      position(band, in: app, centered: true), "The returned band must be clear of the header")
+    XCTAssertTrue(wait(band, value: "Expanded"), "The user's choice survives row recycling")
+    app.terminate()
+  }
+
+  /// Web `collapseOnSettle`: the streaming band collapses when its turn ends; a manual reopen
+  /// then holds across a refresh that re-reads and re-renders the conversation.
+  func testRunningBandCollapsesOnSettleAndManualReopenPersists() {
+    let app = launchScenario("conversation-streaming")
+    let complete = app.staticTexts.containing(
+      NSPredicate(format: "label CONTAINS %@", "Stream complete")
+    ).firstMatch
+    XCTAssertTrue(complete.waitForExistence(timeout: 20))
+    let band = element(app, "activity-band")
+    XCTAssertTrue(wait(band, value: "Collapsed"), "Settling collapses the band")
+    XCTAssertTrue(position(band, in: app), "The settled band must be clear of the header")
+    band.tap()
+    XCTAssertTrue(wait(band, value: "Expanded"))
+    transcriptScroll(app).swipeDown()
+    XCTAssertTrue(complete.waitForExistence(timeout: 10))
+    XCTAssertTrue(position(band, in: app), "The refreshed band must be clear of the header")
+    XCTAssertTrue(wait(band, value: "Expanded"), "A manual reopen persists")
+    app.terminate()
+  }
+
+  private func launchScenario(_ scenario: String) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", scenario, "--appearance", "light", "--reset-test-data",
+    ]
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    return app
+  }
+  private func wait(_ element: XCUIElement, value: String, timeout: TimeInterval = 10) -> Bool {
+    let expectation = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in element.exists && (element.value as? String) == value },
+      object: nil)
+    return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+  }
+  private func waitUntil(timeout: TimeInterval = 30, _ predicate: @escaping () -> Bool) -> Bool {
+    let expectation = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in predicate() }, object: nil)
+    return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+  }
+  /// AX can report a band as hittable while its tap lands on the floating header instead.
+  /// Keep the entire control visible. Long transcripts can also center it in the middle 40%;
+  /// short transcripts may not have enough scrollable content to reach that central region.
+  private func position(
+    _ target: XCUIElement, in app: XCUIApplication, centered: Bool = false
+  ) -> Bool {
+    let scroll = transcriptScroll(app)
+    let header = element(app, "conversation-header")
+    let composer = element(app, "composer")
+    let safelyVisible = {
+      guard target.exists, !target.frame.isEmpty, scroll.exists, header.exists, composer.exists
+      else {
+        return false
+      }
+      let frame = target.frame
+      let viewport = scroll.frame
+      return !frame.isEmpty && viewport.contains(frame)
+        && frame.minY >= header.frame.maxY + 8 && frame.maxY <= composer.frame.minY
+        && (!centered
+          || (frame.midY >= viewport.minY + viewport.height * 0.3
+            && frame.midY <= viewport.minY + viewport.height * 0.7))
+        && target.isHittable
+    }
+    var recordedFrame = false
+    for _ in 0..<40 {
+      if safelyVisible() { return waitUntil(safelyVisible) }
+      let exists = target.exists
+      if exists && !recordedFrame {
+        XCTContext.runActivity(named: "Position transcript control clear of overlays") { activity in
+          let geometry =
+            "target=\(target.frame); transcript=\(scroll.frame); "
+            + "header=\(header.frame); composer=\(composer.frame)"
+          print(geometry)
+          let frames = XCTAttachment(string: geometry)
+          frames.lifetime = .keepAlways
+          activity.add(frames)
+        }
+        recordedFrame = true
+      }
+      // Search toward older rows until materialized, then nudge in either direction. Slow,
+      // short coordinate drags avoid the inertial overshoot of swipeDown near the header.
+      let down = !exists || target.frame.midY < scroll.frame.midY
+      let from = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.35 : 0.65))
+      let to = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.65 : 0.35))
+      from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
+    }
+    return waitUntil(safelyVisible)
+  }
 
   func testLongPagingPreservesMessageAnchorAndHeaderAccessibility() {
     let app = XCUIApplication()
@@ -87,15 +207,20 @@ import XCTest
     let older = element(app, "transcript-load-older")
     let reachable = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        guard older.exists, older.isHittable, older.isEnabled, header.exists else { return false }
+        guard older.exists, !older.frame.isEmpty, older.isHittable, older.isEnabled, header.exists
+        else {
+          return false
+        }
         let frame = older.frame
         return frame.minY >= max(scroll.frame.minY, header.frame.maxY)
           && app.windows.firstMatch.frame.contains(frame)
       }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [reachable], timeout: 20), .completed)
-    XCTAssertTrue(header.exists, "The eager header must return to the accessibility hierarchy")
+    XCTAssertTrue(
+      header.waitForExistence(timeout: 5),
+      "The eager header must return to the accessibility hierarchy")
     let anchor = element(app, "message-long-40")
-    XCTAssertTrue(anchor.exists && anchor.isHittable)
+    XCTAssertTrue(waitUntil { anchor.exists && !anchor.frame.isEmpty && anchor.isHittable })
     older.tap()
     let paged = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
@@ -105,9 +230,9 @@ import XCTest
     // Paging is a network read plus layout; allow a loaded simulator to settle.
     XCTAssertEqual(XCTWaiter.wait(for: [paged], timeout: 20), .completed)
     XCTAssertTrue(
-      anchor.isHittable,
+      waitUntil { anchor.exists && !anchor.frame.isEmpty && anchor.isHittable },
       "Paging must retain the previously visible message, not jump to the new first row")
-    XCTAssertTrue(element(app, "jump-to-latest").exists)
+    XCTAssertTrue(element(app, "jump-to-latest").waitForExistence(timeout: 5))
     element(app, "jump-to-latest").tap()
     XCTAssertTrue(element(app, "message-long-539").waitForExistence(timeout: 10))
     app.terminate()
@@ -138,10 +263,15 @@ import XCTest
       XCTAssertTrue(
         complete.waitForExistence(timeout: 20), "Scripted deltas must reach a terminal write")
     } else if scenario == "conversation-tools" {
+      // A settled turn's Activity band is collapsed (web `collapseOnSettle`); open it first.
+      let band = element(app, "activity-band")
+      XCTAssertTrue(position(band, in: app), "The tools band must be clear of the header")
+      band.tap()
       XCTAssertTrue(element(app, "tool-cluster").waitForExistence(timeout: 10))
       element(app, "tool-cluster").tap()
-      XCTAssertFalse(
-        element(app, "jump-to-latest").exists, "Expanding activity is not scrolling away")
+      XCTAssertTrue(
+        element(app, "jump-to-latest").waitForNonExistence(timeout: 3),
+        "Expanding activity is not scrolling away")
       let call = element(app, "tool-call-sample-tool-1")
       XCTAssertTrue(call.waitForExistence(timeout: 5))
       call.tap()
@@ -162,11 +292,12 @@ import XCTest
       XCTAssertTrue(element(app, "code-copy").waitForExistence(timeout: 10))
       XCTAssertTrue(element(app, "markdown-table").waitForExistence(timeout: 10))
     } else {
-      XCTAssertTrue(element(app, "tool-cluster").waitForExistence(timeout: 10))
+      XCTAssertTrue(element(app, "activity-band").waitForExistence(timeout: 10))
     }
     if scenario == "conversation-tools" {
-      XCTAssertFalse(
-        element(app, "jump-to-latest").exists, "Tools at the bottom must not offer Jump to latest")
+      XCTAssertTrue(
+        element(app, "jump-to-latest").waitForNonExistence(timeout: 5),
+        "Tools at the bottom must not offer Jump to latest")
     }
     if scenario == "conversation-transcript" || scenario == "conversation-streaming" {
       let idle = XCTNSPredicateExpectation(
@@ -174,11 +305,11 @@ import XCTest
           self.element(app, "conversation-run-state").label.contains("Idle")
         }, object: nil)
       XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 5), .completed)
-      XCTAssertTrue(element(app, "route-badge").label.contains("sample:large"))
+      XCTAssertTrue(waitUntil { self.element(app, "route-badge").label.contains("sample:large") })
     }
-    XCTAssertFalse(
-      element(app, "running-row-t-atlas-launch").exists, "Settled detail must not remain in Running"
-    )
+    XCTAssertTrue(
+      element(app, "running-row-t-atlas-launch").waitForNonExistence(timeout: 5),
+      "Settled detail must not remain in Running")
     let checkSidebar = screenshotChecksSidebar(app)
     let rendered = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in

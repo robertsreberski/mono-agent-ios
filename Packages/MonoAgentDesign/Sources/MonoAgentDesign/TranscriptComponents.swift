@@ -149,20 +149,110 @@ public struct TranscriptMarkerRow: View {
   }
 }
 
-/// The web run attribution box: fit-content, padding 8×10, radius 9, 1 px line, subtle fill.
+/// The web run attribution box (`.run-attribution`): fit-content, padding 8×10, radius 9, 1 px
+/// line, subtle fill; a fallback adds the warning tint (`warning 45%` edge, `7%` fill).
 public struct AttributionBox<Content: View>: View {
+  private let fallback: Bool
   private let content: Content
-  public init(@ViewBuilder content: () -> Content) { self.content = content() }
+  public init(fallback: Bool = false, @ViewBuilder content: () -> Content) {
+    self.fallback = fallback
+    self.content = content()
+  }
   public var body: some View {
     let shape = RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
     VStack(alignment: .leading, spacing: 6) { content }
       .webFont(.runAttribution)
-      .foregroundStyle(WebColor.textMuted.color)
+      .foregroundStyle(WebColor.textSoft.color)
       .padding(.vertical, 8)
       .padding(.horizontal, 10)
-      .background(WebColor.surfaceSubtle.color, in: shape)
-      .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
-      .padding(.top, 8)
+      .background(
+        fallback
+          ? WebColor.warning.mixed(7, with: WebColor.surfaceSubtle).color
+          : WebColor.surfaceSubtle.color, in: shape
+      )
+      .overlay(
+        shape.strokeBorder(
+          fallback ? WebColor.warning.mixed(45, with: WebColor.line).color : WebColor.line.color,
+          lineWidth: 1)
+      )
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.top, 8).padding(.bottom, 4)
+  }
+}
+
+/// Web `.run-attribution-warning`: the uppercase FALLBACK pill.
+public struct AttributionWarning: View {
+  private let text: String
+  public init(_ text: String) { self.text = text }
+  public var body: some View {
+    Text(text).webFont(.failedTag)
+      .foregroundStyle(WebColor.warning.color)
+      .padding(.horizontal, 6).padding(.vertical, 2)
+      .background(WebColor.warning.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+      .fixedSize()
+  }
+}
+
+/// Web `.message-error`: danger text on danger-soft, 1 px danger 25%, radius 9, an uppercase
+/// code over the message.
+public struct MessageErrorCard: View {
+  private let code: String
+  private let message: String
+  public init(code: String, message: String) {
+    self.code = code
+    self.message = message
+  }
+  public var body: some View {
+    let shape = RoundedRectangle(cornerRadius: WebRadius.row, style: .continuous)
+    VStack(alignment: .leading, spacing: 3) {
+      if !code.isEmpty { Text(code).webFont(.messageErrorCode) }
+      Text(message).webFont(.messageError).textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .foregroundStyle(WebColor.danger.color)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 10).padding(.horizontal, 12)
+    .background(WebColor.dangerSoft.color, in: shape)
+    .overlay(shape.strokeBorder(WebColor.danger.color.opacity(0.25), lineWidth: 1))
+    .accessibilityElement(children: .combine)
+  }
+}
+
+/// Web `.thinking-indicator`: three 5 pt muted dots bouncing in sequence (static under Reduce
+/// Motion), shown while the assistant runs without new prose.
+public struct ThinkingDots: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  public init() {}
+  public var body: some View {
+    Group {
+      if reduceMotion {
+        dots(phase: nil)
+      } else {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+          dots(phase: context.date.timeIntervalSinceReferenceDate)
+        }
+      }
+    }
+    .frame(height: 24)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Agent is thinking")
+    .accessibilityIdentifier("thinking-indicator")
+  }
+  private func dots(phase: TimeInterval?) -> some View {
+    HStack(spacing: 4) {
+      ForEach(0..<3, id: \.self) { index in
+        Circle().fill(WebColor.textMuted.color).frame(width: 5, height: 5)
+          .offset(y: phase.map { offset($0, delay: Double(index) * 0.12) } ?? 0)
+      }
+    }
+  }
+  /// CSS `bounce 1.1s ease-in-out infinite`: a 4 pt lift at the middle of each cycle.
+  private func offset(_ time: TimeInterval, delay: Double) -> CGFloat {
+    let cycle =
+      ((time - delay).truncatingRemainder(dividingBy: 1.1) + 1.1)
+      .truncatingRemainder(dividingBy: 1.1) / 1.1
+    return -4 * CGFloat(sin(.pi * cycle) * sin(.pi * cycle))
   }
 }
 
@@ -176,7 +266,9 @@ public struct AttributionBox<Content: View>: View {
         MessageActionButton("Copy", systemImage: "doc.on.doc") {}
         TranscriptMarkerRow("Model · sample:large → sample:small", systemImage: "sparkles")
         TranscriptNotice("History up to date", systemImage: "checkmark")
-        AttributionBox { Text("sample:large · high · 4.2s") }
+        AttributionBox(fallback: true) { Text("Fallback: sample:large → sample:small") }
+        MessageErrorCard(code: "Agent error", message: "The response ended with an error.")
+        ThinkingDots()
       }
     }
   }

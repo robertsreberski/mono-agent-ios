@@ -181,6 +181,18 @@ public enum WebType: CaseIterable, Sendable {
   case stepSummary
   /// `.activity-step-time`, `.activity-row-time`: mono 9.
   case stepTime
+  /// `.failed-tag`: 8.5 / 700 / .05em, uppercase.
+  case failedTag
+  /// `.activity-payload > span`: 8.5 / 700 / .08em, uppercase.
+  case payloadLabel
+  /// `.activity-payload pre`: mono 10 / 1.5.
+  case payloadText
+  /// `.activity-thought`: 12 / 1.6.
+  case activityThought
+  /// `.activity-note`, `.activity-truncated`: 11.5 / 1.55.
+  case activityNote
+  /// `.message-error`: 12; `.message-error strong`: 10 / 700 / .06em, uppercase.
+  case messageError, messageErrorCode
   /// `.attachment-chip`: 11.
   case attachment
   /// `.connection-banner` (phone): 10.
@@ -283,6 +295,19 @@ public enum WebType: CaseIterable, Sendable {
     case .stepTool: Spec(size: 10.5, weight: .semibold, mono: true, textStyle: .caption2)
     case .stepSummary: Spec(size: 10, weight: .regular, textStyle: .caption2)
     case .stepTime: Spec(size: 9, weight: .regular, mono: true, tabular: true, textStyle: .caption2)
+    case .failedTag:
+      Spec(size: 8.5, weight: .bold, tracking: 0.05, uppercase: true, textStyle: .caption2)
+    case .payloadLabel:
+      Spec(size: 8.5, weight: .bold, tracking: 0.08, uppercase: true, textStyle: .caption2)
+    case .payloadText:
+      Spec(size: 10, weight: .regular, lineHeight: 1.5, mono: true, textStyle: .caption2)
+    case .activityThought:
+      Spec(size: 12, weight: .regular, lineHeight: 1.6, textStyle: .footnote)
+    case .activityNote:
+      Spec(size: 11.5, weight: .regular, lineHeight: 1.55, textStyle: .caption)
+    case .messageError: Spec(size: 12, weight: .regular, textStyle: .footnote)
+    case .messageErrorCode:
+      Spec(size: 10, weight: .bold, tracking: 0.06, uppercase: true, textStyle: .caption2)
     case .attachment: Spec(size: 11, weight: .regular, textStyle: .caption)
     case .banner: Spec(size: 10, weight: .regular, textStyle: .caption2)
     case .askLegend: Spec(size: 13, weight: .semibold, lineHeight: 1.45, textStyle: .subheadline)

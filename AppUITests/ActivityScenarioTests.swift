@@ -73,7 +73,7 @@ import XCTest
       let top = (bar.exists ? bar.frame.maxY : app.navigationBars.firstMatch.frame.maxY) + 8
       let jump = element(app, "jump-to-latest")
       let bottom = jump.exists ? jump.frame.minY - 8 : scroll(app).frame.maxY - 34
-      if target.exists {
+      if target.exists && !target.frame.isEmpty {
         let middle = target.frame.midY
         if target.isHittable && middle >= top && middle <= bottom { return target }
         if middle < top { scroll(app).swipeDown() } else { scroll(app).swipeUp() }
@@ -83,7 +83,8 @@ import XCTest
         scroll(app).swipeUp()
       }
     }
-    XCTAssertTrue(target.exists && target.isHittable, "Missing visible control: " + id)
+    XCTAssertTrue(
+      target.exists && !target.frame.isEmpty && target.isHittable, "Missing visible control: " + id)
     return target
   }
   /// Activity now lives in the composer dock (web layout): reveal cards inside the dock's own
@@ -92,12 +93,12 @@ import XCTest
     let dock = app.scrollViews.matching(identifier: "composer-dock-scroll").firstMatch
     let target = dock.descendants(matching: .any)[id].firstMatch
     for _ in 0..<12 {
-      if target.exists && target.isHittable { return target }
+      if target.exists && !target.frame.isEmpty && target.isHittable { return target }
       guard dock.exists else { break }
       dragDock(dock, down: target.exists && target.frame.midY < dock.frame.minY)
     }
     XCTAssertTrue(
-      target.exists && target.isHittable,
+      target.exists && !target.frame.isEmpty && target.isHittable,
       "Missing dock control: \(id) dock=\(dock.exists ? dock.frame.debugDescription : "absent") target=\(target.exists ? target.frame.debugDescription : "absent")"
     )
     return target
