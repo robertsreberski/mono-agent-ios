@@ -16,6 +16,14 @@ Screens must not instantiate API clients or submit directly.
   `nextCursor`, `freshness`, `runningConfirmed` and `truncated`. Stable `orderedMessageIDs` / `messageStates` (`TranscriptMessageState.message` and `turnID`)
   let lazy rows observe only their message. Historical turn groups
   derive from message IDs; only the current turn has a server run-state projection.
+  Each row also publishes stable-index `transcriptEntries`: job carriers stay in the raw record
+  and shelf, while unique host receipts derive started/terminal facts and fold launch Input.
+  Wakes deliver terminal facts in place; matched shelf parent calls and applied inline-steer
+  duplicates are suppressed only in presentation. Parent calls with output, failures, nested
+  calls or preview-repair metadata remain reachable until the shelf exposes those payloads.
+  Cross-message pairing uses per-message semantic inputs (jobs, receipts, wakes and steers),
+  not ordinary text, tool-output or child-call deltas. Shelf ownership is indexed by family,
+  explicit address and retained thread rather than re-scanning every group's full timeline.
   Never infer confirmed running from a hydrated `runState.status`: use
   `isRunningConfirmed(threadID:)` for fleet/bucket rows and `runningConfirmed` for detail.
 - Read `connection`, `freshness`, `errorMessage`, `storage`, `authoredStorage`,

@@ -1652,6 +1652,54 @@
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "glance"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "glance"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "events"
+    },
+    {
+      "scenario": "conversation-jobs",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "events"
+    },
+    {
+      "scenario": "conversation-subagents",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "foreground"
+    },
+    {
+      "scenario": "conversation-subagents",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "foreground"
     }
   ]
 }

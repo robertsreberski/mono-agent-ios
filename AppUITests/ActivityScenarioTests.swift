@@ -57,6 +57,140 @@ import XCTest
     app.terminate()
   }
 
+  func testJobEventInputLight() { captureJobEvent("light") }
+  func testJobEventInputDark() { captureJobEvent("dark") }
+  func testSingleJobGlanceLight() { captureSingleJobGlance("light") }
+  func testSingleJobGlanceDark() { captureSingleJobGlance("dark") }
+  func testForegroundDelegationLight() { captureForegroundDelegation("light") }
+  func testForegroundDelegationDark() { captureForegroundDelegation("dark") }
+
+  func testWakeResolvesToTerminalFactWithoutRawDeliveryTokens() {
+    let app = activityApp("conversation-jobs")
+    let row = element(app, "message-wake-sample")
+    let band = row.buttons["activity-band"].firstMatch
+    XCTAssertTrue(band.waitForExistence(timeout: 10))
+    band.tap()
+    let event = reveal(app, "job-event-succeeded-terminal")
+    XCTAssertTrue(
+      activityWait {
+        event.exists && !event.frame.isEmpty && event.label.contains("Bash job succeeded")
+          && event.isHittable
+      })
+    event.tap()
+    XCTAssertTrue(app.staticTexts["Outcome"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Exit"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["follow_up"].firstMatch.waitForNonExistence(timeout: 3))
+    app.terminate()
+  }
+  func testRuntimeNoteIsInsideActivityAndSteerReplacesStandaloneBubble() {
+    let app = activityApp("conversation-transcript")
+    let row = element(app, "message-sample-assistant")
+    let note = element(app, "runtime-warning-note")
+    XCTAssertTrue(
+      note.waitForNonExistence(timeout: 3), "A settled note belongs to the collapsed band")
+    let band = row.buttons["activity-band"].firstMatch
+    XCTAssertTrue(band.waitForExistence(timeout: 10))
+    band.tap()
+    XCTAssertTrue(note.waitForExistence(timeout: 5))
+    XCTAssertTrue(element(app, "inline-steer-sample-input").waitForExistence(timeout: 5))
+    XCTAssertTrue(element(app, "message-sample-followup").waitForNonExistence(timeout: 3))
+    app.terminate()
+  }
+  func testCopyIsAvailableWhileResponseIsRunning() {
+    let app = activityApp("composer-running")
+    let state = element(app, "conversation-run-state")
+    XCTAssertTrue(activityWait { state.exists && state.label.contains("Running") })
+    let row = element(app, "message-sample-assistant")
+    let copy = row.buttons["message-copy"].firstMatch
+    XCTAssertTrue(activityWait { copy.exists && copy.isEnabled })
+    app.terminate()
+  }
+  private func activityApp(_ scenario: String, appearance: String = "light", single: Bool = false)
+    -> XCUIApplication
+  {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", scenario, "--appearance", appearance, "--reset-test-data",
+      "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+    ]
+    if single { app.launchArguments.append("--single-job-glance") }
+    app.launch()
+    XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
+    return app
+  }
+  private func activityWait(_ predicate: @escaping () -> Bool) -> Bool {
+    let expectation = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in predicate() }, object: nil)
+    return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
+  }
+  private func activityCapture(
+    _ app: XCUIApplication, _ scenario: String, _ appearance: String, _ variant: String
+  ) {
+    let checkSidebar = screenshotChecksSidebar(app)
+    let rendered = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
+      }, object: nil)
+    XCTAssertTrue(XCTWaiter.wait(for: [rendered], timeout: 30) == .completed)
+    let screenshot = XCUIScreen.main.screenshot()
+    XCTAssertTrue(screenshotHasContent(screenshot, checkSidebar: checkSidebar))
+    let attachment = XCTAttachment(screenshot: screenshot)
+    attachment.name = "synthetic-fixture__\(scenario)__\(appearance)__\(variant)"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+  private func captureSingleJobGlance(_ appearance: String) {
+    let app = activityApp("conversation-jobs", appearance: appearance, single: true)
+    let glance = element(app, "job-stack")
+    XCTAssertTrue(
+      activityWait { glance.exists && glance.label.contains("Check the sample catalog") })
+    activityCapture(app, "conversation-jobs", appearance, "glance")
+    app.terminate()
+  }
+  private func captureJobEvent(_ appearance: String) {
+    let app = activityApp("conversation-jobs", appearance: appearance, single: true)
+    let band = element(app, "activity-band")
+    XCTAssertTrue(band.waitForExistence(timeout: 10))
+    band.tap()
+    let event = reveal(app, "job-event-running-started")
+    XCTAssertTrue(activityWait { event.exists && event.label.contains("Bash job started") })
+    event.tap()
+    XCTAssertTrue(element(app, "payload-input").waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Phase"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(
+      element(app, "tool-call-launch-running").waitForNonExistence(timeout: 3),
+      "The launch folds into the started fact")
+    activityCapture(app, "conversation-jobs", appearance, "events")
+    app.terminate()
+  }
+  private func captureForegroundDelegation(_ appearance: String) {
+    let app = activityApp("conversation-subagents", appearance: appearance)
+    let band = element(app, "activity-band")
+    XCTAssertTrue(band.waitForExistence(timeout: 10))
+    band.tap()
+    let delegation = reveal(app, "subagent-delegation-complete")
+    XCTAssertTrue(
+      activityWait {
+        delegation.exists && !delegation.frame.isEmpty && delegation.isHittable
+      })
+    delegation.tap()
+    let task = reveal(app, "subagent-task-delegation-complete")
+    XCTAssertTrue(activityWait { (task.value as? String) == "Collapsed" })
+    task.tap()
+    XCTAssertTrue(element(app, "payload-task").waitForExistence(timeout: 5))
+    let report = reveal(app, "subagent-report-delegation-complete")
+    XCTAssertTrue(activityWait { (report.value as? String) == "Collapsed" })
+    report.tap()
+    XCTAssertTrue(element(app, "payload-report").waitForExistence(timeout: 5))
+    let child = element(app, "subagent-calls-sample-tool-1")
+    XCTAssertTrue(activityWait { child.exists && child.label.contains("read_file ×2") })
+    XCTAssertTrue(
+      delegation.descendants(matching: .button)["tool-cluster"].firstMatch.waitForNonExistence(
+        timeout: 3))
+    activityCapture(app, "conversation-subagents", appearance, "foreground")
+    app.terminate()
+  }
+
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
     app.descendants(matching: .any)[id].firstMatch
   }

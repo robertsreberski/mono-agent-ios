@@ -25,22 +25,46 @@ public final class ConversationState {
   @ObservationIgnored private(set) var messageIndices: [String: Int] = [:]
   @ObservationIgnored var pendingMessageIndices: Set<Int> = []
   @ObservationIgnored var needsFullPublication = false
+  @ObservationIgnored private var jobProjection = ProcessJobEvents.Projection()
+  @ObservationIgnored private(set) var jobProjectionRevision = 0
+  @ObservationIgnored private var shelfOwnedCalls: Set<String> = []
   @ObservationIgnored private var inputs: [String: PresentationInput] = [:]
   private struct PresentationInput: Equatable {
     var status: String
     var role: String
     var jobParts: [WebMessagePart]
+    var parentCallsWithChildren: Set<String>
+    var eventInput: ProcessJobEvents.Input
     var contextParts: [WebMessagePart]
     var attribution: WebRunAttribution?
     init(_ message: WebMessage) {
       status = message.status
       role = message.role
-      jobParts = message.parts.filter {
-        switch $0 {
-        case .processJob, .toolCall, .subagent: true
-        default: false
+      eventInput = ProcessJobEvents.Input(message)
+      var withChildren = Set<String>()
+      jobParts = message.parts.compactMap { part in
+        switch part {
+        case .processJob, .processJobWake, .steer: return part
+        case .toolCall(var call), .subagent(var call):
+          let tool = call.toolName ?? call.name ?? ""
+          guard ProcessJobEvents.toolNames.contains(tool) || tool.hasSuffix("__PeerAgent")
+          else { return nil }
+          if call.calls?.isEmpty == false { withChildren.insert(call.toolCallId) }
+          // Shelf parent rows do not read child payloads, usage, pricing or route. Keep those
+          // live on their own observed transcript row, without re-projecting the conversation.
+          call.calls = nil
+          call.executionMs = nil
+          call.costUsd = nil
+          call.knownCostUsd = nil
+          call.costUnknown = nil
+          call.usage = nil
+          call.attribution = nil
+          if case .subagent = part { return .subagent(call) }
+          return .toolCall(call)
+        default: return nil
         }
       }
+      parentCallsWithChildren = withChildren
       contextParts = message.parts.filter { if case .telemetry = $0 { true } else { false } }
       attribution = message.attribution
     }
@@ -83,8 +107,6 @@ public final class ConversationState {
   }
   private func publishRows() {
     let ids = record.messages.map(\.id)
-    let visible = record.messages.filter(TranscriptTelemetry.visible).map(\.id)
-    if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
     if orderedMessageIDs != ids {
       orderedMessageIDs = ids
       let retained = Set(ids)
@@ -127,9 +149,11 @@ public final class ConversationState {
       return
     }
     var jobsChanged = false
+    var eventsChanged = false
     var contextChanged = thread != record.thread
     var routeChanged = false
     var visibilityChanged = false
+    var previousVisibility: [String: Bool] = [:]
     if thread != record.thread { thread = record.thread }
     for index in pendingMessageIndices where record.messages.indices.contains(index) {
       let message = record.messages[index]
@@ -137,13 +161,18 @@ public final class ConversationState {
         publish()
         return
       }
-      visibilityChanged =
-        visibilityChanged
-        || TranscriptTelemetry.visible(row.message) != TranscriptTelemetry.visible(message)
+      previousVisibility[message.id] = ProcessJobEvents.visible(
+        row.message, entries: row.transcriptEntries)
       let next = PresentationInput(message)
       let previous = inputs[message.id]
+      visibilityChanged =
+        visibilityChanged || previous?.status != next.status
+        || previous?.attribution != next.attribution
+      eventsChanged = eventsChanged || previous?.eventInput != next.eventInput
       jobsChanged =
-        jobsChanged || previous?.jobParts != next.jobParts || previous?.role != next.role
+        jobsChanged || eventsChanged || previous?.jobParts != next.jobParts
+        || previous?.parentCallsWithChildren != next.parentCallsWithChildren
+        || previous?.role != next.role
       contextChanged =
         contextChanged || previous?.contextParts != next.contextParts
         || previous?.status != next.status || previous?.role != next.role
@@ -152,14 +181,40 @@ public final class ConversationState {
       if row.message != message { row.message = message }
       if row.turnID != message.turnId { row.turnID = message.turnId }
     }
-    pendingMessageIndices.removeAll()
-    if visibilityChanged {
-      let visible = record.messages.filter(TranscriptTelemetry.visible).map(\.id)
-      if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
+    if !jobsChanged {
+      for index in pendingMessageIndices where record.messages.indices.contains(index) {
+        let message = record.messages[index]
+        publishEntries(message)
+        let nowVisible = ProcessJobEvents.visible(
+          message, entries: messageStates[message.id]?.transcriptEntries ?? [])
+        visibilityChanged = visibilityChanged || previousVisibility[message.id] != nowVisible
+      }
+      if visibilityChanged { publishTranscriptIDs() }
     }
-    publishDerived(jobs: jobsChanged, context: contextChanged, route: routeChanged)
+    let changedMessages = pendingMessageIndices.compactMap { index in
+      record.messages.indices.contains(index) ? record.messages[index] : nil
+    }
+    pendingMessageIndices.removeAll()
+    publishDerived(
+      jobs: jobsChanged, context: contextChanged, route: routeChanged,
+      events: eventsChanged, changedMessages: changedMessages)
   }
-  private func publishDerived(jobs: Bool, context contextChanged: Bool, route: Bool) {
+  private func publishEntries(_ message: WebMessage) {
+    guard let row = messageStates[message.id] else { return }
+    let entries = ProcessJobEvents.entries(
+      for: message, projection: jobProjection, shelfOwnedCalls: shelfOwnedCalls)
+    if row.transcriptEntries != entries { row.transcriptEntries = entries }
+  }
+  private func publishTranscriptIDs() {
+    let visible = ProcessJobEvents.orderedMessages(record.messages).filter { message in
+      ProcessJobEvents.visible(message, entries: messageStates[message.id]?.transcriptEntries ?? [])
+    }.map(\.id)
+    if transcriptMessageIDs != visible { transcriptMessageIDs = visible }
+  }
+  private func publishDerived(
+    jobs: Bool, context contextChanged: Bool, route: Bool,
+    events: Bool = true, changedMessages: [WebMessage] = []
+  ) {
     if jobs {
       let items = JobShelf.items(messages: record.messages)
       if jobItems != items { jobItems = items }
@@ -181,6 +236,17 @@ public final class ConversationState {
         return value
       }
       if jobParentMessages != parents { jobParentMessages = parents }
+      if events {
+        jobProjection = ProcessJobEvents.project(messages: record.messages, threadID: thread.id)
+        jobProjectionRevision += 1
+      }
+      let owned = ProcessJobEvents.shelfOwnedCalls(messages: parents, items: items)
+      let allEntriesChanged = events || owned != shelfOwnedCalls
+      shelfOwnedCalls = owned
+      for message in allEntriesChanged ? record.messages : changedMessages {
+        publishEntries(message)
+      }
+      publishTranscriptIDs()
     }
     if contextChanged {
       let projection = UsagePresentation.context(messages: record.messages, thread: record.thread)
@@ -201,6 +267,7 @@ public final class TranscriptMessageState: Identifiable {
   public nonisolated let id: String
   public internal(set) var message: WebMessage
   public internal(set) var turnID: String?
+  public internal(set) var transcriptEntries: [TranscriptEntry] = []
   init(_ message: WebMessage) {
     self.id = message.id
     self.message = message

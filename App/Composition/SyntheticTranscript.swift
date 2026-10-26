@@ -132,6 +132,19 @@
           #"{"requested":{"model":"sample:small","effort":"high"},"executed":{"model":"sample:large","effort":"high"},"disposition":"fallback","transitions":[{"from":"sample:small","to":"sample:large","reason":"unavailable"}],"retries":[]}"#
         )
       }
+      if scenario == .conversationTranscript {
+        let warning: TelemetryPart = try decode(
+          #"{"type":"telemetry","event":"runtime_warning","data":{"warningKind":"degraded_native_context","message":"The sample context was recovered with reduced detail."}}"#
+        )
+        let steer: SteerPart = try decode(
+          #"{"type":"steer","inputId":"sample-input","messageId":"sample-followup","text":"Focus on the fictional release checklist.","receivedAt":"2030-01-02T11:59:10.000Z","quote":{"text":"Two checks passed","messageId":"sample-assistant"}}"#
+        )
+        assistant.parts.insert(.telemetry(warning), at: 2)
+        assistant.parts.insert(.steer(steer), at: assistant.parts.count - 1)
+        var followup = try message(id: steer.messageId, role: "user", text: steer.text)
+        followup.liveInputStatus = "applied"
+        return [user, followup, assistant]
+      }
       return [user, assistant]
     }
     static func cached(_ scenario: StoreScenario) throws -> CachedConversation {

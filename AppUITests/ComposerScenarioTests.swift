@@ -315,8 +315,10 @@ import XCTest
     XCTAssertTrue(element(app, "ask-card").waitForExistence(timeout: 10))
     let today = element(app, "ask-option-window-today")
     XCTAssertTrue(scrollTo(app, today))
-    XCTAssertFalse(element(app, "ask-submit").isEnabled, "Every question is required")
+    XCTAssertTrue(
+      composerWait { !self.element(app, "ask-submit").isEnabled }, "Every question is required")
     today.tap()
+    XCTAssertTrue(composerWait { today.isSelected })
     let links = element(app, "ask-option-checks-links")
     XCTAssertTrue(scrollTo(app, links))
     links.tap()
@@ -328,7 +330,7 @@ import XCTest
     dismissKeyboard(app)
     let submit = element(app, "ask-submit")
     XCTAssertTrue(scrollTo(app, submit))
-    XCTAssertTrue(submit.isEnabled)
+    XCTAssertTrue(composerWait { submit.isEnabled })
     capture()
     submit.tap()
     XCTAssertTrue(element(app, "ask-complete").waitForExistence(timeout: 10))
@@ -446,20 +448,37 @@ import XCTest
       }, object: nil)
     return XCTWaiter.wait(for: [expectation], timeout: 15) == .completed
   }
+  private func composerWait(_ predicate: @escaping () -> Bool) -> Bool {
+    let expectation = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in predicate() }, object: nil)
+    return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
+  }
   private func scrollTo(_ app: XCUIApplication, _ target: XCUIElement) -> Bool {
     let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
     let composer = element(app, "composer")
-    for _ in 0..<6 {
-      // Hittable, inside the transcript and not under the floating composer bar.
-      if target.waitForExistence(timeout: 1) && !target.frame.isEmpty && target.isHittable
-        && (!transcript.exists || transcript.frame.contains(target.frame.center))
-        && !(composer.exists && composer.frame.contains(target.frame.center))
-      {
-        return true
-      }
-      app.scrollViews.matching(identifier: "conversation-transcript").firstMatch.swipeUp()
+    let header = element(app, "conversation-top-bar")
+    func top() -> CGFloat {
+      max(
+        transcript.frame.minY,
+        header.exists ? header.frame.maxY : app.navigationBars.firstMatch.frame.maxY)
     }
-    return target.exists
+    func reachable() -> Bool {
+      guard target.exists && !target.frame.isEmpty && target.isHittable else { return false }
+      let center = target.frame.center
+      return transcript.frame.contains(center) && center.y >= top() + 8
+        && (!composer.exists || center.y < composer.frame.minY - 20)
+    }
+    for _ in 0..<8 {
+      if reachable() { return composerWait { reachable() } }
+      // The scroll view extends behind both pieces of floating chrome. A target above the
+      // reading edge needs a downward swipe, not another upward swipe past its control.
+      if target.exists && target.frame.midY < top() + 8 {
+        transcript.swipeDown()
+      } else {
+        transcript.swipeUp()
+      }
+    }
+    return composerWait { reachable() }
   }
   /// The keyboard lowers by dragging the transcript (`scrollDismissesKeyboard`), as there is
   /// no separate dismiss button any more.

@@ -19,6 +19,10 @@ enum TranscriptPresentation {
   static func failed(_ call: WebToolCall) -> Bool {
     ["failed", "error", "cancelled", "interrupted", "timeout", "timed_out"].contains(call.status)
   }
+  static func failed(_ event: ProcessJobActivityEvent) -> Bool {
+    event.phase == .terminal && JobPresentation.terminalStates.contains(event.state)
+      && event.state != "succeeded"
+  }
   static func clusters(_ parts: [WebMessagePart]) -> [Entry] {
     var rows: [Entry] = []
     for (index, part) in parts.enumerated() {
@@ -47,6 +51,52 @@ enum TranscriptPresentation {
     }
     return bands
   }
+  struct ItemEntry: Identifiable {
+    let id: String
+    var parts: [TranscriptItem]
+  }
+  static func isActivity(_ item: TranscriptItem) -> Bool {
+    switch item {
+    case .jobEvent: true
+    case .part(let part): isActivity(part)
+    }
+  }
+  static func activityBands(_ entries: [TranscriptEntry]) -> [ItemEntry] {
+    var bands: [ItemEntry] = []
+    for entry in entries {
+      let item = entry.item
+      let image = item.part.map(isReplyImage) ?? false
+      if let last = bands.last,
+        (isActivity(item) && last.parts.allSatisfy(isActivity))
+          || (image && last.parts.allSatisfy { $0.part.map(isReplyImage) ?? false })
+      {
+        bands[bands.count - 1].parts.append(item)
+      } else {
+        bands.append(.init(id: entry.sourcePartID, parts: [item]))
+      }
+    }
+    return bands
+  }
+  static func clusters(_ parts: [TranscriptItem]) -> [ItemEntry] {
+    var rows: [ItemEntry] = []
+    for (index, item) in parts.enumerated() {
+      let id: String
+      switch item {
+      case .jobEvent(let event): id = event.id
+      case .part(.toolCall(let call)): id = "tool:" + call.toolCallId
+      default: id = "part-\(index)"
+      }
+      if case .part(.toolCall(let call)) = item, toolName(call) != "AskUser",
+        let last = rows.last, case .part(.toolCall(let previous)) = last.parts.last,
+        toolName(call) == toolName(previous)
+      {
+        rows[rows.count - 1].parts.append(item)
+      } else {
+        rows.append(.init(id: id, parts: [item]))
+      }
+    }
+    return rows
+  }
   static func isReplyImage(_ part: WebMessagePart) -> Bool {
     if case .attachment(let value) = part { return value.isReplyImage }
     return false
@@ -55,6 +105,8 @@ enum TranscriptPresentation {
     switch part {
     case .reasoning, .subagent, .processJob, .processJobWake: true
     case .toolCall(let call): toolName(call) != "AskUser"
+    case .telemetry(let value):
+      if case .note = TranscriptTelemetry.presentation(value) { true } else { false }
     default: false
     }
   }
@@ -191,19 +243,7 @@ enum TranscriptPresentation {
   /// the footer (fallback, a transition or retry, an effort the provider did not honour, or an
   /// unsettled run already attempting another model). An ordinary turn carries none.
   static func showsRunAttribution(_ value: WebRunAttribution?, status: String) -> Bool {
-    guard let value else { return false }
-    if value.disposition == "fallback" { return true }
-    if !value.transitions.isEmpty || !value.retries.isEmpty { return true }
-    let run = value.executed ?? value.attempted
-    if let effective = run?.effectiveEffort, let requested = value.requested.effort,
-      canonicalEffort(effective) != canonicalEffort(requested)
-    {
-      return true
-    }
-    guard status != "complete", let attempted = run?.model, !attempted.isEmpty,
-      let requested = value.requested.model, !requested.isEmpty
-    else { return false }
-    return attempted != requested
+    ProcessJobEvents.showsAttribution(value, status: status)
   }
   /// Web `effortChanged`: the effective effort differs from the requested one (or none was asked).
   static func effortChange(_ value: WebRunAttribution) -> String? {
