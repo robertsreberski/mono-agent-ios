@@ -466,22 +466,26 @@ import XCTest
     let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
     let composer = element(app, "composer")
     let header = element(app, "conversation-top-bar")
-    func top() -> CGFloat {
-      max(
-        transcript.frame.minY,
-        header.exists ? header.frame.maxY : app.navigationBars.firstMatch.frame.maxY)
-    }
+    // Chrome stays fixed during transcript scrolling. Resolve its geometry once per reveal,
+    // not on every predicate evaluation: each XCUI property is a fresh accessibility query.
+    // Re-reading all three frames could itself exhaust the wait on a dense iPad transcript.
+    let transcriptFrame = transcript.frame
+    let top = max(
+      transcriptFrame.minY,
+      header.exists ? header.frame.maxY : app.navigationBars.firstMatch.frame.maxY)
+    let bottom = composer.exists ? composer.frame.minY - 20 : transcriptFrame.maxY
     func reachable() -> Bool {
-      guard target.exists && !target.frame.isEmpty && target.isHittable else { return false }
-      let center = target.frame.center
-      return transcript.frame.contains(center) && center.y >= top() + 8
-        && (!composer.exists || center.y < composer.frame.minY - 20)
+      guard target.exists else { return false }
+      let frame = target.frame
+      guard !frame.isEmpty else { return false }
+      return transcriptFrame.contains(frame.center) && frame.midY >= top + 8
+        && frame.midY < bottom && target.isHittable
     }
     for _ in 0..<8 {
       if reachable() { return composerWait { reachable() } }
       // The scroll view extends behind both pieces of floating chrome. A target above the
       // reading edge needs a downward swipe, not another upward swipe past its control.
-      if target.exists && target.frame.midY < top() + 8 {
+      if target.exists && target.frame.midY < top + 8 {
         transcript.swipeDown()
       } else {
         transcript.swipeUp()
