@@ -234,7 +234,6 @@ extension ConsoleStore {
           state.statusSequence == sequence
         else { return }
         state.status = next
-        state.authError = nil
       } catch {
         guard self.providerCurrent(state, owner: owner, epoch: epoch),
           state.statusSequence == sequence, !(error is CancellationError)

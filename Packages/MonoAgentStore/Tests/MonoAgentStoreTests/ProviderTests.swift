@@ -31,7 +31,10 @@ import Testing
     h.store.bootstrap?.agents[0].supportsProviderUsage = true
     h.store.bootstrap?.agents[0].supportsProviderUsageRefresh = true
     await h.transport.set(
-      base, [.response(try response(try decode(statusJSON) as ProviderAuthStatusSnapshot))])
+      base,
+      Array(
+        repeating: .response(try response(try decode(statusJSON) as ProviderAuthStatusSnapshot)),
+        count: 16))
     await h.transport.set(usagePath, [.response(try response(try usage()))])
     h.store.openProviders(sourceID: source)
     await eventually {
