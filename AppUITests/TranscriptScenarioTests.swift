@@ -331,13 +331,19 @@ import XCTest
       let dock = element(app, "composer")
       WaitFor.hittable(jump)
       WaitFor.hittable(dock)
+      let field = element(app, "composer-field")
       WaitFor.element(jump, "jump straddling dock, clear of transcript and input text") {
         control in
-        guard dock.exists, !dock.frame.isEmpty, !control.frame.isEmpty else { return false }
+        guard dock.exists, field.exists, !dock.frame.isEmpty, !field.frame.isEmpty,
+          !control.frame.isEmpty
+        else { return false }
+        // The 36 pt glass circle has a 44 pt hit target. Straddling means its edges cross
+        // the dock edge, not that its centre sits inside the dock (the offset is −20 pt).
+        // The field frame includes its own padding; no more than that padding may overlap.
         return control.frame.minY >= dock.frame.minY - control.frame.height
           && control.frame.minY < dock.frame.minY
           && control.frame.maxY > dock.frame.minY
-          && control.frame.maxY <= self.element(app, "composer-field").frame.minY + 4
+          && control.frame.maxY <= field.frame.minY + 4
       }
     } else if scenario == "conversation-markdown" {
       XCTAssertTrue(element(app, "code-copy").waitForExistence(timeout: 10))

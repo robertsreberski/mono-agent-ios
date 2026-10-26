@@ -212,24 +212,24 @@ import XCTest
 
   private func modelSelector(_ app: XCUIApplication, capture: () -> Void) {
     let menu = element(app, "composer-model")
-    XCTAssertTrue(menu.waitForExistence(timeout: 10))
     WaitFor.value(menu, contains: "Sample Large")  // the agent default is shown
+    guard WaitFor.hittable(menu) else { return }
     menu.tap()
     let small = menuButton(app, "Sample Small")
-    XCTAssertTrue(small.waitForExistence(timeout: 5))
+    guard WaitFor.hittable(small) else { return }
     let catalog = menuButton(app, "Harbor catalog")
-    XCTAssertTrue(catalog.exists)
-    XCTAssertFalse(catalog.isEnabled, "Catalog-only providers are explained, not selectable")
+    WaitFor.enabled(catalog, false)
     capture()
+    // Capturing can outlive the presentation transition. Recheck the current frame before
+    // tapping, then wait for the sheet to dismiss rather than reopening during its animation.
+    guard WaitFor.hittable(small) else { return }
     small.tap()
-    let routed = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in
-        (menu.value as? String ?? "").contains("Sample Small")
-      }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [routed], timeout: 10), .completed)
+    WaitFor.value(menu, contains: "Sample Small")
+    WaitFor.absent(small)
+    guard WaitFor.hittable(menu) else { return }
     menu.tap()
     let low = menuButton(app, "Low")
-    XCTAssertTrue(low.waitForExistence(timeout: 5))
+    guard WaitFor.hittable(low) else { return }
     low.tap()
     WaitFor.value(element(app, "rename-conversation"), contains: "sample:small")
     WaitFor.value(menu, contains: "Low")
