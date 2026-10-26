@@ -78,9 +78,11 @@ import XCTest
     XCTAssertTrue(position(copy, in: app))
     copy.tap()
     XCTAssertTrue(wait(copy, value: "Copied"))
-    XCTAssertTrue(wait(copy, value: "", timeout: 5))
+    XCTAssertTrue(waitUntil(timeout: 10) { (copy.value as? String) != "Copied" })
     app.terminate()
   }
+  func testCodeOnlyChipsLight() { capture("conversation-markdown", "light", variant: "chips") }
+  func testCodeOnlyChipsDark() { capture("conversation-markdown", "dark", variant: "chips") }
   func testMarkdownAccessibility() { capture("conversation-markdown", "light", variant: "ax3") }
 
   /// A band the user opened stays open after its row scrolls far enough to be recycled.
@@ -267,6 +269,7 @@ import XCTest
       "--scenario", scenario, "--appearance", appearance, "--reset-test-data",
       "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
     ]
+    if variant == "chips" { app.launchArguments += ["--fixture-code-chips"] }
     if variant == "markers" { app.launchArguments += ["--fixture-markers"] }
     if variant == "statuses" { app.launchArguments += ["--fixture-message-statuses"] }
     if variant == "plum" { app.launchArguments += ["--fixture-theme", "plum"] }
@@ -278,7 +281,11 @@ import XCTest
     app.launch()
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
     XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
-    if variant == "markers" {
+    if variant == "chips" {
+      XCTAssertTrue(
+        app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "swift test"))
+          .firstMatch.waitForExistence(timeout: 10))
+    } else if variant == "markers" {
       let marker = app.staticTexts.containing(
         NSPredicate(format: "label CONTAINS %@", "Context compacted")
       ).firstMatch

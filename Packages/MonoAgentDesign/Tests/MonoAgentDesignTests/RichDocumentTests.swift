@@ -21,14 +21,23 @@ struct RichDocumentTests {
     #expect(runs.contains { $0.code })
     #expect(runs.contains { $0.link == "https://example.com" })
   }
-  @Test func imagesKeepOnlyAltTextAndNeverBecomeNetworkActions() {
+  @Test func imagesKeepAltTextAndOnlyAnEnclosingValidatedLink() {
     let value = RichDocument.parse(
       "Before ![A fictional garden](https://example.com/photo.png) after.\n\n[![](https://example.com/empty.png)](https://example.com)"
     )
     let images = value.blocks.flatMap(\.runs).filter(\.image)
     #expect(images.map(\.text) == ["A fictional garden", "Image"])
-    #expect(images.allSatisfy { $0.link == nil })
+    #expect(images.map(\.link) == [nil, "https://example.com"])
     #expect(!value.blocks.flatMap(\.runs).contains { $0.text.contains("photo.png") })
+  }
+  @Test func imageAltIsBoundedAndUnsafeOuterLinksStayInert() {
+    let value = RichDocument.parse(
+      "[![" + String(repeating: "a", count: 201)
+        + "](https://example.com/image.png)](javascript:alert)")
+    let image = value.blocks.flatMap(\.runs).first { $0.image }
+    #expect(image?.text.count == 200)
+    #expect(image?.text.hasSuffix("…") == true)
+    #expect(image?.link == nil)
   }
   @Test func nestedTaskListsKeepTheirDepthAndCompletionState() {
     let value = RichDocument.parse("- [x] Ready\n  - [ ] Nested\n- Ordinary")

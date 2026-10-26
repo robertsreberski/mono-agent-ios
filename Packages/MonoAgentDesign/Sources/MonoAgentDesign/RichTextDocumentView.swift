@@ -136,7 +136,12 @@ public struct RichTextDocumentView: View {
   /// Keep ordinary/code-only paragraphs on SwiftUI's native cached attributed-text path.
   /// A renderer on every prose run exceeded the long-markdown scrolling budget.
   @ViewBuilder private func inlineContent(_ runs: [RichDocument.Run]) -> some View {
-    if runs.contains(where: \.image) {
+    if RichInlinePresentation.isCodeOnly(runs) {
+      Text(attributed(runs))
+        .padding(.horizontal, em * 0.35).padding(.vertical, em * 0.13)
+        .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 5))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(WebColor.line.color, lineWidth: 1))
+    } else if runs.contains(where: \.image) {
       inlineText(runs).textRenderer(InlineChipRenderer())
     } else {
       Text(attributed(runs))
@@ -157,9 +162,10 @@ public struct RichTextDocumentView: View {
   }
   private func attributed(_ runs: [RichDocument.Run]) -> AttributedString {
     RichRenderingCache.attributed(.init(runs, em: Double(em), theme: theme.rawValue)) {
-      runs.reduce(into: AttributedString()) { value, run in
+      runs.enumerated().reduce(into: AttributedString()) { value, item in
+        let (index, run) = item
         var part = AttributedString(
-          run.code || run.image ? "\u{2009}" + run.text + "\u{2009}" : run.text)
+          RichInlinePresentation.text(run, index: index, count: runs.count))
         var intent: InlinePresentationIntent = []
         if run.bold { intent.insert(.stronglyEmphasized) }
         if run.italic { intent.insert(.emphasized) }
@@ -249,7 +255,7 @@ struct MarkdownTableView<InlineContent: View>: View {
 /// Copy action inside the top-right corner. `.payload` is the quieter tool/job payload panel.
 public struct CodeDocumentView: View {
   @Environment(\.webMaterial) private var material
-  @State private var copied = false
+  @State private var feedback = CodeCopyFeedback()
   public enum Style: Sendable { case block, payload }
   private let source: String
   private let language: String
@@ -286,23 +292,23 @@ public struct CodeDocumentView: View {
       .accessibilityLabel("\(language) code").accessibilityIdentifier("code-content")
       .overlay(alignment: .topTrailing) {
         Button {
-          UIPasteboard.general.string = source
-          copied = true
+          UIPasteboard.general.string = feedback.copy(source)
         } label: {
-          Image(systemName: copied ? "checkmark" : "doc.on.doc")
+          Image(systemName: feedback.copied ? "checkmark" : "doc.on.doc")
             .font(.system(size: 12))
             .frame(width: 24, height: 24)
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(WebColor.codeText.color)
-        .accessibilityLabel("Copy code").accessibilityValue(copied ? "Copied" : "")
+        .accessibilityLabel("Copy code").accessibilityValue(feedback.copied ? "Copied" : "")
         .accessibilityIdentifier("code-copy")
-        .sensoryFeedback(.success, trigger: copied)
-        .task(id: copied) {
-          guard copied else { return }
-          do { try await Task.sleep(for: .seconds(2)) } catch { return }
-          copied = false
+        .sensoryFeedback(.success, trigger: feedback.generation)
+        .task(id: feedback.generation) {
+          guard feedback.copied else { return }
+          let generation = feedback.generation
+          do { try await Task.sleep(for: .seconds(5)) } catch { return }
+          feedback.reset(generation: generation)
         }
       }
       if source.utf8.count > 16_384 {

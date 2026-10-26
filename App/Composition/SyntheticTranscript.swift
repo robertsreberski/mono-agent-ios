@@ -115,6 +115,16 @@
         text: "The sample is ready. **Two checks** passed; one fictional file needs attention.")
       switch scenario {
       case .conversationMarkdown:
+        if ProcessInfo.processInfo.arguments.contains("--fixture-code-chips") {
+          assistant.parts = [
+            .text(
+              .init(
+                text:
+                  "# `npm test`\n\n`swift test`\n\n`start` then prose and `end`\n\n[![A fictional linked garden](https://example.com/garden.png)](https://example.com/guide)"
+              ))
+          ]
+          return [user, assistant]
+        }
         assistant.parts = [
           .text(.init(text: markdown + "\n\n![A fictional garden](https://example.com/garden.png)"))
         ]

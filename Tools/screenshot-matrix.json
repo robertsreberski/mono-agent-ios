@@ -1748,6 +1748,22 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "ax3"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "chips"
+    },
+    {
+      "scenario": "conversation-markdown",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "chips"
     }
   ]
 }

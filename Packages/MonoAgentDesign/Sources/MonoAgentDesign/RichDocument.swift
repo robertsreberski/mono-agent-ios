@@ -101,9 +101,10 @@ public struct RichDocument: Sendable, Equatable {
         style.link = destination
       }
       if let image = node as? Markdown.Image {
-        style.text = image.plainText.isEmpty ? "Image" : image.plainText
+        let alt = image.plainText
+        style.text = alt.isEmpty ? "Image" : alt.count > 200 ? String(alt.prefix(199)) + "…" : alt
         style.image = true
-        style.link = nil
+        // Preserve a validated enclosing link, never the image source URL.
         return [style]
       }
       return node.children.flatMap { inline($0, depth: depth + 1, style: style) }
