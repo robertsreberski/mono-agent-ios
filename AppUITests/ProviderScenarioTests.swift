@@ -124,7 +124,7 @@ import XCTest
   }
   private func stale(_ appearance: String) {
     let app = launch("provider-usage-stale", appearance)
-    WaitFor.label(element(app, "provider-usage-stale-openai-codex"), contains: "Last known")
+    WaitFor.label(element(app, "provider-usage-last-known-openai-codex"), contains: "Last known")
     WaitFor.label(
       element(app, "provider-meter-openai-codex-weekly"), contains: "projected to run out")
     capture(app, "provider-usage-stale", appearance)

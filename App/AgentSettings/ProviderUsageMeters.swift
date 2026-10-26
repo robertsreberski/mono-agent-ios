@@ -21,7 +21,7 @@ struct ProviderUsageMeters: View {
         if usage.stale {
           Text("Last known · \(age(now)) ago").webFont(.settingsNote)
             .foregroundStyle(WebColor.warning.color)
-            .accessibilityIdentifier("provider-usage-stale-" + usage.providerId)
+            .accessibilityIdentifier("provider-usage-last-known-" + usage.providerId)
         }
         ForEach(usage.windows, id: \.kind) { window in meter(window, now: now) }
         if usage.error != nil {
