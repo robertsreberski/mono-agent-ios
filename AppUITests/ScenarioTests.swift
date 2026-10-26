@@ -14,41 +14,100 @@ final class ScenarioTests: XCTestCase {
       "Expected \(predicate)", file: file, line: line)
   }
 
-  /// Native menus use a system collection view, not the old custom popover scroll IDs.
-  private func swipePicker(_ app: XCUIApplication) -> Bool {
+  private func reachNativeMenuItem(
+    _ app: XCUIApplication, _ target: XCUIElement, discoverVirtualized: Bool = true
+  ) -> XCUIElement {
+    let targetExists = target.waitForExistence(timeout: 2)
     let menu = app.collectionViews.firstMatch
-    guard menu.waitForExistence(timeout: 2), !menu.frame.isEmpty else { return false }
-    // UIKit can expose an unclipped collection frame. Intersect it with the window and
-    // keep both endpoints inside the visible menu, including short native submenus.
-    let visible = menu.frame.intersection(app.windows.firstMatch.frame)
-    guard !visible.isEmpty else { return false }
-    let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
-    let window = app.windows.firstMatch.frame
-    origin.withOffset(
-      CGVector(
-        dx: visible.midX - window.minX,
-        dy: visible.minY + visible.height * 0.8 - window.minY)
-    ).press(
-      forDuration: 0.05,
-      thenDragTo: origin.withOffset(
-        CGVector(
-          dx: visible.midX - window.minX,
-          dy: visible.minY + visible.height * 0.2 - window.minY)),
-      withVelocity: .fast, thenHoldForDuration: 0)
-    return true
-  }
-
-  private func reachNativeMenuItem(_ app: XCUIApplication, _ target: XCUIElement) -> XCUIElement {
-    guard target.waitForExistence(timeout: 10) else {
-      XCTFail("Native menu item did not appear: \(target)")
+    guard menu.waitForExistence(timeout: 2) else {
+      XCTFail("Native menu missing for \(target); last visible labels: []")
       return target
     }
-    for _ in 0..<18 {
-      guard target.exists else { break }  // Never swipe a menu that has disappeared.
-      if !target.frame.isEmpty && target.isHittable { break }
-      if !swipePicker(app) { break }
+    // Native menu virtualization instantiates only the first ~8 rows. Its collection frame
+    // is unclipped; the smallest containing ancestor supplies the actual menu viewport.
+    let window = app.windows.firstMatch
+    func viewport() -> CGRect? {
+      app.otherElements.containing(.collectionView, identifier: nil)
+        .allElementsBoundByIndex.map { $0.frame.intersection(window.frame) }
+        .filter { !$0.isEmpty && $0.intersects(menu.frame) }
+        .min { $0.width * $0.height < $1.width * $1.height }
     }
-    WaitFor.hittable(target)
+    guard let clipped = viewport(), clipped.height > 20, clipped.width > 20 else {
+      XCTFail("No clipped menu frame for \(target); last visible labels: []")
+      return target
+    }
+    func labels() -> Set<String> {
+      guard let snapshot = try? menu.snapshot() else { return [] }
+      func collect(_ row: any XCUIElementSnapshot) -> [String] {
+        let own =
+          row.elementType == .button && !row.frame.isEmpty
+            && clipped.contains(CGPoint(x: row.frame.midX, y: row.frame.midY))
+          ? [row.label] : []
+        return own + row.children.flatMap { collect($0) }
+      }
+      return Set(collect(snapshot))
+    }
+    var lastLabels = labels()
+    func fail(_ reason: String) {
+      XCTFail("\(reason) for \(target); last visible labels: \(lastLabels.sorted())")
+    }
+    let virtualized = menu.frame.height > clipped.height + 1
+    guard targetExists || (discoverVirtualized && virtualized) else {
+      fail("Exact native menu target did not appear (discovery disallowed or menu not virtualized)")
+      return target
+    }
+    let identifier = menu.identifier
+    for drag in 0...12 {
+      if target.exists && !target.frame.isEmpty
+        && clipped.insetBy(dx: -1, dy: -1).contains(target.frame)
+      {
+        WaitFor.element(
+          target, "exact menu target hittable: \(target); labels: \(labels().sorted())"
+        ) {
+          $0.exists && !$0.frame.isEmpty && $0.isHittable
+        }
+        return target
+      }
+      guard drag < 12 else {
+        fail("Reached 12-drag native menu discovery cap")
+        return target
+      }
+      guard target.exists || (discoverVirtualized && virtualized) else {
+        fail("Strict native menu target disappeared")
+        return target
+      }
+      let before = labels()
+      lastLabels = before
+      guard !before.isEmpty else {
+        fail("No visible native menu rows")
+        return target
+      }
+      let origin = window.coordinate(withNormalizedOffset: .zero)
+      func point(_ fraction: CGFloat) -> XCUICoordinate {
+        origin.withOffset(
+          CGVector(
+            dx: clipped.midX - window.frame.minX,
+            dy: clipped.minY + clipped.height * fraction - window.frame.minY))
+      }
+      point(0.9).press(
+        forDuration: 0.05, thenDragTo: point(0.1), withVelocity: .fast,
+        thenHoldForDuration: 0)
+      guard menu.exists, menu.identifier == identifier, viewport() == clipped else {
+        fail("Native menu changed or disappeared after drag")
+        return target
+      }
+      let progress = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in
+          let current = labels()
+          guard !current.isEmpty, current != before else { return false }
+          lastLabels = current
+          return true
+        }, object: nil)
+      guard XCTWaiter.wait(for: [progress], timeout: 5) == .completed else {
+        fail("Native menu reached its end or made no visible-label progress")
+        return target
+      }
+    }
     return target
   }
 
@@ -56,7 +115,8 @@ final class ScenarioTests: XCTestCase {
   /// source IDs, but use the self-contained, unique visible label only for nested items.
   @discardableResult
   private func tapNestedMenuItem(_ app: XCUIApplication, label: String) -> XCUIElement {
-    let item = reachNativeMenuItem(app, app.collectionViews.buttons[label].firstMatch)
+    let item = reachNativeMenuItem(
+      app, app.collectionViews.buttons[label].firstMatch, discoverVirtualized: false)
     if item.exists && !item.frame.isEmpty && item.isHittable { item.tap() }
     return item
   }
@@ -89,7 +149,7 @@ final class ScenarioTests: XCTestCase {
       app.buttons["conversation-tags"], NSPredicate(format: "value == %@", "Label 30"))
     app.buttons["conversation-tags"].tap()
     reach("edit-tags", in: "tag-picker-scroll").tap()
-    tapNestedMenuItem(app, label: "Edit Label 30")
+    reachNativeMenuItem(app, app.collectionViews.buttons["Edit Label 30"].firstMatch).tap()
     XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
     app.buttons["Cancel"].tap()
     app.buttons["conversation-tags"].tap()
@@ -98,7 +158,7 @@ final class ScenarioTests: XCTestCase {
     app.buttons["Cancel"].tap()
     app.buttons["conversation-actions"].tap()
     app.buttons["action-project"].tap()
-    tapNestedMenuItem(app, label: "Collection 12")
+    reachNativeMenuItem(app, app.collectionViews.buttons["Collection 12"].firstMatch).tap()
     XCTAssertTrue(app.staticTexts["Collection 12"].waitForExistence(timeout: 5))
   }
 
