@@ -1862,6 +1862,70 @@
       "textSize": "standard",
       "transparency": "system",
       "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "light",
+      "variant": "footerax5",
+      "textSize": "accessibility XXXL (AX5)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "dashboard-populated",
+      "appearance": "dark",
+      "variant": "footerax5",
+      "textSize": "accessibility XXXL (AX5)",
+      "transparency": "system",
+      "theme": "evergreen"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jump"
+    },
+    {
+      "scenario": "conversation-job-stack",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jump"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jump"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jump"
+    },
+    {
+      "scenario": "composer-draft-attachments",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jump"
+    },
+    {
+      "scenario": "composer-draft-attachments",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jump"
     }
   ]
 }

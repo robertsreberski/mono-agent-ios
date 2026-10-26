@@ -3,6 +3,28 @@ import UIKit
 import XCTest
 
 @MainActor final class ActivityScenarioTests: XCTestCase {
+  func testJumpClearsShelfLight() { jumpClearsShelf("light") }
+  func testJumpClearsShelfDark() { jumpClearsShelf("dark") }
+  private func jumpClearsShelf(_ appearance: String) {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-job-stack", "--appearance", appearance,
+      "--reset-test-data",
+    ]
+    app.launch()
+    defer { app.terminate() }
+    WaitFor.hittable(element(app, "job-stack"))
+    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    WaitFor.hittable(transcript)
+    transcript.swipeDown()
+    let shelf = element(app, "job-stack")
+    assertJumpClearsDockRow(app, row: shelf)
+    captureJumpDock(app, scenario: "conversation-job-stack", appearance: appearance)
+    // This centre-top tap used to land inside Jump's overlapping hit circle.
+    shelf.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+    WaitFor.value(shelf, contains: "Expanded")
+  }
+
   func testJobsOpaque() { capture("conversation-jobs", "light", variant: "opaque") }
   func testContextOpaque() { capture("conversation-context", "light", variant: "opaque") }
   func testStackOpaque() { capture("conversation-job-stack", "light", variant: "opaque") }

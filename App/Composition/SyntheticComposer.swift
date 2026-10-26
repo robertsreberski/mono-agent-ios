@@ -98,7 +98,7 @@
         ]
       default: break
       }
-      return [user, assistant]
+      return try TranscriptFixture.chromeHistory() + [user, assistant]
     }
 
     static let peerJob = #"""

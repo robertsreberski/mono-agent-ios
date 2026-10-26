@@ -5,6 +5,48 @@ import XCTest
 /// Composer and answer-surface scenarios (C8). Every test types and sends through the synthetic
 /// Store (`ComposerScript`), asserts the scripted round trip, and captures one screenshot.
 @MainActor final class ComposerScenarioTests: XCTestCase {
+  func testJumpClearsSuggestionsLight() { jumpClearsComposerRow("light", attachments: false) }
+  func testJumpClearsSuggestionsDark() { jumpClearsComposerRow("dark", attachments: false) }
+  func testJumpClearsAttachmentsLight() { jumpClearsComposerRow("light", attachments: true) }
+  func testJumpClearsAttachmentsDark() { jumpClearsComposerRow("dark", attachments: true) }
+
+  private func jumpClearsComposerRow(_ appearance: String, attachments: Bool) {
+    let scenario = attachments ? "composer-draft-attachments" : "composer-model-selector"
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", scenario, "--appearance", appearance,
+      "--reset-test-data", "--fixture-long-history",
+    ]
+    app.launch()
+    defer { app.terminate() }
+    WaitFor.hittable(element(app, "composer-field"))
+    if attachments {
+      element(app, "composer-attach").tap()
+      WaitFor.hittable(element(app, "attach-samples"))
+      element(app, "attach-samples").tap()
+      WaitFor.hittable(app.buttons["Remove field-notes.txt"].firstMatch)
+    } else {
+      element(app, "composer-field").tap()
+      element(app, "composer-field").typeText("/")
+      WaitFor.hittable(element(app, "command-suggestion-settings"))
+    }
+    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    transcript.swipeDown()
+    let row =
+      attachments
+      ? element(app, "composer-attachments")
+      : element(app, "command-suggestion-settings")
+    assertJumpClearsDockRow(app, row: row)
+    captureJumpDock(app, scenario: scenario, appearance: appearance)
+    if attachments {
+      app.buttons["Remove field-notes.txt"].firstMatch.tap()
+      WaitFor.absent(element(app, "attachment-field-notes.txt"))
+    } else {
+      row.tap()
+      WaitFor.hittable(menuButton(app, "Sample Small"))
+    }
+  }
+
   func testComposerEmptyLight() { run("composer-empty", "light") }
   func testComposerEmptyDark() { run("composer-empty", "dark") }
   func testComposerKeyboardUp() { run("composer-empty", "light", variant: "keyboard") }

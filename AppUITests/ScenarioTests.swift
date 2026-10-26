@@ -18,19 +18,34 @@ final class ScenarioTests: XCTestCase {
   private func swipePicker(_ app: XCUIApplication) -> Bool {
     let menu = app.collectionViews.firstMatch
     guard menu.waitForExistence(timeout: 2), !menu.frame.isEmpty else { return false }
-    // UIKit exposes an unclipped collection frame. Keep the drag inside the menu's visible
-    // upper portion, not the transcript below it; fast motion reaches long AX3 registries.
-    let origin = menu.coordinate(withNormalizedOffset: .zero)
-    origin.withOffset(CGVector(dx: menu.frame.width / 2, dy: 350)).press(
+    // UIKit can expose an unclipped collection frame. Intersect it with the window and
+    // keep both endpoints inside the visible menu, including short native submenus.
+    let visible = menu.frame.intersection(app.windows.firstMatch.frame)
+    guard !visible.isEmpty else { return false }
+    let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+    let window = app.windows.firstMatch.frame
+    origin.withOffset(
+      CGVector(
+        dx: visible.midX - window.minX,
+        dy: visible.minY + visible.height * 0.8 - window.minY)
+    ).press(
       forDuration: 0.05,
-      thenDragTo: origin.withOffset(CGVector(dx: menu.frame.width / 2, dy: 60)),
+      thenDragTo: origin.withOffset(
+        CGVector(
+          dx: visible.midX - window.minX,
+          dy: visible.minY + visible.height * 0.2 - window.minY)),
       withVelocity: .fast, thenHoldForDuration: 0)
     return true
   }
 
   private func reachNativeMenuItem(_ app: XCUIApplication, _ target: XCUIElement) -> XCUIElement {
+    guard target.waitForExistence(timeout: 10) else {
+      XCTFail("Native menu item did not appear: \(target)")
+      return target
+    }
     for _ in 0..<18 {
-      if target.exists && !target.frame.isEmpty && target.isHittable { break }
+      guard target.exists else { break }  // Never swipe a menu that has disappeared.
+      if !target.frame.isEmpty && target.isHittable { break }
       if !swipePicker(app) { break }
     }
     WaitFor.hittable(target)
@@ -603,8 +618,16 @@ final class ScenarioTests: XCTestCase {
   func testDashboardLastRowClearsFooterLight() { captureDashboardLastRow("light") }
   func testDashboardLastRowClearsFooterDark() { captureDashboardLastRow("dark") }
 
-  private func captureDashboardLastRow(_ appearance: String) {
-    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "footerlast") {
+  func testDashboardLastRowClearsFooterAX5Light() { captureDashboardLastRow("light", ax5: true) }
+  func testDashboardLastRowClearsFooterAX5Dark() { captureDashboardLastRow("dark", ax5: true) }
+
+  private func captureDashboardLastRow(_ appearance: String, ax5: Bool = false) {
+    capture(
+      "dashboard-populated", appearance, expect: ["agent-strip"],
+      variant: ax5 ? "footerax5" : "footerlast",
+      arguments: ax5
+        ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] : []
+    ) {
       app in
       XCTAssertTrue(self.scrollTo(app, "load-older"))
       self.element(app, "load-older").tap()

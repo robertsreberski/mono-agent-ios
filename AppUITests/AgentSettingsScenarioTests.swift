@@ -216,6 +216,8 @@ import XCTest
       element(app, "running-row-t-atlas-launch").tap()
       XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 15))
       XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 10))
+      // Non-vacuous witness: this same header is reachable before settings covers it.
+      WaitFor.hittable(element(app, "rename-conversation"))
       button.tap()
       waitForSettings(app)
       WaitFor.value(button, contains: "Expanded")
@@ -223,13 +225,14 @@ import XCTest
       // The covered conversation is retained but unreachable: transcript, composer, header.
       WaitFor.absent(element(app, "conversation-transcript"))
       WaitFor.absent(element(app, "composer-field"))
-      WaitFor.absent(element(app, "conversation-run-state"))
+      WaitFor.absent(element(app, "rename-conversation"))
       WaitFor.hittable(element(app, "agent-strip"))  // the sidebar stays usable
       button.tap()  // a second press closes on a wide layout
       WaitFor.absent(element(app, "agent-settings-screen"))
       WaitFor.value(button, contains: "Collapsed")
       XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
       XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 10))
+      WaitFor.hittable(element(app, "rename-conversation"))
       // Selecting another conversation while settings is open closes it.
       button.tap()
       waitForSettings(app)
