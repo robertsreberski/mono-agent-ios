@@ -29,6 +29,7 @@ import Observation
   @ObservationIgnored var latestTask: Task<Void, Never>?
   @ObservationIgnored var poll: Task<Void, Never>?
   @ObservationIgnored var admission: Task<Void, Never>?
+  @ObservationIgnored var pendingNotice: String?
   @ObservationIgnored var dispatched = false
   init(sourceID: String) { self.sourceID = sourceID }
   func announce(_ text: String) {
@@ -76,6 +77,8 @@ extension ConsoleStore {
     state.open = true
     state.lifetime = UUID()
     state.owner = UUID()
+    state.readState = .loading
+    state.pendingNotice = nil
     state.requestFailure = nil
     state.requestUnknown = nil
     state.pollWarning = nil
@@ -88,6 +91,7 @@ extension ConsoleStore {
     guard let state = agentRestarts[sourceID] else { return }
     suspendAgentRestart(state)
     state.open = false
+    state.pendingNotice = nil
     state.lifetime = UUID()
   }
   func suspendAgentRestart(_ state: AgentRestartState) {
@@ -95,8 +99,7 @@ extension ConsoleStore {
     state.confirming = false
     state.confirmationScope = nil
     if state.dispatched {
-      state.requestUnknown =
-        "Couldn't confirm the request was received — check the agent. You can retry."
+      markAgentRestartUnknown(state, deferred: true)
     }
     state.latestTask?.cancel()
     state.latestTask = nil
@@ -107,6 +110,10 @@ extension ConsoleStore {
   func resumeAgentRestart(_ state: AgentRestartState) {
     guard restartAvailable(state) else { return }
     suspendAgentRestart(state)
+    if let pending = state.pendingNotice {
+      state.pendingNotice = nil
+      state.announce(pending)
+    }
     if state.inProgress || state.resumeID != nil {
       pollAgentRestart(state)
     } else if state.admission == nil {
@@ -185,7 +192,6 @@ extension ConsoleStore {
       agentRestartUnavailableReason(sourceID) == nil
     else { return }
     let scope = restartConfirmationScope(sourceID)
-    let capability = restartCapability(sourceID)
     let lifetime = state.lifetime
     let owner = state.owner
     let epoch = epoch
@@ -199,9 +205,12 @@ extension ConsoleStore {
     state.announce("Requesting restart.")
     state.admission = Task { [weak self] in
       guard let self else { return }
+      @MainActor func sameLifetime() -> Bool {
+        state.open && state.lifetime == lifetime && self.agentRestarts[sourceID] === state
+          && self.agent(sourceID) != nil
+      }
       @MainActor func current() -> Bool {
-        self.restartCurrent(state, owner: owner, epoch: epoch)
-          && self.restartCapability(sourceID) == capability
+        sameLifetime() && self.restartCurrent(state, owner: owner, epoch: epoch)
       }
       defer {
         state.admission = nil
@@ -242,9 +251,7 @@ extension ConsoleStore {
         }
         guard current() else {
           // Preserve only by-id resume material through a temporary background/disconnect.
-          if state.open && state.lifetime == lifetime && self.enabled && !self.stopped
-            && self.restartCapability(sourceID) == capability
-          {
+          if sameLifetime() {
             state.resumeID = result.id
             if self.restartAvailable(state) { self.pollAgentRestart(state) }
           }
@@ -253,9 +260,8 @@ extension ConsoleStore {
         self.adoptAgentRestart(result, state: state)
       } catch {
         guard current() else {
-          if state.open && state.lifetime == lifetime {
-            state.requestUnknown =
-              "Couldn't confirm the request was received — check the agent. You can retry."
+          if sameLifetime() {
+            self.markAgentRestartUnknown(state, deferred: !self.restartAvailable(state))
           }
           return
         }
@@ -279,10 +285,18 @@ extension ConsoleStore {
           }
         }
         guard current() else { return }
-        state.requestUnknown =
-          "Couldn't confirm the request was received — check the agent. You can retry."
-        state.announce(state.requestUnknown!)
+        self.markAgentRestartUnknown(state, deferred: false)
       }
+    }
+  }
+  private func markAgentRestartUnknown(_ state: AgentRestartState, deferred: Bool) {
+    let message = "Couldn't confirm the request was received — check the agent. You can retry."
+    state.requestUnknown = message
+    if deferred {
+      state.pendingNotice = message
+    } else {
+      state.pendingNotice = nil
+      state.announce(message)
     }
   }
   private func adoptAgentRestart(_ operation: WebAgentRestartOperation, state: AgentRestartState) {
@@ -293,6 +307,7 @@ extension ConsoleStore {
     state.operation = operation
     state.resumeID = nil
     state.requestUnknown = nil
+    state.pendingNotice = nil
     state.readState = .ready
     state.pollWarning = nil
     if changed {

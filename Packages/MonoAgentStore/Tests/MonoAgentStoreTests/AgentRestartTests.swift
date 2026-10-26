@@ -262,6 +262,124 @@ import Testing
     #expect(await h.transport.count(path, method: "POST") == 0)
     h.store.closeAgentRestart(sourceID: source)
   }
+  @Test(arguments: [false, true])
+  func capabilityChangeAfterDispatchRetainsAdmission(_ suspended: Bool) async throws {
+    let h = try await live()
+    let state = h.store.agentRestartState(source)
+    await h.transport.set(path, [.response(try latest()), .paused])
+    await h.transport.set(path + "/restart-new", [.paused])
+    confirm(h)
+    let admission = state.admission
+    await eventually { await h.transport.pauseCount() == 1 }
+    h.store.bootstrap?.agents[0].restart?.supported = false
+    h.store.reconcileAgentRestarts()
+    if suspended { await h.store.scenePhaseChanged(.background) }
+    await h.transport.release(try response(try operation()))
+    await admission?.value
+    if suspended {
+      #expect(state.resumeID == "restart-new")
+      try await foreground(h)
+    } else {
+      #expect(state.operation?.id == "restart-new")
+    }
+    await eventually { await h.transport.pauseCount() == 1 }
+    h.store.requestAgentRestartConfirmation(sourceID: source)
+    h.store.confirmAgentRestart(sourceID: source)
+    #expect(!state.confirming)
+    let poll = state.poll
+    await h.transport.release(try response(try operation(outcome: "success")))
+    await poll?.value
+    #expect(state.outcome == "success")
+    #expect(await h.transport.count(path, method: "POST") == 1)
+    h.store.closeAgentRestart(sourceID: source)
+  }
+  @Test func offlineReopenRequiresAnotherLatestRead() async throws {
+    let h = try await live()
+    let state = h.store.agentRestartState(source)
+    h.store.closeAgentRestart(sourceID: source)
+    h.store.connection = .offline
+    h.store.openAgentRestart(sourceID: source)
+    #expect(state.readState == .loading)
+    #expect(state.latestTask == nil)
+    #expect(await h.transport.count(path, method: "GET") == 1)
+    h.store.closeAgentRestart(sourceID: source)
+  }
+  func foreground(_ h: Harness) async throws {
+    await h.store.scenePhaseChanged(.active)
+    let ready: ApiEvent = try decode(
+      #"{"id":"ready-example","version":1,"at":"2030-01-02T12:00:00Z","type":"ready","payload":{"version":1}}"#
+    )
+    await h.events.send(.event(generation: 1, gap: .initial, ready))
+    await eventually { h.store.connection == .live }
+  }
+  @Test func realForegroundStreamReadyResumesKnownOperationByID() async throws {
+    let h = try await live()
+    let state = h.store.agentRestartState(source)
+    state.operation = try operation()
+    await h.store.scenePhaseChanged(.background)
+    await h.transport.set(path + "/restart-new", [.paused])
+    try await foreground(h)
+    await eventually { await h.transport.pauseCount() == 1 }
+    #expect(await h.events.count() == 1)
+    #expect(await h.transport.count(path + "/restart-new") == 1)
+    let poll = state.poll
+    await h.transport.release(try response(try operation(outcome: "success")))
+    await poll?.value
+    #expect(state.outcome == "success")
+    #expect(await h.transport.count(path, method: "POST") == 0)
+    h.store.closeAgentRestart(sourceID: source)
+  }
+  @Test func suspendedUncertaintyIsAnnouncedWhenStreamBecomesReady() async throws {
+    let h = try await live()
+    let state = h.store.agentRestartState(source)
+    await h.transport.set(path, [.response(try latest()), .paused])
+    confirm(h)
+    let admission = state.admission
+    await eventually { await h.transport.pauseCount() == 1 }
+    let serial = state.noticeSerial
+    await h.store.scenePhaseChanged(.background)
+    await h.transport.release(HTTPResponse(data: Data(), status: 503))
+    await admission?.value
+    #expect(state.requestUnknown != nil && state.pendingNotice != nil)
+    #expect(state.noticeSerial == serial)
+    await h.transport.set(path, [.response(try latest())])
+    try await foreground(h)
+    #expect(state.noticeSerial == serial + 1)
+    #expect(state.notice == state.requestUnknown && state.pendingNotice == nil)
+    await state.latestTask?.value
+    #expect(await h.transport.count(path, method: "POST") == 1)
+    h.store.closeAgentRestart(sourceID: source)
+  }
+  @Test(arguments: ["generation", "capability", "cache"])
+  func everyAgentReplacementInvalidatesConfirmation(_ replacement: String) async throws {
+    let h = try await live()
+    let state = h.store.agentRestartState(source)
+    h.store.requestAgentRestartConfirmation(sourceID: source)
+    #expect(state.confirming)
+    var agent = try #require(h.store.agent(source))
+    if replacement == "capability" {
+      agent.restart?.supported = false
+    } else {
+      agent.generation = "next-process"
+    }
+    if replacement == "cache" {
+      var disk = CacheRecord()
+      disk.revision = 100
+      disk.bootstrap = h.store.bootstrap
+      agent.updatedAt = "2099-01-02T12:00:00Z"
+      disk.bootstrap?.agents[0] = agent
+      _ = try await h.repository.saveCache(disk, namespace: h.store.namespace)
+      await h.store.flushCache()
+      #expect(h.store.agent(source)?.generation == "next-process")
+    } else {
+      h.store.applyAgentWrite(agent, pinOnly: false)
+    }
+    #expect(!state.confirming && state.confirmationScope == nil)
+    h.store.confirmAgentRestart(sourceID: source)
+    #expect(await h.transport.count(path, method: "POST") == 0)
+    h.store.closeAgentRestart(sourceID: source)
+  }
+
 }
 
 extension ManualStoreClock {

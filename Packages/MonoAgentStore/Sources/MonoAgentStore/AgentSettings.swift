@@ -156,6 +156,7 @@ extension ConsoleStore {
     }
     agentWrites[written.sourceId] = record
     bootstrap = value
+    reconcileAgentRestarts()
     scheduleCache()
   }
 
