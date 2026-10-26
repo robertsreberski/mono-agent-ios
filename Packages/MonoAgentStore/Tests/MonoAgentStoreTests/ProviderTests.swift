@@ -19,6 +19,11 @@ import Testing
       #"{"schema":"mono-agent.provider-auth-session.v1","id":"\#(id)","providerId":"openai","authType":"api_key","strategy":"api_key_prompt","state":"\#(state)","createdAt":"2026-05-17T12:00:00Z","updatedAt":"2026-05-17T12:00:00Z","expiresAt":"2026-05-17T12:10:00Z","authUrl":{"url":"https://auth.example.net/private-flow","instructions":"Sign in"},"prompt":{"id":"prompt-one","type":"secret","message":"API key"}}"#
     )
   }
+  func check(state: String = "running") throws -> ProviderAuthCheckSessionSnapshot {
+    try decode(
+      #"{"schema":"mono-agent.provider-auth-check.v1","id":"check-one","state":"\#(state)","createdAt":"2026-05-17T12:00:00Z","updatedAt":"2026-05-17T12:00:00Z","expiresAt":"2026-05-17T12:10:00Z","results":[{"providerId":"openai","label":"OpenAI","state":"running"}]}"#
+    )
+  }
   func usage(_ percent: Int = 25, stale: Bool = false) throws -> ProviderUsageSnapshot {
     try decode(
       #"{"schema":"mono-agent.provider-usage.v1","providers":[{"providerId":"openai-codex","label":"Codex","fetchedAt":"2026-05-17T12:00:00Z","stale":\#(stale),"windows":[{"kind":"weekly","label":"Weekly","usedPercent":\#(percent),"periodMs":604800000}]}]}"#
@@ -202,11 +207,76 @@ import Testing
     await h.transport.set(base + "/sessions", [.paused])
     try start(h)
     await eventually { await h.transport.pauseCount() == 1 }
+    let pending = state.sessionAdmission
     await h.store.scenePhaseChanged(.background)
     await h.transport.release(try response(try session(), status: 201))
-    await eventually { await h.transport.pauseCount() == 0 }
+    await pending?.value
+    #expect(state.resumeSessionID == "auth-one")
     #expect(state.session == nil && state.methodProviderID == nil && state.replacement == nil)
     #expect(await h.transport.count(base + "/sessions/auth-one", method: "DELETE") == 0)
+  }
+  @Test(arguments: [false, true], [false, true]) func lateAdmissionResumesByID(
+    checking: Bool, background: Bool
+  ) async throws {
+    let h = try await live()
+    let state = h.store.providerState(source)
+    let path = base + (checking ? "/checks" : "/sessions")
+    await h.transport.set(path, [.paused])
+    if checking { h.store.startProviderCheck(sourceID: source) } else { try start(h) }
+    await eventually { await h.transport.pauseCount() == 1 }
+    let pending = checking ? state.checkAdmission : state.sessionAdmission
+    if background {
+      await h.store.scenePhaseChanged(.background)
+    } else {
+      h.store.connection = .offline
+    }
+    let admitted = try checking ? response(check(), status: 201) : response(session(), status: 201)
+    await h.transport.release(admitted)
+    await pending?.value
+    #expect(state.session == nil && state.check == nil)
+    #expect(checking ? state.resumeCheckID == "check-one" : state.resumeSessionID == "auth-one")
+    #expect(
+      await h.transport.count(path + (checking ? "/check-one" : "/auth-one"), method: "DELETE") == 0
+    )
+    h.store.backgrounded = false
+    h.store.connection = .live
+    if checking {
+      await h.transport.set(
+        path + "/check-one", [.response(try response(check(state: "completed")))])
+    } else {
+      await h.transport.set(
+        path + "/auth-one", [.response(try response(session(state: "succeeded")))])
+    }
+    h.store.resumeProviders(state)
+    await eventually {
+      checking ? state.check?.state == "completed" : state.session?.state == "succeeded"
+    }
+    #expect(await h.transport.count(path, method: "POST") == 1)
+    #expect(
+      await h.transport.count(path + (checking ? "/check-one" : "/auth-one"), method: "GET") == 1)
+    h.store.closeProviders(sourceID: source)
+  }
+  @Test(arguments: [false, true]) func lateAdmissionAfterReopenCannotJoinTheNewPresentation(
+    checking: Bool
+  ) async throws {
+    let h = try await live()
+    let state = h.store.providerState(source)
+    let path = base + (checking ? "/checks" : "/sessions")
+    let resource = path + (checking ? "/check-one" : "/auth-one")
+    await h.transport.set(path, [.paused])
+    await h.transport.set(resource, [.response(HTTPResponse(data: Data(), status: 204))])
+    if checking { h.store.startProviderCheck(sourceID: source) } else { try start(h) }
+    await eventually { await h.transport.pauseCount() == 1 }
+    let pending = checking ? state.checkAdmission : state.sessionAdmission
+    h.store.closeProviders(sourceID: source)
+    h.store.openProviders(sourceID: source)
+    await h.transport.release(
+      try checking ? response(check(), status: 201) : response(session(), status: 201))
+    await pending?.value
+    await eventually { await h.transport.count(resource, method: "DELETE") == 1 }
+    #expect(state.session == nil && state.check == nil)
+    #expect(state.resumeSessionID == nil && state.resumeCheckID == nil)
+    h.store.closeProviders(sourceID: source)
   }
   @Test func inactiveOnlyCoversAndBackgroundRetainsOnlyIDsForGETResume() async throws {
     let h = try await live()

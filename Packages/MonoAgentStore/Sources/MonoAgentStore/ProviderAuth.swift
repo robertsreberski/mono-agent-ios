@@ -49,9 +49,10 @@ extension ConsoleStore {
     let owner = state.owner
     let epoch = epoch
     let sourceGeneration = state.generation
+    let lifetime = state.lifetime
     state.sessionPoll?.cancel()
     // Do not cancel admission tasks: observe IDs even if the view/lifetime disappears.
-    Task { [weak self] in
+    state.sessionAdmission = Task { [weak self] in
       guard let self else { return }
       defer {
         if state.owner == owner {
@@ -66,18 +67,32 @@ extension ConsoleStore {
         let next = try await self.api.startAuth(
           id: sourceID,
           body: .init(providerId: providerID, authType: method.authType, strategy: method.strategy))
-        guard self.providerCurrent(state, owner: owner, epoch: epoch),
-          state.sessionSequence == sequence
-        else {
-          if !ProviderPresentation.authTerminal(next.state) {
-            self.cleanupProviderResource(
-              state, id: next.id, check: false, generation: sourceGeneration)
+        guard next.providerId == providerID else {
+          self.cleanupProviderResource(
+            state, id: next.id, check: false, generation: sourceGeneration)
+          if self.providerCurrent(state, owner: owner, epoch: epoch) {
+            state.authError = "The console returned an unexpected authentication session."
           }
           return
         }
-        guard next.providerId == providerID else {
-          self.cleanupProviderResource(state, id: next.id, check: false)
-          state.authError = "The console returned an unexpected authentication session."
+        guard self.providerCurrent(state, owner: owner, epoch: epoch),
+          state.sessionSequence == sequence
+        else {
+          if self.providerAdmissionResumable(
+            state, lifetime: lifetime, generation: sourceGeneration),
+            state.sessionSequence == sequence
+          {
+            // A temporary disconnect/suspension is not abandonment. Keep only by-id resume
+            // material, never the returned URL, prompt or user code while backgrounded.
+            state.session = nil
+            state.resumeSessionID = next.id
+            state.sessionProviderID = providerID
+            state.methodProviderID = nil
+            self.pollProviderSession(state, immediately: true)
+          } else if !ProviderPresentation.authTerminal(next.state) {
+            self.cleanupProviderResource(
+              state, id: next.id, check: false, generation: sourceGeneration)
+          }
           return
         }
         if let priorID, priorID != next.id {
@@ -282,8 +297,9 @@ extension ConsoleStore {
     let owner = state.owner
     let epoch = epoch
     let sourceGeneration = state.generation
+    let lifetime = state.lifetime
     let key = UUID().uuidString
-    Task { [weak self] in
+    state.checkAdmission = Task { [weak self] in
       guard let self else { return }
       defer {
         if state.owner == owner {
@@ -299,7 +315,14 @@ extension ConsoleStore {
         guard self.providerCurrent(state, owner: owner, epoch: epoch),
           state.checkSequence == sequence
         else {
-          if !ProviderPresentation.checkTerminal(next.state) {
+          if self.providerAdmissionResumable(
+            state, lifetime: lifetime, generation: sourceGeneration),
+            state.checkSequence == sequence
+          {
+            state.check = nil
+            state.resumeCheckID = next.id
+            self.pollProviderCheck(state, immediately: true)
+          } else if !ProviderPresentation.checkTerminal(next.state) {
             self.cleanupProviderResource(
               state, id: next.id, check: true, generation: sourceGeneration)
           }

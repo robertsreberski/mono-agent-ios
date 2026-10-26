@@ -31,6 +31,8 @@ import Observation
   }
   @ObservationIgnored var generation: String?
   @ObservationIgnored var capabilityKey = ""
+  // Presentation identity survives suspension, unlike request ownership.
+  @ObservationIgnored var lifetime = UUID()
   @ObservationIgnored var owner = UUID()
   @ObservationIgnored var open = false
   @ObservationIgnored var resumeSessionID: String?
@@ -40,6 +42,8 @@ import Observation
   @ObservationIgnored var checkSequence = 0
   @ObservationIgnored var usageSequence = 0
   @ObservationIgnored var statusTask: Task<Void, Never>?
+  @ObservationIgnored var sessionAdmission: Task<Void, Never>?
+  @ObservationIgnored var checkAdmission: Task<Void, Never>?
   @ObservationIgnored var sessionPoll: Task<Void, Never>?
   @ObservationIgnored var checkPoll: Task<Void, Never>?
   @ObservationIgnored var usageTask: Task<Void, Never>?
@@ -138,6 +142,13 @@ extension ConsoleStore {
   func providerCurrent(_ state: ProviderState, owner: UUID, epoch: UInt64) -> Bool {
     providerAvailable(state) && state.owner == owner && self.epoch == epoch
   }
+  func providerAdmissionResumable(_ state: ProviderState, lifetime: UUID, generation: String?)
+    -> Bool
+  {
+    !stopped && !stopping && started && state.open && state.lifetime == lifetime
+      && state.generation == generation && agent(state.sourceID)?.generation == generation
+      && state.capabilityKey == providerCapabilities(state.sourceID)
+  }
   public func openProviders(sourceID: String) {
     // Settings has one presentation owner in the supported single scene. SwiftUI may reuse
     // the section's identity when the sidebar changes source, without an onDisappear.
@@ -177,6 +188,7 @@ extension ConsoleStore {
     if let checkID { cleanupProviderResource(state, id: checkID, check: true) }
     suspendProviders(state)
     state.open = false
+    state.lifetime = UUID()
     state.resumeSessionID = nil
     state.resumeCheckID = nil
     state.sessionProviderID = nil
