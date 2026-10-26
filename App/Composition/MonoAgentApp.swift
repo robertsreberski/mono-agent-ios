@@ -28,7 +28,10 @@ struct MonoAgentApp: App {
       .preferredColorScheme(model.appearance)
       .task { await model.start() }
       .task(id: model.storeCompositionKey) { await model.synchronizeStore() }
-      .onChange(of: scenePhase) { _, phase in Task { await model.scenePhaseChanged(phase) } }
+      .onChange(of: scenePhase) { _, phase in
+        model.scenePrivacyChanged(phase)
+        Task { await model.scenePhaseChanged(phase) }
+      }
     }
   }
 }

@@ -121,6 +121,13 @@ struct AgentSettingsScreen: View {
               NewConversationsSection(store: store, agent: agent, wide: wide)
             }
             WebHairline().opacity(0.9)
+            section(
+              .providers, title: "Providers",
+              summary: "Sign in, check access and read subscription limits."
+            ) {
+              ProvidersSection(store: store, agent: agent, compact: !wide)
+            }
+            WebHairline().opacity(0.9)
             about(agent)
           }
           .frame(maxWidth: 640, alignment: .leading)

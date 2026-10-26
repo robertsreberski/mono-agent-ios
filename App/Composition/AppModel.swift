@@ -277,11 +277,16 @@ final class AppModel {
     if connected { await next.start() } else { await next.hydrate() }
   }
 
+  /// Snapshot protection is published synchronously, before scheduling lifecycle work.
+  func scenePrivacyChanged(_ phase: ScenePhase) {
+    store?.setProviderPrivacyCovered(phase != .active)
+  }
+
   func scenePhaseChanged(_ phase: ScenePhase) async {
     switch phase {
     case .active: await store?.scenePhaseChanged(.active)
     case .background: await store?.scenePhaseChanged(.background)
-    case .inactive: break
+    case .inactive: await store?.scenePhaseChanged(.inactive)
     @unknown default: break
     }
   }
