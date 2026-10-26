@@ -83,7 +83,9 @@ enum WaitFor {
     _ element: XCUIElement, timeout: TimeInterval = 20,
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
-    Self.element(element, timeout: timeout, "hittable", file: file, line: line) { $0.isHittable }
+    Self.element(element, timeout: timeout, "hittable", file: file, line: line) {
+      !$0.frame.isEmpty && $0.isHittable
+    }
   }
 
   /// The element is gone or covered by another surface (not hittable).
@@ -93,7 +95,9 @@ enum WaitFor {
     file: StaticString = #filePath, line: UInt = #line
   ) -> Bool {
     let expectation = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in !element.exists || !element.isHittable }, object: nil)
+      predicate: NSPredicate { _, _ in
+        !element.exists || element.frame.isEmpty || !element.isHittable
+      }, object: nil)
     let met = XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
     if !met { XCTFail("Timed out waiting for the element to be covered", file: file, line: line) }
     return met

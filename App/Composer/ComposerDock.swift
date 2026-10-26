@@ -56,6 +56,30 @@ struct ComposerJobDock: View {
   }
 }
 
+/// Pure glass, straddling the dock rather than floating over transcript prose. No extra bar.
+struct TranscriptJumpButton: View {
+  let jump: () -> Void
+  var body: some View {
+    Button(action: jump) {
+      Label("Jump to latest", systemImage: "arrow.down")
+        .labelStyle(.iconOnly)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(WebColor.textSoft.color)
+        .frame(width: WebMetrics.tile, height: WebMetrics.tile)
+        .floatingGlass(in: Circle(), opaqueFill: WebColor.surfaceRaised.color)
+        .overlay {
+          Circle().strokeBorder(
+            WebColor.lineStrong.color(lightOpacity: 1, darkOpacity: 0), lineWidth: 1)
+        }
+        .frame(minWidth: DesignMetrics.minimumHitTarget, minHeight: DesignMetrics.minimumHitTarget)
+        .contentShape(Circle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Jump to latest")
+    .accessibilityIdentifier("jump-to-latest")
+  }
+}
+
 /// Context/cost beside the model and effort selector (web "Next turn settings" row). The
 /// Design `ContextDisplay` label is the trigger; its full disclosure opens in a popover (iPad) or
 /// sheet (iPhone) drawn directly on the system presentation material: no solid body or band.

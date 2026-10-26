@@ -122,7 +122,7 @@ public struct WebEffortButtonStyle: ButtonStyle {
     let shape = RoundedRectangle(cornerRadius: 8)
     configuration.label.webFont(.effortOption)
       .foregroundStyle(
-        selected ? WebGlass.accentText(theme.palette).color : WebGlass.textSoft.color
+        selected ? theme.palette.accentStrong.color : WebGlass.textSoft.color
       )
       .padding(.horizontal, 10).frame(minWidth: 44, minHeight: 44)
       .background(
@@ -133,7 +133,7 @@ public struct WebEffortButtonStyle: ButtonStyle {
       )
       .overlay(
         shape.strokeBorder(
-          selected ? WebGlass.accentText(theme.palette).color : WebGlass.hairline.color,
+          selected ? theme.palette.accentStrong.color : WebGlass.hairline.color,
           lineWidth: 1)
       )
       .opacity(configuration.isPressed ? 0.75 : 1)

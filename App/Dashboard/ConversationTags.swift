@@ -47,8 +47,10 @@ struct ConversationTags: View {
         if !tags.isEmpty {
           Menu {
             ForEach(tags, id: \.id) { tag in
-              Button(tag.name, systemImage: "pencil") {
+              Button {
                 editor = .init(sourceID: thread.sourceId, tagID: tag.id)
+              } label: {
+                Label("Edit \(tag.name)", systemImage: "pencil")
               }
               .accessibilityLabel("Edit \(tag.name)")
               .accessibilityIdentifier("tag-menu-\(tag.id)")

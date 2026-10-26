@@ -102,6 +102,24 @@ struct GlassSheetTests {
     }
   }
 
+  /// Thinking choices share accent ink, not a solid accent slab or a nested glass surface.
+  @Test(arguments: ConsoleTheme.allCases)
+  func selectedEffortLabelsPassAA(_ theme: ConsoleTheme) {
+    let selected = GlassInk(theme.palette.accent, light: 0.12, dark: 0.20)
+    for scheme in schemes {
+      for contrast in contrasts {
+        for backdrop in WebGlass.referenceBackdrops(scheme) + [WebGlass.sampledBleed(scheme)] {
+          let sheet = WebGlass.sheetVeil.composited(over: backdrop, scheme, contrast: contrast)
+          let chip = selected.composited(over: sheet, scheme, contrast: contrast)
+          #expect(
+            theme.palette.accentStrong.resolved(scheme, contrast: contrast)
+              .contrastRatio(with: chip) >= 4.5,
+            "\(theme) \(scheme) \(contrast) selected effort on \(chip)")
+        }
+      }
+    }
+  }
+
   @Test func consentVeilIsAtLeastAsStrongAsStandard() {
     #expect(WebGlass.consentVeil.lightOpacity >= WebGlass.sheetVeil.lightOpacity)
     #expect(WebGlass.consentVeil.darkOpacity >= WebGlass.sheetVeil.darkOpacity)

@@ -56,7 +56,9 @@ There are two kinds of floating surface:
    same component therefore stays solid in the transcript and turns translucent in a sheet.
 8. **Web accents for meters and figures.** Meter fills use `palette.accent`. Tracks use
    `WebGlass.track`. Accent *text* uses `WebGlass.accentText`. Icon tiles use
-   `palette.accentInk`.
+   `palette.accentInk`. Thinking-chip labels/edges use `palette.accentStrong` in both
+   appearances: ordinary dark accent text on accent ink falls below AA on busy sheet bleed
+   (`selectedEffortLabelsPassAA`).
 9. **Actions:** primary is `.glassProminent` tinted with the web accent, with `onAccent`
    labels. Secondary is `.glass`. Use `.designButtonStyle(_, placement: .floating)`; it falls
    back to opaque styles under Reduce Transparency. Small in-row actions inside the job shelf

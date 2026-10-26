@@ -15,6 +15,7 @@ struct ConversationScreen: View {
   @Environment(\.consoleTheme) private var theme
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.dismiss) private var dismiss
+  @State private var jumpControl = TranscriptJumpControl()
   @State private var onScreen = false
   /// Agent settings covering this screen: the transcript is retained but not visible or read.
   @Environment(\.coveredBySettings) private var covered
@@ -50,7 +51,7 @@ struct ConversationScreen: View {
     #endif
     VStack(spacing: 0) {
       if let threadID, let state = store.conversations[threadID] {
-        ConversationTranscript(state: state, store: store) {
+        ConversationTranscript(state: state, store: store, jumpControl: jumpControl) {
           if let error = store.errorMessage {
             ConnectionBanner(.problem, title: "Conversation change", message: error)
           }
@@ -69,7 +70,7 @@ struct ConversationScreen: View {
     }
     .conversationComposer(
       store: store, route: route, createdThreadID: $createdThreadID,
-      sampleAttachments: model.offersSampleAttachments
+      sampleAttachments: model.offersSampleAttachments, jumpControl: jumpControl
     )
     #if DEBUG
       .modifier(SyntheticDraftLifecycle(model: model, store: store))
@@ -294,18 +295,26 @@ struct ConversationScreen: View {
         .accessibilityIdentifier("action-rename")
         .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
         Menu {
-          ForEach(
-            store.projects.filter { $0.sourceId == thread.sourceId && $0.archivedAt == nil },
-            id: \.id
-          ) { project in
-            Button {
-              store.setConversationProject(threadID: thread.id, projectID: project.id)
-            } label: {
-              Label(
-                project.name, systemImage: thread.projectId == project.id ? "checkmark" : "folder")
+          Picker(
+            "Project",
+            selection: Binding(
+              get: { thread.projectId ?? "" },
+              set: {
+                store.setConversationProject(threadID: thread.id, projectID: $0.isEmpty ? nil : $0)
+              }
+            )
+          ) {
+            Text("No project").tag("")
+            ForEach(
+              store.projects.filter { $0.sourceId == thread.sourceId && $0.archivedAt == nil },
+              id: \.id
+            ) { project in
+              Text(project.name).tag(project.id)
+                .accessibilityLabel(project.name)
+                .accessibilityIdentifier("assign-project-\(project.id)")
             }
-            .accessibilityIdentifier("assign-project-\(project.id)")
           }
+          .pickerStyle(.inline)
         } label: {
           Label(
             thread.projectId == nil ? "Add to project" : "Move to project", systemImage: "folder")

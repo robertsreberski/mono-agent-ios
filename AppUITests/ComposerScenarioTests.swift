@@ -231,13 +231,34 @@ import XCTest
     let low = menuButton(app, "Low")
     XCTAssertTrue(low.waitForExistence(timeout: 5))
     low.tap()
-    XCTAssertTrue(waitFor(app, "route-badge", containing: "sample:small"))
+    WaitFor.value(element(app, "rename-conversation"), contains: "sample:small")
     WaitFor.value(menu, contains: "Low")
     let field = composerField(app)
     field.tap()
     field.typeText("Try the small model")
     enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Try the small model”"))
+  }
+
+  func testRunSettingsResetRestoresTheAgentDefault() {
+    let app = launch("composer-model-selector", "light", variant: nil)
+    let trigger = element(app, "composer-model")
+    WaitFor.hittable(trigger)
+    trigger.tap()
+    WaitFor.hittable(menuButton(app, "Sample Small"))
+    menuButton(app, "Sample Small").tap()
+    WaitFor.value(trigger, contains: "Sample Small")
+    trigger.tap()
+    let reset = element(app, "model-reset")
+    WaitFor.hittable(reset)
+    WaitFor.label(reset, contains: "Reset to agent default")
+    reset.tap()
+    WaitFor.absent(reset)
+    WaitFor.hittable(element(app, "sheet-close"))
+    element(app, "sheet-close").tap()
+    WaitFor.value(trigger, contains: "Sample Large")
+    WaitFor.value(trigger, contains: "High")
+    app.terminate()
   }
 
   /// SwiftUI menu items surface as buttons labelled "title, subtitle"; identifiers do not.
