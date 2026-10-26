@@ -62,6 +62,7 @@ struct ProvidersSection: View {
         }
       }
     }
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("providers-section")
     .task(id: agent.sourceId + ":" + (agent.generation ?? "") + ":" + agent.status) {
       store.openProviders(sourceID: agent.sourceId)
@@ -145,6 +146,7 @@ struct ProvidersSection: View {
       }
     }
     .padding(14)
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("provider-row-" + provider.providerId)
   }
   private func heading(_ provider: ProviderAuthProviderStatus, usage: ProviderUsage?) -> some View {

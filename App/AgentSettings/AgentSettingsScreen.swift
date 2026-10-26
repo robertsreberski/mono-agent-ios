@@ -130,6 +130,11 @@ struct AgentSettingsScreen: View {
             WebHairline().opacity(0.9)
             about(agent)
           }
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: { height in
+            if height > 0 && shownTarget == nil { apply(agent: agent.sourceId, proxy: proxy) }
+          }
           .frame(maxWidth: 640, alignment: .leading)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, layout == .split ? 32 : WebSpace.dashboardGutter)
@@ -139,7 +144,7 @@ struct AgentSettingsScreen: View {
         .scrollDismissesKeyboard(.immediately)
         // Readiness for tests and screenshots, never a timer: hydrated and answered.
         .accessibilityIdentifier(ready ? "agent-settings-ready" : "agent-settings-loading")
-        .onAppear { apply(agent: agent.sourceId, proxy: proxy) }
+
         .onChange(of: target) { apply(agent: agent.sourceId, proxy: proxy) }
         .onChange(of: agent.sourceId) { apply(agent: agent.sourceId, proxy: proxy) }
       }

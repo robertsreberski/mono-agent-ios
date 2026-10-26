@@ -86,6 +86,7 @@ struct ProviderAuthFlow: View {
     }
     .foregroundStyle(WebColor.text.color)
     .privacySensitive()
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("provider-auth-flow")
     .onChange(of: inputIdentity) { input = "" }
     .onChange(of: scenePhase) { if scenePhase != .active { input = "" } }
