@@ -224,7 +224,9 @@
         $0.isAgentSettings || $0.isProviders || $0.isAgentRestart ? AgentSettingsScript($0) : nil
       }
       restart = scenario.flatMap { $0.isAgentRestart ? AgentRestartScript($0) : nil }
-      providers = scenario.flatMap { $0.isProviders ? ProviderScript($0) : nil }
+      providers = scenario.flatMap {
+        $0.isProviders || $0.isAgentRestart ? ProviderScript($0) : nil
+      }
       organize =
         scenario?.isOrganize == true ? OrganizeScript(wakeScenario: scenario?.rawValue) : nil
     }

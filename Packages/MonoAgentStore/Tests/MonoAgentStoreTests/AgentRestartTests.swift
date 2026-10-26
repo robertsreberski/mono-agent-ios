@@ -195,6 +195,58 @@ import Testing
     await latestTask?.value
     #expect(state.operation == nil)
   }
+  @Test func admittedResponseDuringBackgroundRetainsIDAndResumesWithoutAnotherPost() async throws {
+    let h = try await live()
+    let state = h.store.agentRestartState(source)
+    await h.transport.set(path, [.response(try latest()), .paused])
+    confirm(h)
+    let admission = state.admission
+    await eventually { await h.transport.pauseCount() == 1 }
+    await h.store.scenePhaseChanged(.background)
+    await h.transport.release(try response(try operation()))
+    await admission?.value
+    #expect(state.operation == nil && state.resumeID == "restart-new")
+    h.store.backgrounded = false
+    h.store.connection = .live
+    await h.transport.set(
+      path + "/restart-new", [.response(try response(try operation(outcome: "success")))])
+    h.store.resumeAgentRestart(state)
+    await state.poll?.value
+    #expect(state.outcome == "success" && state.requestUnknown == nil)
+    #expect(await h.transport.count(path, method: "POST") == 1)
+    h.store.closeAgentRestart(sourceID: source)
+  }
+  @Test func uncertainSuspendedPostCannotAdoptUnrelatedHistoryOnReconnect() async throws {
+    let h = try await live()
+    let state = h.store.agentRestartState(source)
+    await h.transport.set(path, [.response(try latest()), .paused])
+    confirm(h)
+    let admission = state.admission
+    await eventually { await h.transport.pauseCount() == 1 }
+    await h.store.scenePhaseChanged(.background)
+    await h.transport.release(HTTPResponse(data: Data(), status: 503))
+    await admission?.value
+    #expect(state.requestUnknown != nil)
+    h.store.backgrounded = false
+    h.store.connection = .live
+    await h.transport.set(
+      path, [.response(try latest(try operation("unrelated", outcome: "success")))])
+    h.store.resumeAgentRestart(state)
+    await state.latestTask?.value
+    #expect(state.operation == nil && state.requestUnknown != nil)
+    #expect(state.initialOperation?.id == "unrelated")
+    #expect(await h.transport.count(path, method: "POST") == 1)
+    h.store.closeAgentRestart(sourceID: source)
+  }
+  @Test(arguments: ["success", "failure", "not_confirmed"])
+  func restoredTerminalOutcomesAreAnnouncedWithoutPosting(_ outcome: String) async throws {
+    let h = try await live(try operation(outcome: outcome))
+    let state = h.store.agentRestartState(source)
+    #expect(state.outcome == outcome && state.notice != nil)
+    #expect(!state.restartedThisVisit)
+    #expect(await h.transport.count(path, method: "POST") == 0)
+    h.store.closeAgentRestart(sourceID: source)
+  }
   @Test func initialReadFailureCanRetryWithoutPosting() async throws {
     let h = try await live()
     let state = h.store.agentRestartState(source)

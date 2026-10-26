@@ -178,6 +178,9 @@ struct AgentSettingsScreen: View {
           return .ignored
         }
         .onChange(of: agent.generation) { restartReveal.stop() }
+        .onChange(of: focus) {
+          if focus != .section(.agent) { restartReveal.stop() }
+        }
         .task(id: restartReveal.deadline) {
           guard let deadline = restartReveal.deadline else { return }
           do { try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow))) } catch {

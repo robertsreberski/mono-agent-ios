@@ -29,6 +29,7 @@ import Observation
   @ObservationIgnored var latestTask: Task<Void, Never>?
   @ObservationIgnored var poll: Task<Void, Never>?
   @ObservationIgnored var admission: Task<Void, Never>?
+  @ObservationIgnored var dispatched = false
   init(sourceID: String) { self.sourceID = sourceID }
   func announce(_ text: String) {
     notice = ProviderPresentation.boundedText(text)
@@ -93,6 +94,10 @@ extension ConsoleStore {
     state.owner = UUID()
     state.confirming = false
     state.confirmationScope = nil
+    if state.dispatched {
+      state.requestUnknown =
+        "Couldn't confirm the request was received — check the agent. You can retry."
+    }
     state.latestTask?.cancel()
     state.latestTask = nil
     state.poll?.cancel()
@@ -128,6 +133,9 @@ extension ConsoleStore {
     state.latestTask = Task { [weak self] in
       guard let self else { return }
       defer { if state.owner == owner { state.latestTask = nil } }
+      guard self.restartCurrent(state, owner: owner, epoch: epoch), !Task.isCancelled else {
+        return
+      }
       do {
         let latest = try await self.api.latestRestart(id: sourceID, etag: nil).valueRequired()
           .operation
@@ -139,8 +147,15 @@ extension ConsoleStore {
         }
         state.readState = .ready
         state.initialOperation = latest
-        state.operation = latest
-        self.pollAgentRestart(state)
+        // A reconnect read may show history, but cannot silently resolve an uncertain POST.
+        if state.requestUnknown == nil {
+          if let latest {
+            self.adoptAgentRestart(latest, state: state)
+          } else {
+            state.operation = nil
+          }
+          self.pollAgentRestart(state)
+        }
       } catch {
         guard self.restartCurrent(state, owner: owner, epoch: epoch), !Task.isCancelled else {
           return
@@ -190,6 +205,7 @@ extension ConsoleStore {
       }
       defer {
         state.admission = nil
+        state.dispatched = false
         state.requesting = false
         if self.restartAvailable(state) {
           if state.inProgress || state.resumeID != nil {
@@ -216,6 +232,7 @@ extension ConsoleStore {
       guard current(), self.restartConfirmationScope(sourceID) == scope,
         self.agentRestartUnavailableReason(sourceID) == nil
       else { return }
+      state.dispatched = true
       do {
         let result = try await self.api.restartAgent(id: sourceID, body: .init())
         guard result.sourceId == sourceID, !result.id.isEmpty else {
@@ -271,6 +288,7 @@ extension ConsoleStore {
       state.operation?.stage != operation.stage || state.operation?.outcome != operation.outcome
     state.operation = operation
     state.resumeID = nil
+    state.requestUnknown = nil
     state.readState = .ready
     state.pollWarning = nil
     if changed {

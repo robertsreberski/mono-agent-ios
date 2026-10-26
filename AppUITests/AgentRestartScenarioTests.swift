@@ -100,7 +100,19 @@ import XCTest
   private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
     app.descendants(matching: .any).matching(identifier: id).firstMatch
   }
-  private func launch(_ scenario: String, _ appearance: String) -> XCUIApplication {
+  func testExplicitRestartIntentRevealsAfterProviderLayout() {
+    let app = launch("agent-restart", "light", revealControl: false)
+    let scroll = element(app, "agent-settings-ready")
+    WaitFor.element(scroll, "settings viewport") { !$0.frame.isEmpty }
+    let bounds = scroll.frame
+    WaitFor.element(element(app, "agent-restart-title"), "restart intent stays in the viewport") {
+      let frame = $0.frame
+      return !frame.isEmpty && bounds.contains(frame) && $0.isHittable
+    }
+  }
+  private func launch(_ scenario: String, _ appearance: String, revealControl: Bool = true)
+    -> XCUIApplication
+  {
     let app = XCUIApplication()
     app.launchArguments = [
       "--scenario", scenario, "--appearance", appearance, "--reset-test-data", "--open-settings",
@@ -111,7 +123,7 @@ import XCTest
       !$0.frame.isEmpty
     }
     WaitFor.label(element(app, "agent-restart-title"), contains: "Restart")
-    reveal(app, "agent-restart-open-confirmation")
+    if revealControl { reveal(app, "agent-restart-open-confirmation") }
     WaitFor.enabled(element(app, "agent-restart-open-confirmation"))
     return app
   }

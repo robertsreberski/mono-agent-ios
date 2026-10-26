@@ -186,7 +186,9 @@ import Testing
         #expect(
           store.isUnread(
             try #require(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.last)))
-      case .providerAuthDense, .providerAuthDeviceCode, .providerAuthSecret,
+      case .agentRestart, .agentRestartConfirm, .agentRestartProgress, .agentRestartSuccess,
+        .agentRestartFailure, .agentRestartUncertain, .agentRestartNotConfirmed,
+        .providerAuthDense, .providerAuthDeviceCode, .providerAuthSecret,
         .providerAuthManualCode, .providerAuthSelect, .providerChecks, .providerUsageStale,
         .agentSettings, .agentSettingsUnsaved, .agentSettingsSaveError, .agentSettingsOffline,
         .agentSettingsDegraded, .notificationsExplainer, .notificationsInsecure:
