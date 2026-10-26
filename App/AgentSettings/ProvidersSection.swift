@@ -65,6 +65,7 @@ struct ProvidersSection: View {
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("providers-section")
     .task(id: store.providerScope(agent.sourceId)) {
+      guard !Task.isCancelled else { return }
       store.openProviders(sourceID: agent.sourceId)
     }
     .onDisappear { store.closeProviders(sourceID: agent.sourceId) }

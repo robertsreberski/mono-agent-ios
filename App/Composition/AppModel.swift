@@ -34,6 +34,7 @@ final class AppModel {
       + (connectedProfile == nil ? "offline" : "connected")
   }
   private(set) var isReady = false
+  @ObservationIgnored private var providerPrivacyCovered = false
   let appearance: ColorScheme?
   /// Fixed "now" for relative times in synthetic fixtures; `nil` follows the clock.
   let referenceDate: Date?
@@ -261,6 +262,7 @@ final class AppModel {
     #endif
     let next = ConsoleStore(
       profile: profile, api: api, events: events, repository: consoleRepository)
+    next.setProviderPrivacyCovered(providerPrivacyCovered)
     store = next
     #if DEBUG
       if let storeScenario {
@@ -279,7 +281,8 @@ final class AppModel {
 
   /// Snapshot protection is published synchronously, before scheduling lifecycle work.
   func scenePrivacyChanged(_ phase: ScenePhase) {
-    store?.setProviderPrivacyCovered(phase != .active)
+    providerPrivacyCovered = phase != .active
+    store?.setProviderPrivacyCovered(providerPrivacyCovered)
   }
 
   func scenePhaseChanged(_ phase: ScenePhase) async {

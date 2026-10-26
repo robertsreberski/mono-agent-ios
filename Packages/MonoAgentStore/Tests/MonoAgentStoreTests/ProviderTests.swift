@@ -336,6 +336,25 @@ import Testing
     #expect(await h.transport.count(base + "/sessions") == 2)
     h.store.closeProviders(sourceID: source)
   }
+  @Test func openingAnotherSourceClosesThePriorOwnerEvenWhenTheSectionIdentityIsReused()
+    async throws
+  {
+    let h = try await live()
+    let state = h.store.providerState(source)
+    await h.transport.set(base + "/sessions", [.response(try response(try session(), status: 201))])
+    await h.transport.set(
+      base + "/sessions/auth-one", [.response(HTTPResponse(data: Data(), status: 204))])
+    try start(h)
+    await eventually { !state.busy }
+    var another = try #require(h.store.bootstrap?.agents.first)
+    another.sourceId = "agent-other"
+    h.store.bootstrap?.agents.append(another)
+    h.store.openProviders(sourceID: another.sourceId)
+    #expect(!state.open && state.session == nil && state.resumeSessionID == nil)
+    #expect(h.store.providerState(another.sourceId).open)
+    await eventually { await h.transport.count(base + "/sessions/auth-one", method: "DELETE") == 1 }
+    h.store.closeProviders(sourceID: another.sourceId)
+  }
   @Test func generationReplacementRejectsLateInputAndOfflineGuardsRefuseAllActions() async throws {
     let h = try await live()
     let state = h.store.providerState(source)

@@ -139,6 +139,11 @@ extension ConsoleStore {
     providerAvailable(state) && state.owner == owner && self.epoch == epoch
   }
   public func openProviders(sourceID: String) {
+    // Settings has one presentation owner in the supported single scene. SwiftUI may reuse
+    // the section's identity when the sidebar changes source, without an onDisappear.
+    for previous in providers.values where previous.open && previous.sourceID != sourceID {
+      closeProviders(sourceID: previous.sourceID)
+    }
     let state = providerState(sourceID)
     guard
       !state.open || state.generation != agent(sourceID)?.generation

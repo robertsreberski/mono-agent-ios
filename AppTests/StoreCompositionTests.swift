@@ -12,8 +12,11 @@ import Testing
   struct StoreCompositionTests {
     @Test func scenePrivacyIsPublishedBeforeAsyncLifecycleWork() async throws {
       let model = AppModel(scenario: .consoleOnline, storeScenario: .providerAuthSecret)
+      model.scenePrivacyChanged(.inactive)
       await model.start()
       let store = try #require(model.store)
+      #expect(
+        store.providerPrivacyCovered, "a replacement Store inherits the synchronous scene cover")
       model.scenePrivacyChanged(.inactive)
       #expect(store.providerPrivacyCovered)
       #expect(!store.backgrounded, "inactive alone must not cancel a Safari flow")
