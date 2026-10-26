@@ -26,6 +26,7 @@ extension ConsoleStore {
         bootstrap = value
         bootstrapETag = patched ? nil : etag
         reconcileRunDefaultsDrafts()
+        reconcileProviderOwners()
         if observation == began, selection == selected {
           tags = value.tags
           projects = value.projects

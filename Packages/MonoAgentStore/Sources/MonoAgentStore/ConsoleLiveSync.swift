@@ -96,6 +96,7 @@ extension ConsoleStore {
     case .ready:
       pendingDiscontinuity = false
       connection = .live
+      for state in providers.values where state.open { resumeProviders(state) }
       requestReconciliation()
     case .messageDelta(let delta):
       guard let id = envelope.threadId else {
@@ -298,7 +299,7 @@ extension ConsoleStore {
   }
   public func scenePhaseChanged(_ phase: ConsoleScenePhase) async {
     switch phase {
-    case .inactive: break
+    case .inactive: setProviderPrivacyCovered(true)
     case .background:
       guard !backgrounded else { return }
       backgrounded = true
@@ -308,6 +309,7 @@ extension ConsoleStore {
       await flushAuthored()
       await flushCache()
     case .active:
+      setProviderPrivacyCovered(false)
       guard backgrounded, enabled, started, !stopping else { return }
       backgrounded = false
       if !hydrated {
@@ -335,6 +337,7 @@ extension ConsoleStore {
     await discardStagedUploads()
   }
   func stopEffects() async {
+    for state in providers.values { suspendProviders(state) }
     invalidateMcpApps()
     epoch &+= 1
     wakeEditor = nil
