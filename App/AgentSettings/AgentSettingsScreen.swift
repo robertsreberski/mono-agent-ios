@@ -58,7 +58,6 @@ struct AgentSettingsScreen: View {
   @State private var shownTarget: AgentSettingsTarget?
   @State private var shownSource: String?
   @State private var restartReveal = RestartRevealIntent()
-  @State private var restartTop: CGFloat = 0
   @State private var viewportHeight: CGFloat = 0
 
   enum FocusTarget: Hashable {
@@ -93,7 +92,8 @@ struct AgentSettingsScreen: View {
   }
 
   private func page(_ agent: WebAgentSummary) -> some View {
-    VStack(spacing: 0) {
+    let readsComplete = providerReadsComplete(agent)
+    return VStack(spacing: 0) {
       header(agent)
       ScrollViewReader { proxy in
         ScrollView {
@@ -129,11 +129,6 @@ struct AgentSettingsScreen: View {
               summary: "Sign in, check access and read subscription limits."
             ) {
               ProvidersSection(store: store, agent: agent, compact: !wide)
-                .onGeometryChange(for: CGFloat.self) {
-                  $0.size.height
-                } action: { _ in
-                  settleRestart(agent, proxy: proxy)
-                }
             }
             WebHairline().opacity(0.9)
             section(
@@ -142,10 +137,24 @@ struct AgentSettingsScreen: View {
             ) {
               RestartSection(store: store, agent: agent, wide: wide)
             }
-            .onGeometryChange(for: CGFloat.self) {
-              $0.frame(in: .named("settings-scroll")).minY
-            } action: {
-              restartTop = $0
+            .background {
+              GeometryReader { geometry in
+                Color.clear.preference(
+                  key: RestartHeadingMeasurementKey.self,
+                  value: RestartHeadingMeasurement(
+                    top: geometry.frame(in: .named("settings-scroll")).minY,
+                    providersComplete: readsComplete))
+              }
+            }
+            .onPreferenceChange(RestartHeadingMeasurementKey.self) { measurement in
+              guard let measurement else { return }
+              if restartReveal.measure(
+                source: agent.sourceId, generation: agent.generation, now: Date(),
+                top: measurement.top, viewport: viewportHeight,
+                providersComplete: measurement.providersComplete)
+              {
+                proxy.scrollTo(AgentSettingsSection.agent.rawValue, anchor: .top)
+              }
             }
             WebHairline().opacity(0.9)
             about(agent)
@@ -233,12 +242,7 @@ struct AgentSettingsScreen: View {
     }
   }
 
-  private func settleRestart(_ agent: WebAgentSummary, proxy: ScrollViewProxy) {
-    guard restartReveal.isActive(source: agent.sourceId, generation: agent.generation, now: Date())
-    else { return }
-    if restartTop < 8 || restartTop > viewportHeight - 96 {
-      proxy.scrollTo(AgentSettingsSection.agent.rawValue, anchor: .top)
-    }
+  private func providerReadsComplete(_ agent: WebAgentSummary) -> Bool {
     let provider = store.providerState(agent.sourceId)
     let authDone =
       agent.status == "offline" || agent.supportsProviderAuth != true
@@ -246,7 +250,7 @@ struct AgentSettingsScreen: View {
     let usageDone =
       agent.status == "offline" || agent.supportsProviderUsage != true
       || provider.usage != nil || provider.usageError != nil
-    if authDone && usageDone { restartReveal.stop() }
+    return authDone && usageDone
   }
 
   // MARK: Header
@@ -543,5 +547,19 @@ struct SettingsButtonStyle: ButtonStyle {
       .opacity(enabled ? 1 : 0.45)
       .frame(minHeight: DesignMetrics.minimumHitTarget)
       .contentShape(Rectangle())
+  }
+}
+
+/// Completion participates in the preference so a no-height-change response still measures.
+private struct RestartHeadingMeasurement: Equatable {
+  let top: CGFloat
+  let providersComplete: Bool
+}
+private struct RestartHeadingMeasurementKey: PreferenceKey {
+  static var defaultValue: RestartHeadingMeasurement? { nil }
+  static func reduce(
+    value: inout RestartHeadingMeasurement?, nextValue: () -> RestartHeadingMeasurement?
+  ) {
+    if let next = nextValue() { value = next }
   }
 }
