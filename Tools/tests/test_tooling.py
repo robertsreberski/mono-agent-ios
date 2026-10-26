@@ -103,6 +103,8 @@ class ToolingTests(unittest.TestCase):
                     "func testFirst() {}\nfunc testSecond() {}\nfunc testThird() {}\n")
                 (root / "AppUITests/AgentSettingsScenarioTests.swift").write_text(
                     "func testPage() {}\nfunc testPicker() {}\nfunc testNotifications() {}\n")
+                (root / "AppUITests/ProviderScenarioTests.swift").write_text(
+                    "func testDense() {}\nfunc testSecret() {}\nfunc testChecks() {}\n")
             calls = []
             run_options = []
 
@@ -233,7 +235,7 @@ class ToolingTests(unittest.TestCase):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
         connection = {(s, a) for s, a, v in keys
-                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-", "agent-settings", "notifications-"))
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-", "agent-settings", "notifications-", "provider-"))
                       and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
@@ -389,6 +391,33 @@ class ToolingTests(unittest.TestCase):
         self.export(family="iPhone")
         command = next(call for call in self.calls if call[0] == "xcodebuild")
         self.assertFalse(any(arg.startswith("-only-testing:") for arg in command))
+
+    PROVIDERS_BASE = ("provider-auth-dense", "provider-auth-device-code", "provider-auth-secret",
+                      "provider-auth-manual-code", "provider-auth-select", "provider-checks", "provider-usage-stale")
+
+    def test_providers_exact_matrix_and_surfaces(self):
+        matrix = [entry for entry in MATRIX if entry["scenario"].startswith("provider-")]
+        self.assertEqual({(e["scenario"], e["appearance"], e.get("variant")) for e in matrix},
+                         {(s, a, None) for s in self.PROVIDERS_BASE for a in ("light", "dark")})
+        for entry in matrix:
+            self.assertEqual((entry["textSize"], entry["transparency"], entry["theme"]), ("standard", "system", "evergreen"))
+        for family in ("iPhone", "iPad"):
+            index = self.export(family=family, focus="--providers-only", matrix=matrix)
+            self.assertTrue(all(row["surface"] == "agent settings" for row in index))
+            command = next(call for call in self.calls if call[0] == "xcodebuild")
+            self.assertIn("-only-testing:MonoAgentUITests/ProviderScenarioTests", command)
+            self.assertEqual(sum(arg.startswith("-only-testing:") for arg in command), 1)
+
+    def test_providers_batches_enumerate_only_the_provider_suite(self):
+        matrix = [entry for entry in MATRIX if entry["scenario"].startswith("provider-")]
+        self.export(family="iPad", focus="--providers-only", matrix=matrix, batch_size=2)
+        selectors = [arg for command in self.calls if command[0] == "xcodebuild"
+                     for arg in command if arg.startswith("-only-testing:")]
+        self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/ProviderScenarioTests/testDense",
+                                     "-only-testing:MonoAgentUITests/ProviderScenarioTests/testSecret",
+                                     "-only-testing:MonoAgentUITests/ProviderScenarioTests/testChecks"])
+        with self.assertRaises(SystemExit):
+            self.export(family="iPhone", focus="--providers-only --agent-settings-only")
 
     def test_focus_flags_are_mutually_exclusive(self):
         with self.assertRaises(SystemExit):
