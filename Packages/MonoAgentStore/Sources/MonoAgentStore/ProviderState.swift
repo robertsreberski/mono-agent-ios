@@ -159,7 +159,12 @@ extension ConsoleStore {
   func resumeProviders(_ state: ProviderState) {
     guard providerAvailable(state) else { return }
     loadProviderStatus(state)
-    loadProviderUsage(sourceID: state.sourceID)
+    // A reconnect supersedes an in-flight read/refresh from the old stream lifetime.
+    // Its response cannot keep action exclusions locked or disarm the new polling timer.
+    state.usageTask?.cancel()
+    state.usageLoading = false
+    state.usageRefreshing = false
+    loadProviderUsage(sourceID: state.sourceID, superseding: true)
     pollProviderSession(state, immediately: true)
     pollProviderCheck(state, immediately: true)
   }

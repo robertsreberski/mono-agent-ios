@@ -39,18 +39,19 @@ extension ConsoleStore {
       guard let self else { return }
       var delay: TimeInterval = 300
       defer {
-        if self.providerCurrent(state, owner: owner, epoch: epoch), state.usageSequence == sequence
-        {
+        if state.owner == owner, state.usageSequence == sequence {
           state.usageLoading = false
           state.usageRefreshing = false
-          self.scheduleProviderUsage(state, delay: delay)
+          if self.providerCurrent(state, owner: owner, epoch: epoch) {
+            self.scheduleProviderUsage(state, delay: delay)
+          }
         }
       }
       guard self.providerCurrent(state, owner: owner, epoch: epoch),
         self.agent(state.sourceID)?.supportsProviderUsage == true,
         !manual || self.agent(state.sourceID)?.supportsProviderUsageRefresh == true
       else {
-        if state.owner == owner {
+        if state.owner == owner, state.usageSequence == sequence {
           state.usageLoading = false
           state.usageRefreshing = false
         }

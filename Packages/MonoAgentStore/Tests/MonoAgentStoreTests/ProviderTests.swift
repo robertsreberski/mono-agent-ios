@@ -132,6 +132,57 @@ import Testing
     #expect(state.usageError == "Provider usage is unavailable.")
     h.store.closeProviders(sourceID: source)
   }
+  @Test(arguments: [false, true]) func reconnectSettlesUsageAndRearmsPolling(manual: Bool)
+    async throws
+  {
+    let h = try await live()
+    let state = h.store.providerState(source)
+    let path = usagePath + (manual ? "/refresh" : "")
+    await h.transport.set(path, [.paused])
+    if manual {
+      h.store.refreshProviderUsage(sourceID: source)
+    } else {
+      h.store.loadProviderUsage(sourceID: source)
+    }
+    await eventually { await h.transport.pauseCount() == 1 }
+    let pending = state.usageTask
+    h.store.connection = .offline
+    await h.transport.release(try response(try usage(90)))
+    await pending?.value
+    #expect(!state.usageLoading && !state.usageRefreshing)
+    #expect(state.usage?.providers.first?.windows.first?.usedPercent == 25)
+    await h.transport.set(usagePath, [.response(try response(try usage(40)))])
+    h.store.connection = .live
+    h.store.resumeProviders(state)
+    await eventually { !state.usageLoading }
+    #expect(state.usage?.providers.first?.windows.first?.usedPercent == 40)
+    h.store.openProviderAuth(sourceID: source, providerID: "openai")
+    #expect(state.replacement != nil, "auth admission is no longer stranded behind refresh")
+    let before = await h.transport.count(usagePath)
+    await h.transport.set(usagePath, [.response(try response(try usage(50)))])
+    await eventually { await h.clock.pending() >= 1 }
+    await h.clock.advance(300)
+    await eventually { await h.transport.count(usagePath) == before + 1 }
+    h.store.closeProviders(sourceID: source)
+  }
+  @Test func reconnectSupersedesAStillInFlightUsageRefresh() async throws {
+    let h = try await live()
+    let state = h.store.providerState(source)
+    await h.transport.set(usagePath + "/refresh", [.paused])
+    h.store.refreshProviderUsage(sourceID: source)
+    await eventually { await h.transport.pauseCount() == 1 }
+    let pending = state.usageTask
+    h.store.connection = .offline
+    h.store.connection = .live
+    await h.transport.set(usagePath, [.response(try response(try usage(60)))])
+    h.store.resumeProviders(state)
+    await eventually { !state.usageLoading }
+    #expect(!state.usageRefreshing)
+    await h.transport.release(try response(try usage(90)))
+    await pending?.value
+    #expect(state.usage?.providers.first?.windows.first?.usedPercent == 60)
+    h.store.closeProviders(sourceID: source)
+  }
   @Test func lateAdmissionAfterCloseIsCancelledWithoutResurrectingTheSession() async throws {
     let h = try await live()
     let state = h.store.providerState(source)
