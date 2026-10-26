@@ -85,31 +85,39 @@ public struct RichTextDocumentView: View {
     case .rule:
       Rectangle().fill(WebColor.line.color).frame(height: 1)
     case .table:
-      MarkdownTableView(rows: block.rows, attributed: attributed, compact: sizeClass != .regular)
+      MarkdownTableView(rows: block.rows, inlineText: inlineText, compact: sizeClass != .regular)
     case .heading(let level):
-      Text(attributed(block.runs))
+      inlineText(block.runs)
         .font(.system(size: headingSize(level), weight: .bold))
         .tracking(level <= 2 ? -0.01 * headingSize(level) : 0)
         .foregroundStyle(WebColor.text.color)
+        .textRenderer(InlineChipRenderer())
         .accessibilityAddTraits(.isHeader).textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
     case .paragraph, .quote:
       let indent = CGFloat(max(0, min(block.depth, 6) - 1)) * 1.45 * em
       HStack(alignment: .firstTextBaseline, spacing: 0) {
         if !block.prefix.isEmpty {
-          Text(block.prefix)
-            .webFont(.prose)
-            .foregroundStyle(WebColor.text.color)
-            .frame(width: 1.45 * em, alignment: block.prefix.count > 1 ? .leading : .center)
-            .accessibilityLabel(
-              block.prefix == "☑"
-                ? "Completed" : block.prefix == "☐" ? "Not completed" : block.prefix
-            )
+          if block.prefix == "☑" || block.prefix == "☐" {
+            Image(systemName: block.prefix == "☑" ? "checkmark.square.fill" : "square")
+              .font(.system(size: em))
+              .foregroundStyle(
+                block.prefix == "☑" ? theme.palette.accent.color : WebColor.textMuted.color
+              )
+              .frame(width: 1.45 * em, alignment: .leading)
+              .accessibilityLabel(block.prefix == "☑" ? "Completed" : "Not completed")
+          } else {
+            Text(block.prefix)
+              .webFont(.prose)
+              .foregroundStyle(WebColor.text.color)
+              .frame(width: 1.45 * em, alignment: block.prefix.count > 1 ? .leading : .center)
+          }
         } else if block.depth > 0 && block.kind != .quote {
           Color.clear.frame(width: 1.45 * em, height: 1)
         }
-        Text(attributed(block.runs))
+        inlineText(block.runs)
           .webFont(.prose)
+          .textRenderer(InlineChipRenderer())
           // CSS line boxes retain half-leading above/below even a single line; SwiftUI's
           // lineSpacing only inserts the leading BETWEEN lines.
           .padding(.vertical, (1.62 - WebType.naturalLineHeight) * em / 2)
@@ -127,17 +135,34 @@ public struct RichTextDocumentView: View {
       .fixedSize(horizontal: false, vertical: true)
     }
   }
+  /// Interpolation preserves native selection and links while attaching drawing-only attributes.
+  private func inlineText(_ runs: [RichDocument.Run]) -> Text {
+    runs.reduce(Text("")) { text, run in
+      let part = Text(attributed([run]))
+      if run.image {
+        let chip = Text("\(Image(systemName: "photo")) \(part)")
+          .foregroundColor(WebColor.textMuted.color)
+          .customAttribute(InlineChipAttribute())
+        return Text("\(text)\(chip)")
+      }
+      if run.code {
+        return Text("\(text)\(part.customAttribute(InlineChipAttribute()))")
+      }
+      return Text("\(text)\(part)")
+    }
+  }
   private func attributed(_ runs: [RichDocument.Run]) -> AttributedString {
     RichRenderingCache.attributed(.init(runs, em: Double(em), theme: theme.rawValue)) {
       runs.reduce(into: AttributedString()) { value, run in
-        var part = AttributedString(run.text)
+        var part = AttributedString(
+          run.code || run.image ? "\u{2009}" + run.text + "\u{2009}" : run.text)
         var intent: InlinePresentationIntent = []
         if run.bold { intent.insert(.stronglyEmphasized) }
         if run.italic { intent.insert(.emphasized) }
         if run.code {
           intent.insert(.code)
           part.font = .system(size: 0.88 * em, design: .monospaced)
-          part.backgroundColor = WebColor.surfaceSubtle.color
+
         }
         if run.strike {
           intent.insert(.strikethrough)
@@ -147,6 +172,7 @@ public struct RichTextDocumentView: View {
         if let destination = run.link {
           part.link = URL(string: destination)
           part.foregroundColor = theme.palette.accent.color
+          part.underlineStyle = .single
         }
         value += part
       }
@@ -158,7 +184,7 @@ public struct RichTextDocumentView: View {
 /// a line-strong rule, 1 px row lines, alternate rows washed with surface-hover at 55%.
 struct MarkdownTableView: View {
   let rows: [[[RichDocument.Run]]]
-  let attributed: ([RichDocument.Run]) -> AttributedString
+  let inlineText: ([RichDocument.Run]) -> Text
   let compact: Bool
   @ScaledMetric(relativeTo: .footnote) private var tableLeading: CGFloat = 2.5
   private var columns: Int { rows.map(\.count).max() ?? 0 }
@@ -173,7 +199,8 @@ struct MarkdownTableView: View {
           : index % 2 == 0 ? WebColor.surfaceHover.mixed(55, with: WebColor.surface).color : nil
         GridRow {
           ForEach(0..<columns, id: \.self) { column in
-            Text(column < row.count ? attributed(row[column]) : AttributedString())
+            inlineText(column < row.count ? row[column] : [])
+              .textRenderer(InlineChipRenderer())
               .webFont(.table)
               .fontWeight(index == 0 ? .semibold : .regular)
               .foregroundStyle(index == 0 ? WebColor.textSoft.color : WebColor.text.color)
@@ -215,9 +242,10 @@ struct MarkdownTableView: View {
 /// Horizontal, selectable code. Copy preserves the complete supplied value, not the preview.
 ///
 /// `.block` is the web markdown `pre`: rail fill, 1 px line, radius 10, padding 13×15 and a
-/// Copy action below. `.payload` is the quieter tool/job payload panel.
+/// Copy action inside the top-right corner. `.payload` is the quieter tool/job payload panel.
 public struct CodeDocumentView: View {
   @Environment(\.webMaterial) private var material
+  @State private var copied = false
   public enum Style: Sendable { case block, payload }
   private let source: String
   private let language: String
@@ -247,18 +275,36 @@ public struct CodeDocumentView: View {
           .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
           .padding(.vertical, 13).padding(.horizontal, 15)
       }
+      .padding(.trailing, 44)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(theme.palette.rail.color, in: shape)
       .overlay(shape.strokeBorder(WebColor.line.color, lineWidth: 1))
       .accessibilityLabel("\(language) code").accessibilityIdentifier("code-content")
+      .overlay(alignment: .topTrailing) {
+        Button {
+          UIPasteboard.general.string = source
+          copied = true
+        } label: {
+          Image(systemName: copied ? "checkmark" : "doc.on.doc")
+            .font(.system(size: 12))
+            .frame(width: 24, height: 24)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(WebColor.codeText.color)
+        .accessibilityLabel("Copy code").accessibilityValue(copied ? "Copied" : "")
+        .accessibilityIdentifier("code-copy")
+        .sensoryFeedback(.success, trigger: copied)
+        .task(id: copied) {
+          guard copied else { return }
+          do { try await Task.sleep(for: .seconds(2)) } catch { return }
+          copied = false
+        }
+      }
       if source.utf8.count > 16_384 {
         Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.")
           .webFont(.messageAction).foregroundStyle(material.textMuted.color)
       }
-      MessageActionButton("Copy", systemImage: "doc.on.doc") {
-        UIPasteboard.general.string = source
-      }
-      .accessibilityLabel("Copy code").accessibilityIdentifier("code-copy")
     }
   }
   private var payload: some View {

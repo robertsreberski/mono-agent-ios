@@ -10,6 +10,7 @@ public struct RichDocument: Sendable, Equatable {
     public var italic = false
     public var code = false
     public var strike = false
+    public var image = false
     public var link: String?
   }
   public struct Block: Sendable, Equatable, Identifiable {
@@ -100,7 +101,9 @@ public struct RichDocument: Sendable, Equatable {
         style.link = destination
       }
       if let image = node as? Markdown.Image {
-        style.text = "[Image: " + image.plainText + "]"
+        style.text = image.plainText.isEmpty ? "Image" : image.plainText
+        style.image = true
+        style.link = nil
         return [style]
       }
       return node.children.flatMap { inline($0, depth: depth + 1, style: style) }

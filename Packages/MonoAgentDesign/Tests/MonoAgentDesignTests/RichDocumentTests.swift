@@ -21,6 +21,20 @@ struct RichDocumentTests {
     #expect(runs.contains { $0.code })
     #expect(runs.contains { $0.link == "https://example.com" })
   }
+  @Test func imagesKeepOnlyAltTextAndNeverBecomeNetworkActions() {
+    let value = RichDocument.parse(
+      "Before ![A fictional garden](https://example.com/photo.png) after.\n\n[![](https://example.com/empty.png)](https://example.com)"
+    )
+    let images = value.blocks.flatMap(\.runs).filter(\.image)
+    #expect(images.map(\.text) == ["A fictional garden", "Image"])
+    #expect(images.allSatisfy { $0.link == nil })
+    #expect(!value.blocks.flatMap(\.runs).contains { $0.text.contains("photo.png") })
+  }
+  @Test func nestedTaskListsKeepTheirDepthAndCompletionState() {
+    let value = RichDocument.parse("- [x] Ready\n  - [ ] Nested\n- Ordinary")
+    #expect(value.blocks.map(\.prefix) == ["☑", "☐", "•"])
+    #expect(value.blocks.map(\.depth) == [1, 2, 1])
+  }
   @Test func htmlIsLiteralAndUnsafeLinksAreNeverActions() {
     let value = RichDocument.parse(
       "<script>alert('sample')</script>\n\n[bad](javascript:alert) <b>literal</b>")

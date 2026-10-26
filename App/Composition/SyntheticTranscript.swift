@@ -106,7 +106,10 @@
         id: "sample-assistant", role: "assistant",
         text: "The sample is ready. **Two checks** passed; one fictional file needs attention.")
       switch scenario {
-      case .conversationMarkdown: assistant.parts = [.text(.init(text: markdown))]
+      case .conversationMarkdown:
+        assistant.parts = [
+          .text(.init(text: markdown + "\n\n![A fictional garden](https://example.com/garden.png)"))
+        ]
       case .conversationTools:
         assistant.parts = [
           .toolCall(try tool(1)), .toolCall(try tool(2)),

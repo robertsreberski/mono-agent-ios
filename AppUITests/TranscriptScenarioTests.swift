@@ -61,6 +61,15 @@ import XCTest
   func testMarkdownLight() { capture("conversation-markdown", "light") }
   func testMarkdownDark() { capture("conversation-markdown", "dark") }
   func testMarkdownPlumDark() { capture("conversation-markdown", "dark", variant: "plum") }
+  func testCodeCopyShowsSuccess() {
+    let app = launchScenario("conversation-markdown")
+    let copy = app.buttons.matching(identifier: "code-copy").firstMatch
+    XCTAssertTrue(position(copy, in: app))
+    copy.tap()
+    XCTAssertTrue(wait(copy, value: "Copied"))
+    XCTAssertTrue(wait(copy, value: "", timeout: 5))
+    app.terminate()
+  }
   func testMarkdownAccessibility() { capture("conversation-markdown", "light", variant: "ax3") }
 
   /// A band the user opened stays open after its row scrolls far enough to be recycled.
