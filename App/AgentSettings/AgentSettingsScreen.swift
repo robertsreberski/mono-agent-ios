@@ -121,7 +121,19 @@ struct AgentSettingsScreen: View {
               NewConversationsSection(store: store, agent: agent, wide: wide)
             }
             WebHairline().opacity(0.9)
+            section(
+              .providers, title: "Providers",
+              summary: "Sign in, check access and read subscription limits."
+            ) {
+              ProvidersSection(store: store, agent: agent, compact: !wide)
+            }
+            WebHairline().opacity(0.9)
             about(agent)
+          }
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+          } action: { height in
+            if height > 0 && shownTarget == nil { apply(agent: agent.sourceId, proxy: proxy) }
           }
           .frame(maxWidth: 640, alignment: .leading)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,7 +144,7 @@ struct AgentSettingsScreen: View {
         .scrollDismissesKeyboard(.immediately)
         // Readiness for tests and screenshots, never a timer: hydrated and answered.
         .accessibilityIdentifier(ready ? "agent-settings-ready" : "agent-settings-loading")
-        .onAppear { apply(agent: agent.sourceId, proxy: proxy) }
+
         .onChange(of: target) { apply(agent: agent.sourceId, proxy: proxy) }
         .onChange(of: agent.sourceId) { apply(agent: agent.sourceId, proxy: proxy) }
       }

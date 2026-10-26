@@ -91,6 +91,11 @@ public final class ConsoleStore {
   @ObservationIgnored var catalogFlights: Set<String> = []
   @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
+  @ObservationIgnored var providers: [String: ProviderState] = [:]
+  /// Set synchronously by composition before any asynchronous scene work.
+  public private(set) var providerPrivacyCovered = false
+  public func setProviderPrivacyCovered(_ covered: Bool) { providerPrivacyCovered = covered }
+
   @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
   @ObservationIgnored let replyImages = ReplyImageCache()
   @ObservationIgnored let replyFiles: ReplyFileCache

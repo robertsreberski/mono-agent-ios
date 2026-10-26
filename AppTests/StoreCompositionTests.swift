@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
+import MonoAgentKit
 import MonoAgentTestSupport
 import Testing
 
@@ -9,6 +10,61 @@ import Testing
 #if DEBUG
   @MainActor
   struct StoreCompositionTests {
+    @Test func scenePrivacyIsPublishedBeforeAsyncLifecycleWork() async throws {
+      let model = AppModel(scenario: .consoleOnline, storeScenario: .providerAuthSecret)
+      model.scenePrivacyChanged(.inactive)
+      await model.start()
+      let store = try #require(model.store)
+      #expect(
+        store.providerPrivacyCovered, "a replacement Store inherits the synchronous scene cover")
+      model.scenePrivacyChanged(.inactive)
+      #expect(store.providerPrivacyCovered)
+      #expect(!store.backgrounded, "inactive alone must not cancel a Safari flow")
+      model.scenePrivacyChanged(.active)
+      #expect(!store.providerPrivacyCovered)
+      await store.stop()
+    }
+
+    @Test func providerScriptsAdvertiseAndConsumeEachPromptWithoutEchoingSecrets() async throws {
+      for scenario in [
+        StoreScenario.providerAuthSecret, .providerAuthManualCode, .providerAuthSelect,
+        .providerAuthDeviceCode,
+      ] {
+        let model = AppModel(scenario: .consoleOnline, storeScenario: scenario)
+        await model.start()
+        let store = try #require(model.store)
+        // Exercise typed routes against the same per-instance script used by XCUI.
+        let status = try await store.api.providerAuth(id: AgentSettingsFixture.atlas, etag: nil)
+          .valueRequired()
+        let provider = try #require(status.providers.first)
+        let method = try #require(provider.methods.first)
+        var session = try await store.api.startAuth(
+          id: AgentSettingsFixture.atlas,
+          body: .init(
+            providerId: provider.providerId, authType: method.authType, strategy: method.strategy))
+        if session.error?.code == "device_code_unavailable" {
+          session = try await store.api.startAuth(
+            id: AgentSettingsFixture.atlas,
+            body: .init(providerId: provider.providerId, authType: "oauth", strategy: "paste_back"))
+        }
+        if let prompt = session.prompt {
+          var result = try await store.api.authInput(
+            id: AgentSettingsFixture.atlas, sessionId: session.id,
+            body: .init(promptId: prompt.id, value: "fictional-input"))
+          if let next = result.prompt {
+            result = try await store.api.authInput(
+              id: AgentSettingsFixture.atlas, sessionId: result.id,
+              body: .init(promptId: next.id, value: "Fictional account"))
+          }
+          #expect(result.state == "succeeded" && result.prompt == nil)
+          #expect(!String(reflecting: result).contains("fictional-input"))
+        } else {
+          #expect(session.deviceCode?.userCode == "FLOCK-2048")
+        }
+        await store.stop()
+      }
+    }
+
     @Test func wakeConflictUsesTypedErrorAndDoesNotCloseEditor() async throws {
       let model = AppModel(scenario: .consoleOnline, storeScenario: .wakeConflict)
       await model.start()
@@ -130,7 +186,9 @@ import Testing
         #expect(
           store.isUnread(
             try #require(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.last)))
-      case .agentSettings, .agentSettingsUnsaved, .agentSettingsSaveError, .agentSettingsOffline,
+      case .providerAuthDense, .providerAuthDeviceCode, .providerAuthSecret,
+        .providerAuthManualCode, .providerAuthSelect, .providerChecks, .providerUsageStale,
+        .agentSettings, .agentSettingsUnsaved, .agentSettingsSaveError, .agentSettingsOffline,
         .agentSettingsDegraded, .notificationsExplainer, .notificationsInsecure:
         let atlas = try #require(store.agents.first { $0.sourceId == DashboardFixture.atlas })
         #expect(store.agents.count == 4)
