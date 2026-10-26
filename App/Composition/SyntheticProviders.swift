@@ -34,6 +34,14 @@
       session.providerId = providerID
       session.authType = authType
       session.strategy = strategy
+      if scenario == .providerAuthManualCode && strategy == "device_code" {
+        session.state = "failed"
+        session.progress = nil
+        session.error = try AgentSettingsFixture.decode(
+          #"{"code":"device_code_unavailable","message":"Device sign-in is unavailable. Use browser paste-back."}"#
+        )
+        return session
+      }
       switch scenario {
       case .providerAuthDeviceCode:
         session.authUrl = try AgentSettingsFixture.decode(
@@ -73,6 +81,7 @@
     let scenario: StoreScenario
     private var session: ProviderAuthSessionSnapshot?
     private var check: ProviderAuthCheckSessionSnapshot?
+    private var sessionNumber = 0
     private var authenticated = false
     private var checked = false
     init(_ scenario: StoreScenario) { self.scenario = scenario }
@@ -107,15 +116,23 @@
         session = try ProviderFixture.session(
           providerID: input.providerId, authType: input.authType, strategy: input.strategy,
           scenario: scenario)
+        sessionNumber += 1
+        session?.id = "synthetic-auth-\(sessionNumber)"
         return try encoded(session!, status: 201)
-      case ("GET", base + "/provider-auth/sessions/synthetic-auth-one"):
+      case ("GET", base + "/provider-auth/sessions/" + (session?.id ?? "")):
         guard let session else { throw URLError(.resourceUnavailable) }
         return try encoded(session)
-      case ("POST", base + "/provider-auth/sessions/synthetic-auth-one/input"):
+      case ("POST", base + "/provider-auth/sessions/" + (session?.id ?? "") + "/input"):
         // Consume without retaining input or adding it to any diagnostic.
         let input = try JSONDecoder().decode(ApiAuthInput.self, from: request.httpBody ?? Data())
         guard session?.prompt?.id == input.promptId, !input.value.isEmpty else {
           throw URLError(.resourceUnavailable)
+        }
+        if session?.prompt?.type == "select" {
+          session?.prompt = try AgentSettingsFixture.decode(
+            #"{"id":"text-two","type":"text","message":"Enter an account label","placeholder":"Account label"}"#
+          )
+          return try encoded(session!)
         }
         session?.state = "succeeded"
         session?.prompt = nil
@@ -124,7 +141,7 @@
         session?.progress = "Authentication succeeded."
         authenticated = true
         return try encoded(session!)
-      case ("DELETE", base + "/provider-auth/sessions/synthetic-auth-one"):
+      case ("DELETE", base + "/provider-auth/sessions/" + (session?.id ?? "")):
         session?.state = "cancelled"
         session?.prompt = nil
         session?.authUrl = nil

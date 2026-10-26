@@ -56,6 +56,7 @@ import XCTest
     if appearance == "light" {
       field.tap()
       field.typeText("fictional-input")
+      tap(app, "provider-keyboard-done")
       tap(app, "provider-submit-once")
       WaitFor.absent(field)
       reveal(app, "provider-auth-progress")
@@ -68,6 +69,11 @@ import XCTest
   private func manualCode(_ appearance: String) {
     let app = launch("provider-auth-manual-code", appearance)
     tap(app, "provider-authenticate-openai-codex")
+    reveal(app, "provider-session-error")
+    WaitFor.label(
+      element(app, "provider-session-error"),
+      contains: "Device sign-in is unavailable. Use browser paste-back.")
+    tap(app, "provider-paste-back")
     reveal(app, "provider-prompt-text")
     WaitFor.label(element(app, "provider-prompt-text"), contains: "authorization code")
     capture(app, "provider-auth-manual-code", appearance)
@@ -93,6 +99,12 @@ import XCTest
       WaitFor.hittable(option)
       option.tap()
       WaitFor.enabled(element(app, "provider-submit-once"))
+      tap(app, "provider-submit-once")
+      reveal(app, "provider-prompt-text")
+      WaitFor.label(element(app, "provider-prompt-text"), contains: "account label")
+      tap(app, "provider-prompt-text")
+      element(app, "provider-prompt-text").typeText("Fictional account")
+      tap(app, "provider-keyboard-done")
       tap(app, "provider-submit-once")
       WaitFor.label(element(app, "provider-auth-progress"), contains: "succeeded")
     }
@@ -179,13 +191,24 @@ import XCTest
     WaitFor.element(scroll, "settings scroll view with frame") { !$0.frame.isEmpty }
     for _ in 0..<7 {
       if target.exists && !target.frame.isEmpty && target.isHittable { break }
-      if down { scroll.swipeDown() } else { scroll.swipeUp() }
+      let moveDown: Bool
+      if target.exists && !target.frame.isEmpty {
+        moveDown = target.frame.midY < scroll.frame.midY
+      } else {
+        moveDown = down
+      }
+      let start = scroll.coordinate(
+        withNormalizedOffset: CGVector(dx: 0.5, dy: moveDown ? 0.35 : 0.65))
+      let end = scroll.coordinate(
+        withNormalizedOffset: CGVector(dx: 0.5, dy: moveDown ? 0.65 : 0.35))
+      start.press(forDuration: 0.05, thenDragTo: end)
     }
     WaitFor.element(target, "hittable element with a non-empty frame") {
       !$0.frame.isEmpty && $0.isHittable
     }
   }
   private func tap(_ app: XCUIApplication, _ id: String) {
+    reveal(app, id)
     let target = element(app, id)
     WaitFor.element(target, "enabled hittable control with frame") {
       $0.isEnabled && !$0.frame.isEmpty && $0.isHittable

@@ -12,6 +12,7 @@ struct ProviderAuthFlow: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.openURL) private var openURL
   @State private var input = ""
+  @FocusState private var inputFocused: Bool
   private var state: ProviderState { store.providerState(sourceID) }
   private var session: ProviderAuthSessionSnapshot? {
     state.sessionProviderID == provider.providerId ? state.session : nil
@@ -90,7 +91,17 @@ struct ProviderAuthFlow: View {
     .accessibilityIdentifier("provider-auth-flow")
     .onChange(of: inputIdentity) { input = "" }
     .onChange(of: scenePhase) { if scenePhase != .active { input = "" } }
-    .onDisappear { input = "" }
+    .onDisappear {
+      input = ""
+      inputFocused = false
+    }
+    .toolbar {
+      ToolbarItemGroup(placement: .keyboard) {
+        Spacer()
+        Button("Done") { inputFocused = false }
+          .accessibilityIdentifier("provider-keyboard-done")
+      }
+    }
     .confirmationDialog(
       "Replace the stored OpenAI credential?",
       isPresented: Binding(
@@ -126,6 +137,7 @@ struct ProviderAuthFlow: View {
         .pickerStyle(.menu).accessibilityIdentifier("provider-prompt-select")
       } else if prompt.type == "secret" {
         SecureField(prompt.placeholder ?? "Secret", text: $input)
+          .focused($inputFocused)
           .textContentType(.oneTimeCode)
           .textInputAutocapitalization(.never).autocorrectionDisabled()
           .webInput().accessibilityLabel(prompt.message)
@@ -136,6 +148,7 @@ struct ProviderAuthFlow: View {
           axis: prompt.type == "manual_code" ? .vertical : .horizontal
         )
         .lineLimit(prompt.type == "manual_code" ? 3...5 : 1...1)
+        .focused($inputFocused)
         .textContentType(.oneTimeCode)
         .textInputAutocapitalization(.never).autocorrectionDisabled()
         .webInput().accessibilityLabel(prompt.message)
@@ -143,6 +156,7 @@ struct ProviderAuthFlow: View {
       }
       Button("Submit once") {
         let submitted = input
+        inputFocused = false
         input = ""  // Before creating a Task or any submission suspension.
         store.submitProviderAuth(
           sourceID: sourceID, sessionID: session.id, promptID: prompt.id, value: submitted)

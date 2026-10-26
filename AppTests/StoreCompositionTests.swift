@@ -35,14 +35,24 @@ import Testing
           .valueRequired()
         let provider = try #require(status.providers.first)
         let method = try #require(provider.methods.first)
-        let session = try await store.api.startAuth(
+        var session = try await store.api.startAuth(
           id: AgentSettingsFixture.atlas,
           body: .init(
             providerId: provider.providerId, authType: method.authType, strategy: method.strategy))
+        if session.error?.code == "device_code_unavailable" {
+          session = try await store.api.startAuth(
+            id: AgentSettingsFixture.atlas,
+            body: .init(providerId: provider.providerId, authType: "oauth", strategy: "paste_back"))
+        }
         if let prompt = session.prompt {
-          let result = try await store.api.authInput(
+          var result = try await store.api.authInput(
             id: AgentSettingsFixture.atlas, sessionId: session.id,
             body: .init(promptId: prompt.id, value: "fictional-input"))
+          if let next = result.prompt {
+            result = try await store.api.authInput(
+              id: AgentSettingsFixture.atlas, sessionId: result.id,
+              body: .init(promptId: next.id, value: "Fictional account"))
+          }
           #expect(result.state == "succeeded" && result.prompt == nil)
           #expect(!String(reflecting: result).contains("fictional-input"))
         } else {
