@@ -299,6 +299,19 @@ import Testing
     #expect(await h.transport.count(base + "/sessions", method: "POST") == 1)
     h.store.closeProviders(sourceID: source)
   }
+  @Test func queuedActiveLifecycleCannotUncoverANewerInactiveScene() async throws {
+    let h = try await live()
+    // Composition already published inactive synchronously, before an older active task runs.
+    h.store.setProviderPrivacyCovered(true)
+    await h.store.scenePhaseChanged(.active)
+    #expect(h.store.providerPrivacyCovered)
+    // The actual current active scene is the sole authority to lift the cover.
+    h.store.setProviderPrivacyCovered(false)
+    #expect(!h.store.providerPrivacyCovered)
+    await h.store.scenePhaseChanged(.background)
+    #expect(h.store.providerPrivacyCovered)
+    h.store.closeProviders(sourceID: source)
+  }
   @Test func submissionIsSingleFlightAndCredentialNeverEntersStorageOrDiagnostics() async throws {
     let h = try await live()
     let state = h.store.providerState(source)

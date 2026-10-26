@@ -301,6 +301,7 @@ extension ConsoleStore {
     switch phase {
     case .inactive: setProviderPrivacyCovered(true)
     case .background:
+      setProviderPrivacyCovered(true)
       guard !backgrounded else { return }
       backgrounded = true
       await stopEffects()
@@ -309,7 +310,8 @@ extension ConsoleStore {
       await flushAuthored()
       await flushCache()
     case .active:
-      setProviderPrivacyCovered(false)
+      // Only synchronous scene composition may uncover. A queued active callback must not
+      // undo a more recent inactive cover before its asynchronous lifecycle work runs.
       guard backgrounded, enabled, started, !stopping else { return }
       backgrounded = false
       if !hydrated {
