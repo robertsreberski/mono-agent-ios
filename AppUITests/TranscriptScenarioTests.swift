@@ -13,7 +13,7 @@ import XCTest
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
     let first = element(app, "message-sample-user")
     XCTAssertTrue(first.waitForExistence(timeout: 5))
-    XCTAssertTrue(waitUntil { first.exists && first.isHittable })
+    XCTAssertTrue(waitUntil { first.exists && !first.frame.isEmpty && first.isHittable })
     XCTAssertTrue(waitUntil { first.frame.minY >= self.transcriptScroll(app).frame.minY })
     XCTAssertTrue(element(app, "jump-to-latest").waitForNonExistence(timeout: 5))
     app.terminate()
@@ -35,8 +35,8 @@ import XCTest
     let header = element(app, "conversation-header")
     let settled = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        first.isHittable && first.frame.minY >= scroll.frame.minY
-          && header.isHittable
+        first.exists && !first.frame.isEmpty && header.exists && !header.frame.isEmpty
+          && first.frame.minY >= scroll.frame.minY && first.isHittable && header.isHittable
       }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
     // A user drag can enter reading mode on phones; its Jump control must still resume following.
@@ -80,12 +80,14 @@ import XCTest
     XCTAssertTrue(wait(band, value: "Expanded"))
     // Jump to the newest row, far past the lazy list's retained window, then come back.
     let jump = element(app, "jump-to-latest")
-    XCTAssertTrue(waitUntil { jump.exists && jump.isHittable })
+    XCTAssertTrue(waitUntil { jump.exists && !jump.frame.isEmpty && jump.isHittable })
     jump.tap()
     let latest = element(app, "message-long-539")
-    let returned = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in latest.exists && latest.isHittable }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 10), .completed)
+    // Jump switches to following immediately, but lazy bottom-edge layout and AX publication
+    // can settle later. Keep the newest-row proof: disappearance of Jump alone is not enough.
+    XCTAssertTrue(jump.waitForNonExistence(timeout: 30), "Jump resumes following")
+    XCTAssertTrue(latest.waitForExistence(timeout: 30), "The newest row must materialize")
+    XCTAssertTrue(position(latest, in: app), "The newest row must be clear of overlays")
     XCTAssertTrue(
       position(band, in: app, centered: true), "The returned band must be clear of the header")
     XCTAssertTrue(wait(band, value: "Expanded"), "The user's choice survives row recycling")
@@ -127,7 +129,7 @@ import XCTest
       object: nil)
     return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
   }
-  private func waitUntil(timeout: TimeInterval = 10, _ predicate: @escaping () -> Bool) -> Bool {
+  private func waitUntil(timeout: TimeInterval = 30, _ predicate: @escaping () -> Bool) -> Bool {
     let expectation = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in predicate() }, object: nil)
     return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
@@ -142,7 +144,8 @@ import XCTest
     let header = element(app, "conversation-header")
     let composer = element(app, "composer")
     let safelyVisible = {
-      guard target.exists, target.isHittable, scroll.exists, header.exists, composer.exists else {
+      guard target.exists, !target.frame.isEmpty, scroll.exists, header.exists, composer.exists
+      else {
         return false
       }
       let frame = target.frame
@@ -152,6 +155,7 @@ import XCTest
         && (!centered
           || (frame.midY >= viewport.minY + viewport.height * 0.3
             && frame.midY <= viewport.minY + viewport.height * 0.7))
+        && target.isHittable
     }
     var recordedFrame = false
     for _ in 0..<40 {
@@ -203,7 +207,10 @@ import XCTest
     let older = element(app, "transcript-load-older")
     let reachable = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
-        guard older.exists, older.isHittable, older.isEnabled, header.exists else { return false }
+        guard older.exists, !older.frame.isEmpty, older.isHittable, older.isEnabled, header.exists
+        else {
+          return false
+        }
         let frame = older.frame
         return frame.minY >= max(scroll.frame.minY, header.frame.maxY)
           && app.windows.firstMatch.frame.contains(frame)
@@ -213,7 +220,7 @@ import XCTest
       header.waitForExistence(timeout: 5),
       "The eager header must return to the accessibility hierarchy")
     let anchor = element(app, "message-long-40")
-    XCTAssertTrue(waitUntil { anchor.exists && anchor.isHittable })
+    XCTAssertTrue(waitUntil { anchor.exists && !anchor.frame.isEmpty && anchor.isHittable })
     older.tap()
     let paged = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
@@ -223,7 +230,7 @@ import XCTest
     // Paging is a network read plus layout; allow a loaded simulator to settle.
     XCTAssertEqual(XCTWaiter.wait(for: [paged], timeout: 20), .completed)
     XCTAssertTrue(
-      waitUntil { anchor.exists && anchor.isHittable },
+      waitUntil { anchor.exists && !anchor.frame.isEmpty && anchor.isHittable },
       "Paging must retain the previously visible message, not jump to the new first row")
     XCTAssertTrue(element(app, "jump-to-latest").waitForExistence(timeout: 5))
     element(app, "jump-to-latest").tap()

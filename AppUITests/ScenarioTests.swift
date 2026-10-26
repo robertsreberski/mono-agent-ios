@@ -594,7 +594,8 @@ final class ScenarioTests: XCTestCase {
       }
       let clearance = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
-          last.isHittable && last.frame.minY >= list.frame.minY
+          last.exists && !last.frame.isEmpty && last.frame.minY >= list.frame.minY
+            && last.isHittable
             && last.frame.maxY < footer.frame.minY
         }, object: nil)
       XCTAssertEqual(
@@ -648,8 +649,12 @@ final class ScenarioTests: XCTestCase {
 
   private func waitUntilHittable(_ target: XCUIElement) -> Bool {
     let expectation = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in target.exists && target.isHittable }, object: nil)
-    return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
+      predicate: NSPredicate { _, _ in
+        // Context-menu nodes can exist before their animated frames have been laid out.
+        guard target.exists, !target.frame.isEmpty else { return false }
+        return target.isHittable
+      }, object: nil)
+    return XCTWaiter.wait(for: [expectation], timeout: 30) == .completed
   }
 
   func testConsolesRemainReachableFromTheDashboard() {

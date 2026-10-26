@@ -378,7 +378,7 @@ import XCTest
   private func dockReveal(_ app: XCUIApplication, _ target: XCUIElement) -> XCUIElement {
     let dock = app.scrollViews.matching(identifier: "composer-dock-scroll").firstMatch
     for _ in 0..<10 {
-      if target.exists && target.isHittable { return target }
+      if target.exists && !target.frame.isEmpty && target.isHittable { return target }
       guard dock.exists else { break }
       dragDock(dock, down: target.exists && target.frame.midY < dock.frame.minY)
     }
@@ -451,7 +451,7 @@ import XCTest
     let composer = element(app, "composer")
     for _ in 0..<6 {
       // Hittable, inside the transcript and not under the floating composer bar.
-      if target.waitForExistence(timeout: 1) && target.isHittable
+      if target.waitForExistence(timeout: 1) && !target.frame.isEmpty && target.isHittable
         && (!transcript.exists || transcript.frame.contains(target.frame.center))
         && !(composer.exists && composer.frame.contains(target.frame.center))
       {
