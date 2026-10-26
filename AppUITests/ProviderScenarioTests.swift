@@ -81,6 +81,7 @@ import XCTest
       let field = element(app, "provider-prompt-text")
       tap(app, "provider-prompt-text")
       field.typeText("fictional-code")
+      tap(app, "provider-keyboard-done")
       tap(app, "provider-submit-once")
       WaitFor.absent(field)
       reveal(app, "provider-auth-progress")

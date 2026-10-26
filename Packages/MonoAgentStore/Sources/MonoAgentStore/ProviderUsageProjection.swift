@@ -16,7 +16,8 @@ public struct ProviderUsageProjection: Sendable, Equatable {
 
   public static func project(_ window: ProviderUsageWindow, fetchedAt: String) -> Self? {
     guard let reset = window.resetsAt.flatMap(parseDate), let anchor = parseDate(fetchedAt),
-      window.periodMs.isFinite, window.periodMs > 0
+      window.periodMs.isFinite, window.periodMs > 0, window.usedPercent.isFinite,
+      (0...100).contains(window.usedPercent)
     else { return nil }
     let anchorMs = anchor.timeIntervalSince1970 * 1000
     let resetMs = reset.timeIntervalSince1970 * 1000
@@ -48,13 +49,17 @@ public struct ProviderUsageProjection: Sendable, Equatable {
   public static func formatLead(_ milliseconds: Double) -> String {
     guard milliseconds.isFinite else { return "0m" }
     let minutes = max(0, ceil(milliseconds / 60_000))
+    func integer(_ value: Double) -> String {
+      value == 0 ? "0" : String(format: "%.0f", floor(value))
+    }
     if minutes >= 1440 {
-      return "\(Int(minutes / 1440))d \(Int(minutes.truncatingRemainder(dividingBy: 1440) / 60))h"
+      return
+        "\(integer(minutes / 1440))d \(integer(minutes.truncatingRemainder(dividingBy: 1440) / 60))h"
     }
     if minutes >= 60 {
-      return "\(Int(minutes / 60))h \(Int(minutes.truncatingRemainder(dividingBy: 60)))m"
+      return "\(integer(minutes / 60))h \(integer(minutes.truncatingRemainder(dividingBy: 60)))m"
     }
-    return "\(Int(minutes))m"
+    return "\(integer(minutes))m"
   }
   public static func countdown(_ reset: String, now: Date, compact: Bool = false) -> String? {
     guard let date = parseDate(reset) else { return nil }

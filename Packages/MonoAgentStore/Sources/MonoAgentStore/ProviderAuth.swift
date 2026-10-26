@@ -106,6 +106,7 @@ extension ConsoleStore {
       !value.isEmpty || prompt.allowEmpty == true,
       prompt.type != "select" || prompt.options?.contains(where: { $0.id == value }) == true
     else { return }
+    let providerID = session.providerId
     state.busy = true
     state.authError = nil
     state.sessionSequence += 1
@@ -130,7 +131,7 @@ extension ConsoleStore {
         guard self.providerCurrent(state, owner: owner, epoch: epoch),
           state.sessionSequence == sequence,
           state.session?.id == sessionID, next.id == sessionID,
-          next.providerId == session.providerId
+          next.providerId == providerID
         else { return }
         self.adoptProviderSession(next, state: state)
       } catch {
@@ -157,6 +158,7 @@ extension ConsoleStore {
       state.methodProviderID = nil
       return
     }
+    let sessionID = session.id
     state.busy = true
     state.sessionSequence += 1
     let sequence = state.sessionSequence
@@ -175,11 +177,11 @@ extension ConsoleStore {
         self.agent(sourceID)?.supportsProviderAuth == true
       else { return }
       do {
-        try await self.api.cancelAuth(id: sourceID, sessionId: session.id)
+        try await self.api.cancelAuth(id: sourceID, sessionId: sessionID)
         guard self.providerCurrent(state, owner: owner, epoch: epoch),
-          state.sessionSequence == sequence, state.session?.id == session.id
+          state.sessionSequence == sequence, state.session?.id == sessionID
         else { return }
-        var next = session
+        guard var next = state.session else { return }
         next.state = "cancelled"
         next.authUrl = nil
         next.deviceCode = nil
@@ -417,7 +419,10 @@ extension ConsoleStore {
   func cleanupProviderResource(_ state: ProviderState, id: String, check: Bool, generation: String?)
   {
     guard !stopped, !stopping, !backgrounded, started, connection == .live,
-      agent(state.sourceID)?.generation == generation
+      agent(state.sourceID)?.generation == generation,
+      (check
+        ? agent(state.sourceID)?.supportsProviderAuthChecks
+        : agent(state.sourceID)?.supportsProviderAuth) == true
     else { return }
     let source = state.sourceID
     let epoch = epoch

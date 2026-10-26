@@ -30,6 +30,7 @@ import Observation
     check.map { !ProviderPresentation.checkTerminal($0.state) } ?? (resumeCheckID != nil)
   }
   @ObservationIgnored var generation: String?
+  @ObservationIgnored var capabilityKey = ""
   @ObservationIgnored var owner = UUID()
   @ObservationIgnored var open = false
   @ObservationIgnored var resumeSessionID: String?
@@ -116,20 +117,37 @@ extension ConsoleStore {
     providers[sourceID] = state
     return state
   }
+  public func providerScope(_ sourceID: String) -> String {
+    sourceID + ":" + (agent(sourceID)?.generation ?? "") + ":" + (agent(sourceID)?.status ?? "")
+      + ":" + providerCapabilities(sourceID)
+  }
+  func providerCapabilities(_ sourceID: String) -> String {
+    let agent = agent(sourceID)
+    return [
+      agent?.supportsProviderAuth, agent?.supportsProviderAuthChecks, agent?.supportsProviderUsage,
+      agent?.supportsProviderUsageRefresh,
+    ]
+    .map { $0 == true ? "1" : "0" }.joined()
+  }
   func providerAvailable(_ state: ProviderState) -> Bool {
     !stopped && !stopping && !backgrounded && started && connection == .live
       && state.open && agent(state.sourceID)?.status != "offline"
       && agent(state.sourceID) != nil && agent(state.sourceID)?.generation == state.generation
+      && state.capabilityKey == providerCapabilities(state.sourceID)
   }
   func providerCurrent(_ state: ProviderState, owner: UUID, epoch: UInt64) -> Bool {
     providerAvailable(state) && state.owner == owner && self.epoch == epoch
   }
   public func openProviders(sourceID: String) {
     let state = providerState(sourceID)
-    guard !state.open || state.generation != agent(sourceID)?.generation else { return }
+    guard
+      !state.open || state.generation != agent(sourceID)?.generation
+        || state.capabilityKey != providerCapabilities(sourceID)
+    else { return }
     if state.open { closeProviders(sourceID: sourceID) }
     state.open = true
     state.generation = agent(sourceID)?.generation
+    state.capabilityKey = providerCapabilities(sourceID)
     state.owner = UUID()
     resumeProviders(state)
   }
@@ -187,7 +205,8 @@ extension ConsoleStore {
   }
   func reconcileProviderOwners() {
     for state in providers.values where state.open {
-      if agent(state.sourceID)?.generation != state.generation
+      if state.capabilityKey != providerCapabilities(state.sourceID)
+        || agent(state.sourceID)?.generation != state.generation
         || agent(state.sourceID)?.status == "offline" || agent(state.sourceID) == nil
       {
         closeProviders(sourceID: state.sourceID)
