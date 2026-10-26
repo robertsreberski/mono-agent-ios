@@ -50,7 +50,7 @@ import Observation
   @ObservationIgnored var usageTimer: Task<Void, Never>?
   init(sourceID: String) { self.sourceID = sourceID }
   func announce(_ text: String) {
-    notice = text
+    notice = ProviderPresentation.boundedText(text)
     noticeSerial += 1
   }
 }

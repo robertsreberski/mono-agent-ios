@@ -17,14 +17,21 @@ struct ProviderAuthFlow: View {
   private var session: ProviderAuthSessionSnapshot? {
     state.sessionProviderID == provider.providerId ? state.session : nil
   }
-  private var inputIdentity: String { (session?.id ?? "") + ":" + (session?.prompt?.id ?? "") }
+  static func inputIdentity(_ session: ProviderAuthSessionSnapshot?) -> String {
+    (session?.id ?? "") + ":" + (session?.prompt?.id ?? "")
+      + (session.map { ProviderPresentation.authTerminal($0.state) } == true ? ":terminal" : "")
+  }
+  private var inputIdentity: String { Self.inputIdentity(session) }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       if state.methodProviderID == provider.providerId && provider.methods.count > 1 {
         WebFlowLayout(spacing: 8, lineSpacing: 8) {
           ForEach(provider.methods, id: \.strategy) { method in
-            Button(method.label + (method.recommended ? " · Recommended" : "")) {
+            Button(
+              ProviderPresentation.boundedText(
+                method.label + (method.recommended ? " · Recommended" : ""))
+            ) {
               input = ""
               store.startProviderAuth(
                 sourceID: sourceID, providerID: provider.providerId, method: method)
@@ -45,7 +52,7 @@ struct ProviderAuthFlow: View {
           externalButton(
             "Open device page", url: device.verificationUri, identifier: "provider-open-device-page"
           )
-          Text(verbatim: device.userCode).webFont(.settingsMono)
+          Text(verbatim: ProviderPresentation.boundedText(device.userCode)).webFont(.settingsMono)
             .textSelection(.disabled)
             .accessibilityIdentifier("provider-device-code")
         }
@@ -89,7 +96,10 @@ struct ProviderAuthFlow: View {
     .privacySensitive()
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("provider-auth-flow")
-    .onChange(of: inputIdentity) { input = "" }
+    .onChange(of: inputIdentity) {
+      input = ""
+      inputFocused = false
+    }
     .onChange(of: scenePhase) { if scenePhase != .active { input = "" } }
     .onDisappear {
       input = ""
@@ -110,7 +120,7 @@ struct ProviderAuthFlow: View {
       titleVisibility: .visible
     ) {
       if let method = state.replacement {
-        Button("Replace with \(method.label)") {
+        Button(ProviderPresentation.boundedText("Replace with \(method.label)")) {
           input = ""
           store.startProviderAuth(
             sourceID: sourceID, providerID: provider.providerId, method: method,
@@ -131,27 +141,27 @@ struct ProviderAuthFlow: View {
         Picker("Choose…", selection: $input) {
           Text("Choose…").tag("")
           ForEach(prompt.options ?? [], id: \.id) { option in
-            Text(verbatim: option.label).tag(option.id)
+            Text(verbatim: ProviderPresentation.boundedText(option.label)).tag(option.id)
           }
         }
         .pickerStyle(.menu).accessibilityIdentifier("provider-prompt-select")
       } else if prompt.type == "secret" {
-        SecureField(prompt.placeholder ?? "Secret", text: $input)
+        SecureField(ProviderPresentation.boundedText(prompt.placeholder ?? "Secret"), text: $input)
           .focused($inputFocused)
           .textContentType(.oneTimeCode)
           .textInputAutocapitalization(.never).autocorrectionDisabled()
-          .webInput().accessibilityLabel(prompt.message)
+          .webInput().accessibilityLabel(ProviderPresentation.boundedText(prompt.message))
           .accessibilityIdentifier("provider-prompt-secret")
       } else {
         TextField(
-          prompt.placeholder ?? "Response", text: $input,
+          ProviderPresentation.boundedText(prompt.placeholder ?? "Response"), text: $input,
           axis: prompt.type == "manual_code" ? .vertical : .horizontal
         )
         .lineLimit(prompt.type == "manual_code" ? 3...5 : 1...1)
         .focused($inputFocused)
         .textContentType(.oneTimeCode)
         .textInputAutocapitalization(.never).autocorrectionDisabled()
-        .webInput().accessibilityLabel(prompt.message)
+        .webInput().accessibilityLabel(ProviderPresentation.boundedText(prompt.message))
         .accessibilityIdentifier("provider-prompt-text")
       }
       Button("Submit once") {

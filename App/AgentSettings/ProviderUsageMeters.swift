@@ -39,13 +39,14 @@ struct ProviderUsageMeters: View {
     return VStack(alignment: .leading, spacing: compact ? 4 : 6) {
       if compact {
         HStack(spacing: 8) {
-          Text(window.label).webFont(.settingsNote).frame(minWidth: 48, alignment: .leading)
+          Text(verbatim: ProviderPresentation.boundedText(window.label)).webFont(.settingsNote)
+            .frame(minWidth: 48, alignment: .leading)
           bar(window, projection: projection)
           Text(percent).webFont(.settingsMono).monospacedDigit()
         }
       } else {
         HStack {
-          Text(window.label).webFont(.settingsNote)
+          Text(verbatim: ProviderPresentation.boundedText(window.label)).webFont(.settingsNote)
           Spacer()
           Text(percent).webFont(.settingsMono).monospacedDigit()
           if let projection, projection.confidence == .normal {
@@ -115,7 +116,7 @@ struct ProviderUsageMeters: View {
     }
     if usage.stale { label += ", last known usage" }
     label += ", fetched \(usage.fetchedAt). \(detail)"
-    return label
+    return ProviderPresentation.boundedText(label)
   }
   private func age(_ now: Date) -> String {
     guard let fetched = ProviderUsageProjection.parseDate(usage.fetchedAt) else {

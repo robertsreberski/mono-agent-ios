@@ -37,8 +37,8 @@ struct ProvidersSection: View {
           } else {
             ForEach(state.usage?.providers ?? [], id: \.providerId) { usage in
               VStack(alignment: .leading, spacing: 10) {
-                Text(usage.label).webFont(.rowTitle)
-                if let plan = usage.plan { SettingsChip(plan) }
+                Text(verbatim: ProviderPresentation.boundedText(usage.label)).webFont(.rowTitle)
+                if let plan = usage.plan { SettingsChip(ProviderPresentation.boundedText(plan)) }
                 ProviderUsageMeters(usage: usage, compact: compact)
               }.padding(14)
             }
@@ -70,7 +70,9 @@ struct ProvidersSection: View {
     }
     .onDisappear { store.closeProviders(sourceID: agent.sourceId) }
     .onChange(of: state.noticeSerial) {
-      if let notice = state.notice { AccessibilityNotification.Announcement(notice).post() }
+      if let notice = state.notice {
+        AccessibilityNotification.Announcement(ProviderPresentation.boundedText(notice)).post()
+      }
     }
   }
   private var actions: some View {
@@ -152,16 +154,19 @@ struct ProvidersSection: View {
   }
   private func heading(_ provider: ProviderAuthProviderStatus, usage: ProviderUsage?) -> some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text(provider.label).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
+      Text(verbatim: ProviderPresentation.boundedText(provider.label)).webFont(.rowTitle)
+        .foregroundStyle(WebColor.text.color)
       WebFlowLayout(spacing: 6, lineSpacing: 5) {
-        if let plan = usage?.plan { SettingsChip(plan) }
+        if let plan = usage?.plan { SettingsChip(ProviderPresentation.boundedText(plan)) }
         Label(ProviderPresentation.authLabel(provider), systemImage: authSymbol(provider))
           .webFont(.settingsNote).foregroundStyle(WebColor.textSoft.color)
           .accessibilityIdentifier("provider-auth-state-" + provider.providerId)
         if let check = state.check?.results.first(where: { $0.providerId == provider.providerId }) {
           SettingsChip(ProviderPresentation.checkLabel(check.state))
             .accessibilityLabel(
-              "Live check for \(provider.label): \(ProviderPresentation.checkLabel(check.state))."
+              ProviderPresentation.boundedText(
+                "Live check for \(provider.label): \(ProviderPresentation.checkLabel(check.state))."
+              )
             )
             .accessibilityIdentifier("provider-check-result-" + provider.providerId)
         }
@@ -176,7 +181,8 @@ struct ProvidersSection: View {
       .buttonStyle(SettingsButtonStyle())
       .disabled(actionBlocked || state.checkActive)
       .accessibilityLabel(
-        "\(provider.state == "missing" ? "Authenticate" : "Re-authenticate") \(provider.label)"
+        ProviderPresentation.boundedText(
+          "\(provider.state == "missing" ? "Authenticate" : "Re-authenticate") \(provider.label)")
       )
       .accessibilityIdentifier("provider-authenticate-" + provider.providerId)
     }
@@ -190,6 +196,7 @@ struct ProvidersSection: View {
     }
   }
   private func note(_ text: String) -> some View {
-    Text(verbatim: text).webFont(.settingsNote).foregroundStyle(WebColor.textMuted.color)
+    Text(verbatim: ProviderPresentation.boundedText(text)).webFont(.settingsNote).foregroundStyle(
+      WebColor.textMuted.color)
   }
 }
