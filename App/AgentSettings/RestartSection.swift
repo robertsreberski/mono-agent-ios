@@ -10,6 +10,11 @@ struct RestartSection: View {
   let store: ConsoleStore
   let agent: WebAgentSummary
   let wide: Bool
+  #if DEBUG
+    @Environment(\.fixtureReferenceDate) private var referenceDate
+  #else
+    private var referenceDate: Date? { nil }
+  #endif
   private var state: AgentRestartState { store.agentRestartState(agent.sourceId) }
   private var label: String { ProviderPresentation.boundedText(agent.label) }
   private var count: Int? {
@@ -39,31 +44,17 @@ struct RestartSection: View {
             .buttonStyle(SettingsButtonStyle()).accessibilityIdentifier("agent-restart-retry")
         }.padding(14)
       case .ready:
-        VStack(alignment: .leading, spacing: 10) {
-          Text(title).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
-            .accessibilityIdentifier("agent-restart-title")
-          Text(explanation).webFont(.settingsNote).foregroundStyle(WebColor.textMuted.color)
-            .accessibilityIdentifier("agent-restart-explanation")
-          if state.inProgress { progress }
-          if let unknown = state.requestUnknown { notice(unknown, id: "agent-restart-unknown") }
-          if let warning = state.pollWarning { notice(warning, id: "agent-restart-poll-warning") }
-          if state.outcome == "not_confirmed" {
-            notice("Restart not confirmed — check the agent." + reason, id: "agent-restart-outcome")
-          } else if state.outcome == "failure" {
-            notice("Restart failed." + reason, id: "agent-restart-outcome", danger: true)
-          }
-          if state.requesting {
-            Text("Requesting restart…").webFont(.settingsNote)
-              .foregroundStyle(WebColor.textMuted.color).accessibilityIdentifier(
-                "agent-restart-requesting")
-          } else if !state.inProgress {
-            ViewThatFits(in: .horizontal) {
-              HStack(spacing: 10) { actions }
-              VStack(alignment: .leading, spacing: 10) { actions }
+        Group {
+          if wide {
+            HStack(alignment: .center, spacing: 16) {
+              restartCopy.frame(maxWidth: .infinity, alignment: .leading)
+              restartActions
             }
-          }
-          if let disabled = store.agentRestartUnavailableReason(agent.sourceId) {
-            notice(disabled, id: "agent-restart-unavailable")
+          } else {
+            VStack(alignment: .leading, spacing: 10) {
+              restartCopy
+              restartActions
+            }
           }
         }.padding(14)
       }
@@ -73,7 +64,10 @@ struct RestartSection: View {
       }
       if state.readState == .ready && !successfulNow && (!state.inProgress || last != nil) {
         SettingsFactRow("Last restart", wide: wide, identifier: "agent-restart-last") {
-          Text(lastDescription).webFont(.settingsNote).foregroundStyle(WebColor.textMuted.color)
+          TimelineView(.periodic(from: .now, by: 60)) { timeline in
+            Text(lastDescription(now: referenceDate ?? timeline.date)).webFont(.settingsNote)
+              .foregroundStyle(WebColor.textMuted.color)
+          }
         }
       }
     }
@@ -87,6 +81,38 @@ struct RestartSection: View {
     .onDisappear { store.closeAgentRestart(sourceID: agent.sourceId) }
     .onChange(of: state.noticeSerial) {
       if let notice = state.notice { AccessibilityNotification.Announcement(notice).post() }
+    }
+  }
+  private var restartCopy: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text(title).webFont(.rowTitle).foregroundStyle(WebColor.text.color)
+        .accessibilityIdentifier("agent-restart-title")
+      Text(explanation).webFont(.settingsNote).foregroundStyle(WebColor.textMuted.color)
+        .accessibilityIdentifier("agent-restart-explanation")
+      if state.inProgress { progress }
+      if let unknown = state.requestUnknown { notice(unknown, id: "agent-restart-unknown") }
+      if let warning = state.pollWarning { notice(warning, id: "agent-restart-poll-warning") }
+      if state.outcome == "not_confirmed" {
+        notice("Restart not confirmed — check the agent." + reason, id: "agent-restart-outcome")
+      } else if state.outcome == "failure" {
+        notice("Restart failed." + reason, id: "agent-restart-outcome", danger: true)
+      }
+      if state.requesting {
+        Text("Requesting restart…").webFont(.settingsNote)
+          .foregroundStyle(WebColor.textMuted.color)
+          .accessibilityIdentifier("agent-restart-requesting")
+      }
+      if let disabled = store.agentRestartUnavailableReason(agent.sourceId) {
+        notice(disabled, id: "agent-restart-unavailable")
+      }
+    }
+  }
+  @ViewBuilder private var restartActions: some View {
+    if !state.requesting && !state.inProgress {
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 10) { actions }
+        VStack(alignment: .leading, spacing: 10) { actions }
+      }.fixedSize(horizontal: wide, vertical: false)
     }
   }
   private var explanation: String {
@@ -109,16 +135,14 @@ struct RestartSection: View {
       state.inProgress ? state.initialOperation : state.operation ?? state.initialOperation
     return value?.outcome == nil ? nil : value
   }
-  private var lastDescription: String {
+  private func lastDescription(now: Date) -> String {
     guard let last else { return "No recent restart" }
     let outcome =
       last.outcome == "success"
       ? "Back online" : last.outcome == "failure" ? "Failed" : "Not confirmed"
     // Opaque server timestamps, never used to correlate requests or recover operations.
-    let when =
-      ISO8601DateFormatter().date(from: last.requestedAt).map {
-        RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date())
-      } ?? last.requestedAt
+    let age = DashboardModel.relativeTime(last.requestedAt, now: now)
+    let when = age == "now" ? "just now" : age.isEmpty ? "Unknown time" : "\(age) ago"
     return outcome + " · " + when
       + (last.outcome == "failure"
         ? (last.reason.map { " · " + String($0.prefix(280)) } ?? "") : "")
