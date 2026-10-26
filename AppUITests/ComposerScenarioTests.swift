@@ -5,13 +5,25 @@ import XCTest
 /// Composer and answer-surface scenarios (C8). Every test types and sends through the synthetic
 /// Store (`ComposerScript`), asserts the scripted round trip, and captures one screenshot.
 @MainActor final class ComposerScenarioTests: XCTestCase {
-  func testJumpClearsSuggestionsLight() { jumpClearsComposerRow("light", attachments: false) }
-  func testJumpClearsSuggestionsDark() { jumpClearsComposerRow("dark", attachments: false) }
-  func testJumpClearsAttachmentsLight() { jumpClearsComposerRow("light", attachments: true) }
-  func testJumpClearsAttachmentsDark() { jumpClearsComposerRow("dark", attachments: true) }
+  func testJumpKeepsSuggestionsLight() { jumpKeepsDock("light", state: .suggestions) }
+  func testJumpKeepsSuggestionsDark() { jumpKeepsDock("dark", state: .suggestions) }
+  func testJumpKeepsAttachmentsLight() { jumpKeepsDock("light", state: .attachments) }
+  func testJumpKeepsAttachmentsDark() { jumpKeepsDock("dark", state: .attachments) }
+  func testJumpKeepsPlainDockLight() { jumpKeepsDock("light", state: .plain) }
+  func testJumpKeepsPlainDockDark() { jumpKeepsDock("dark", state: .plain) }
 
-  private func jumpClearsComposerRow(_ appearance: String, attachments: Bool) {
-    let scenario = attachments ? "composer-draft-attachments" : "composer-model-selector"
+  private enum DockState { case suggestions, attachments, plain }
+
+  /// Jump overlays the first dock surface without reserving space: its frames are identical
+  /// with and without Jump, and rows beside the circle keep their taps.
+  private func jumpKeepsDock(_ appearance: String, state: DockState) {
+    let scenario =
+      switch state {
+      case .suggestions: "composer-model-selector"
+      case .attachments: "composer-draft-attachments"
+      // The model-selector fixture has a conversation; composer-empty is a new draft.
+      case .plain: "composer-model-selector"
+      }
     let app = XCUIApplication()
     app.launchArguments = [
       "--scenario", scenario, "--appearance", appearance,
@@ -20,30 +32,45 @@ import XCTest
     app.launch()
     defer { app.terminate() }
     WaitFor.hittable(element(app, "composer-field"))
-    if attachments {
+    let surfaces: [String]
+    switch state {
+    case .attachments:
       element(app, "composer-attach").tap()
       WaitFor.hittable(element(app, "attach-samples"))
       element(app, "attach-samples").tap()
       WaitFor.hittable(app.buttons["Remove field-notes.txt"].firstMatch)
-    } else {
+      surfaces = ["composer-attachments"]
+    case .suggestions:
       element(app, "composer-field").tap()
       element(app, "composer-field").typeText("/")
       WaitFor.hittable(element(app, "command-suggestion-settings"))
+      surfaces = ["composer-suggestions"]
+    case .plain:
+      surfaces = []
     }
-    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
-    transcript.swipeDown()
-    let row =
-      attachments
-      ? element(app, "composer-attachments")
-      : element(app, "command-suggestion-settings")
-    assertJumpClearsDockRow(app, row: row)
-    captureJumpDock(app, scenario: scenario, appearance: appearance)
-    if attachments {
+    let dock = JumpDock(app: app, surfaces: surfaces, newest: "message-sample-assistant")
+    // The reach completing the 44 pt target: above the circle (plain), beside it above the
+    // dock edge (attachments); the shelf and suggestions tap the circle itself.
+    dock.assertGeometryIndependentOfJump(
+      tap: state == .plain ? .above : state == .attachments ? .beside : .circle)
+    captureJumpDock(
+      app, scenario: scenario, appearance: appearance,
+      variant: state == .plain ? "jumpplain" : "jump")
+    switch state {
+    case .attachments:
       app.buttons["Remove field-notes.txt"].firstMatch.tap()
       WaitFor.absent(element(app, "attachment-field-notes.txt"))
-    } else {
-      row.tap()
+      WaitFor.hittable(dock.jump)
+    case .suggestions:
+      // The first suggestion sits under the circle; beside it, the row keeps its tap.
+      let row = element(app, "command-suggestion-settings")
+      WaitFor.element(row, "first suggestion row under Jump") {
+        !$0.frame.isEmpty && $0.frame.intersects(dock.jump.frame)
+      }
+      dock.tapBesideCircle(row)
       WaitFor.hittable(menuButton(app, "Sample Small"))
+    case .plain:
+      dock.jumpToLatest()
     }
   }
 

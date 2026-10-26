@@ -1926,6 +1926,22 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "jump"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jumpplain"
+    },
+    {
+      "scenario": "composer-model-selector",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "jumpplain"
     }
   ]
 }

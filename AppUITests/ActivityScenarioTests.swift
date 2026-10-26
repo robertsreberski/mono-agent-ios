@@ -3,9 +3,11 @@ import UIKit
 import XCTest
 
 @MainActor final class ActivityScenarioTests: XCTestCase {
-  func testJumpClearsShelfLight() { jumpClearsShelf("light") }
-  func testJumpClearsShelfDark() { jumpClearsShelf("dark") }
-  private func jumpClearsShelf(_ appearance: String) {
+  func testJumpKeepsShelfLight() { jumpKeepsShelf("light") }
+  func testJumpKeepsShelfDark() { jumpKeepsShelf("dark") }
+  /// The shelf keeps its frame whether or not Jump is shown, and its header row beside the
+  /// circle keeps its tap.
+  private func jumpKeepsShelf(_ appearance: String) {
     let app = XCUIApplication()
     app.launchArguments = [
       "--scenario", "conversation-job-stack", "--appearance", appearance,
@@ -13,16 +15,17 @@ import XCTest
     ]
     app.launch()
     defer { app.terminate() }
-    WaitFor.hittable(element(app, "job-stack"))
-    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
-    WaitFor.hittable(transcript)
-    transcript.swipeDown()
     let shelf = element(app, "job-stack")
-    assertJumpClearsDockRow(app, row: shelf)
+    WaitFor.hittable(shelf)
+    WaitFor.value(shelf, contains: "Collapsed")
+    let dock = JumpDock(
+      app: app, surfaces: ["composer-dock-scroll", "job-stack"],
+      newest: "message-activity-sample")
+    dock.assertGeometryIndependentOfJump()
     captureJumpDock(app, scenario: "conversation-job-stack", appearance: appearance)
-    // This centre-top tap used to land inside Jump's overlapping hit circle.
-    shelf.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+    dock.tapBesideCircle(shelf)
     WaitFor.value(shelf, contains: "Expanded")
+    XCTAssertTrue(dock.jump.exists, "A shelf tap is not a jump")
   }
 
   func testJobsOpaque() { capture("conversation-jobs", "light", variant: "opaque") }

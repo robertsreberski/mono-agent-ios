@@ -337,9 +337,10 @@ import XCTest
         guard dock.exists, field.exists, !dock.frame.isEmpty, !field.frame.isEmpty,
           !control.frame.isEmpty
         else { return false }
-        // The 36 pt glass circle has a 44 pt hit target. Straddling means its edges cross
-        // the dock edge, not that its centre sits inside the dock (the offset is −20 pt).
-        // The field frame includes its own padding; no more than that padding may overlap.
+        // The 36 pt glass circle sits at the bottom of its 44 pt target, which reaches 8 pt
+        // above it. Straddling means the frame crosses the dock edge; the dock's geometry
+        // does not change for it. The field frame includes its own padding; no more than
+        // that padding may overlap.
         return control.frame.minY >= dock.frame.minY - control.frame.height
           && control.frame.minY < dock.frame.minY
           && control.frame.maxY > dock.frame.minY
