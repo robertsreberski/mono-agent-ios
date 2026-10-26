@@ -25,7 +25,10 @@ import XCTest
     // Pin is independent of the run defaults and writes through the live console.
     let pin = element(app, "agent-settings-pin")
     WaitFor.value(pin, contains: "1")
-    pin.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    WaitFor.element(pin, "enabled pin switch with a non-empty frame") {
+      $0.isEnabled && !$0.frame.isEmpty
+    }
+    pin.tap()
     WaitFor.value(pin, contains: "0")
     WaitFor.enabled(pin)
     close(app)
