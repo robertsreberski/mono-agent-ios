@@ -533,32 +533,41 @@ import XCTest
   }
   private func scrollTo(_ app: XCUIApplication, _ target: XCUIElement) -> Bool {
     let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    let header = element(app, "conversation-header")
     let composer = element(app, "composer")
-    let header = element(app, "conversation-top-bar")
+    guard target.waitForExistence(timeout: 5) else { return false }
     // Chrome stays fixed during transcript scrolling. Resolve its geometry once per reveal,
     // not on every predicate evaluation: each XCUI property is a fresh accessibility query.
     // Re-reading all three frames could itself exhaust the wait on a dense iPad transcript.
     let transcriptFrame = transcript.frame
-    let top = max(
-      transcriptFrame.minY,
-      header.exists ? header.frame.maxY : app.navigationBars.firstMatch.frame.maxY)
-    let bottom = composer.exists ? composer.frame.minY - 20 : transcriptFrame.maxY
+    let headerBottom = header.exists ? header.frame.maxY : app.navigationBars.firstMatch.frame.maxY
+    let composerTop = composer.exists ? composer.frame.minY : transcriptFrame.maxY
+    let top = max(transcriptFrame.minY, headerBottom) + 8
+    let bottom = min(transcriptFrame.maxY, composerTop) - 20
+    let viewport = CGRect(
+      x: transcriptFrame.minX, y: top, width: transcriptFrame.width, height: bottom - top)
+    guard viewport.height > 0 else { return false }
+    let window = app.windows.firstMatch
+    let windowFrame = window.frame
+    let origin = window.coordinate(withNormalizedOffset: .zero)
+    func point(_ fraction: CGFloat) -> XCUICoordinate {
+      origin.withOffset(
+        CGVector(
+          dx: viewport.midX - windowFrame.minX,
+          dy: viewport.minY + viewport.height * fraction - windowFrame.minY))
+    }
     func reachable() -> Bool {
       guard target.exists else { return false }
       let frame = target.frame
-      guard !frame.isEmpty else { return false }
-      return transcriptFrame.contains(frame.center) && frame.midY >= top + 8
-        && frame.midY < bottom && target.isHittable
+      // System hittability can include a transcript row underneath the floating header.
+      return !frame.isEmpty && viewport.contains(frame) && target.isHittable
     }
     for _ in 0..<8 {
       if reachable() { return composerWait { reachable() } }
-      // The scroll view extends behind both pieces of floating chrome. A target above the
-      // reading edge needs a downward swipe, not another upward swipe past its control.
-      if target.exists && target.frame.midY < top + 8 {
-        transcript.swipeDown()
-      } else {
-        transcript.swipeUp()
-      }
+      guard target.exists, !target.frame.isEmpty else { return false }
+      let down = target.frame.minY < viewport.minY
+      point(down ? 0.25 : 0.75).press(
+        forDuration: 0.05, thenDragTo: point(down ? 0.75 : 0.25))
     }
     return composerWait { reachable() }
   }
