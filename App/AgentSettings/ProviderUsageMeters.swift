@@ -8,7 +8,11 @@ struct ProviderUsageMeters: View {
   let usage: ProviderUsage
   let compact: Bool
   @Environment(\.consoleTheme) private var theme
-  @Environment(\.fixtureReferenceDate) private var referenceDate
+  #if DEBUG
+    @Environment(\.fixtureReferenceDate) private var referenceDate
+  #else
+    private var referenceDate: Date? { nil }
+  #endif
 
   var body: some View {
     TimelineView(.periodic(from: .now, by: 60)) { timeline in
