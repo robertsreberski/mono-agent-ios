@@ -376,19 +376,10 @@ enum TranscriptPresentation {
       ][status]
       ?? (reason == "outcome_unknown"
         ? "Context compaction outcome unknown" : "Context compaction failed")
-    func count(_ value: Double?) -> String? {
-      guard let value, value.isFinite, value >= 0 else { return nil }
-      let divisor: Double = value >= 1_000_000 ? 1_000_000 : value >= 1_000 ? 1_000 : 1
-      let suffix = divisor == 1_000_000 ? "M" : divisor == 1_000 ? "k" : ""
-      return
-        (divisor == 1
-        ? String(format: "%.0f", value)
-        : String(format: "%.1f", value / divisor).replacingOccurrences(of: ".0", with: "")) + suffix
-    }
     let approximation = exact ? "" : "≈"
     var counts: String?
     if status == "succeeded" {
-      switch (count(before), count(after)) {
+      switch (compactionTokenCount(before), compactionTokenCount(after)) {
       case (.some(let before), .some(let after)):
         counts = before + " → " + approximation + after + " tokens"
       case (.some(let before), .none): counts = approximation + before + " tokens before"
@@ -407,6 +398,21 @@ enum TranscriptPresentation {
       label: label, counts: counts, detail: detail,
       trigger: trigger == "manual" ? "manual" : "automatic",
       running: status == "running", failed: status == "failed" || status == "interrupted")
+  }
+  static func compactionTokenCount(_ value: Double?) -> String? {
+    guard let value, value.isFinite, value >= 0 else { return nil }
+    guard value < 999_950_000_000 else { return "≥1T" }
+    var unit = 0
+    let divisors: [Double] = [1, 1_000, 1_000_000, 1_000_000_000]
+    let suffixes = ["", "k", "M", "B"]
+    while unit < divisors.count - 1 {
+      let rounded = unit == 0 ? value.rounded() : (value / divisors[unit] * 10).rounded() / 10
+      guard rounded >= 1_000 else { break }
+      unit += 1
+    }
+    let text =
+      unit == 0 ? String(format: "%.0f", value) : String(format: "%.1f", value / divisors[unit])
+    return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + suffixes[unit]
   }
   static func liveInputLabel(_ status: String) -> String? {
     [

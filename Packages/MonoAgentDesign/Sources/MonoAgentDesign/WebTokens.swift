@@ -233,6 +233,10 @@ public enum WebType: CaseIterable, Sendable {
     default: false
     }
   }
+  /// Preserve the default-size minimum for roles moved to the prose curve.
+  public func resolvedSize(scaled: CGFloat) -> CGFloat {
+    followsProseScaling ? max(spec.size, scaled) : scaled
+  }
   public var spec: Spec {
     switch self {
     case .projectName:
@@ -358,11 +362,14 @@ public enum WebType: CaseIterable, Sendable {
 /// Applies a `WebType` role: scaled size, weight, tracking, leading and case.
 struct WebFontModifier: ViewModifier {
   let spec: WebType.Spec
-  @ScaledMetric private var size: CGFloat
+  let type: WebType
+  @ScaledMetric private var scaledSize: CGFloat
+  private var size: CGFloat { type.resolvedSize(scaled: scaledSize) }
 
   init(_ type: WebType) {
+    self.type = type
     spec = type.spec
-    _size = ScaledMetric(
+    _scaledSize = ScaledMetric(
       wrappedValue: type.spec.size,
       relativeTo: type.followsProseScaling ? .body : type.spec.textStyle)
   }

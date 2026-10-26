@@ -7,6 +7,16 @@ import Testing
 @testable import MonoAgent
 
 struct TranscriptPresentationTests {
+  @Test func compactCountsPromoteAfterRoundingAndBoundAbsurdValues() {
+    #expect(TranscriptPresentation.compactionTokenCount(999_949) == "999.9k")
+    #expect(TranscriptPresentation.compactionTokenCount(999_960) == "1M")
+    #expect(TranscriptPresentation.compactionTokenCount(999.96) == "1k")
+    #expect(TranscriptPresentation.compactionTokenCount(999_960_000) == "1B")
+    #expect(TranscriptPresentation.compactionTokenCount(.greatestFiniteMagnitude) == "≥1T")
+    #expect(TranscriptPresentation.compactionTokenCount(-1) == nil)
+    #expect(TranscriptPresentation.compactionTokenCount(.infinity) == nil)
+    #expect(TranscriptPresentation.compactionTokenCount(.nan) == nil)
+  }
   @Test func compactionSegmentsNormalizeStatusCountsAndTrigger() {
     let success = TranscriptPresentation.compactionContent(
       status: "succeeded", reason: "model_changed", trigger: "manual", before: 12000,
