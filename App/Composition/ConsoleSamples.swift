@@ -60,6 +60,26 @@
     case conversationAskForm = "conversation-ask-form"
     case conversationQuickReplies = "conversation-quick-replies"
     case peerQuestionSheet = "peer-question-sheet"
+    // Agent settings (C11 PR1) and the notifications explainer.
+    case agentSettings = "agent-settings"
+    case agentSettingsUnsaved = "agent-settings-unsaved"
+    case agentSettingsSaveError = "agent-settings-save-error"
+    case agentSettingsOffline = "agent-settings-offline"
+    case agentSettingsDegraded = "agent-settings-degraded"
+    case notificationsExplainer = "notifications-explainer"
+    case notificationsInsecure = "notifications-insecure"
+
+    /// Served by a stateful per-instance `AgentSettingsScript`.
+    var isAgentSettings: Bool {
+      switch self {
+      case .agentSettings, .agentSettingsUnsaved, .agentSettingsSaveError, .agentSettingsOffline,
+        .agentSettingsDegraded, .notificationsExplainer, .notificationsInsecure:
+        true
+      default: false
+      }
+    }
+    /// The console profile uses the fictional host over HTTP.
+    var usesInsecureEndpoint: Bool { self == .notificationsInsecure }
 
     var isReplyImageScenario: Bool {
       [.conversationImages, .conversationImagesSingle, .conversationImagesEmpty].contains(self)
@@ -120,6 +140,11 @@
         try await ComposerFixture.prepare(self, store: store, repository: repository, theme: theme)
         return
       }
+      if isAgentSettings {
+        try await AgentSettingsFixture.prepare(
+          self, store: store, repository: repository, theme: theme)
+        return
+      }
       if isDashboard {
         try await DashboardFixture.prepare(
           store, repository: repository, empty: self == .dashboardEmpty, theme: theme,
@@ -167,6 +192,7 @@
     let script: ComposerScript?
     let mcp: McpUiScript?
     let organize: OrganizeScript?
+    let settings: AgentSettingsScript?
     init(
       _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
       mcp: McpUiScript? = nil
@@ -175,6 +201,7 @@
       self.theme = theme
       self.script = script
       self.mcp = mcp
+      settings = scenario.flatMap { $0.isAgentSettings ? AgentSettingsScript($0) : nil }
       organize =
         scenario?.isOrganize == true ? OrganizeScript(wakeScenario: scenario?.rawValue) : nil
     }
@@ -188,6 +215,7 @@
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
       if let script { return try await script.response(request, theme: theme) }
       if let organize { return try await organize.response(request, theme: theme) }
+      if let settings { return try await settings.response(request, theme: theme) }
       if let response = try await mcp?.response(request) { return response }
       if scenario?.isFidelity == true { return try ScreenFixture.response(request, theme: theme) }
       if let scenario, let response = try RichReplyFixture.response(request, scenario: scenario) {

@@ -60,6 +60,22 @@ final class ComposerController {
 
   var thread: WebThread? { threadID.flatMap { store.conversations[$0]?.thread } }
   var agent: WebAgentSummary? { store.agents.first { $0.sourceId == sourceID } }
+  /// The agent as the model selector presents it. A new conversation with a blank choice
+  /// inherits the console's saved run defaults (web `run-controls.ts`: a blank new-draft field
+  /// shows `runSettings.effective`), and creation omits the field so the console applies them.
+  /// Existing conversations and explicit choices keep the agent's own defaults.
+  var selectorAgent: WebAgentSummary? {
+    guard var agent, threadID == nil, agent.runSettings.override != nil else { return agent }
+    if newConversationModel.isEmpty, let model = agent.runSettings.effective.model, !model.isEmpty {
+      agent.defaultModel = model
+    }
+    if newConversationEffort.isEmpty, let effort = agent.runSettings.effective.effort,
+      !effort.isEmpty
+    {
+      agent.defaultEffort = effort
+    }
+    return agent
+  }
   /// Whether the Store's selection is this composer's context (new conversation or thread).
   var isSelectedContext: Bool {
     store.selectedBucket?.sourceID == sourceID && store.selectedThreadID == threadID
@@ -122,9 +138,12 @@ final class ComposerController {
   var runModel: String { threadID == nil ? newConversationModel : thread?.runModel ?? "" }
   var runEffort: String { threadID == nil ? newConversationEffort : thread?.runEffort ?? "" }
 
+  /// Agent settings covers this composer's destination; nothing it holds may be sent.
+  var coveredBySettings = false
+
   /// Send (idle) or queue live input (running). Never resends a previous attempt.
   func send() async {
-    guard affordances.primaryEnabled else { return }
+    guard affordances.primaryEnabled, !coveredBySettings else { return }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachments = store.stagedAttachments.map(\.id)
     let input = ApiStartSubmission(
@@ -152,7 +171,7 @@ final class ComposerController {
 
   /// Explicit retry keeps the Store-assigned UUID even if recovery retired its reference.
   func retry() async {
-    guard var attempt = lastAttempt, phase.allowsRetry else { return }
+    guard var attempt = lastAttempt, phase.allowsRetry, !coveredBySettings else { return }
     attempt.liveInput = running
     await submit(attempt)
   }

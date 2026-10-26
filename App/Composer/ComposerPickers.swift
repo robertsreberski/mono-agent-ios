@@ -14,7 +14,7 @@ struct ModelSelectorMenu: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.consoleTheme) private var theme
   var body: some View {
-    let agent = controller.agent
+    let agent = controller.selectorAgent
     let summary = ModelOptions.summary(
       agent, model: controller.runModel, effort: controller.runEffort)
     Button {
@@ -80,7 +80,7 @@ struct RunSettingsSheet: View {
       WebSheetHeader("Run settings", closeLabel: "Done") { dismiss() }
       WebSearchField("Search models", text: $query)
       ScrollView {
-        if let agent = controller.agent {
+        if let agent = controller.selectorAgent {
           let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
           VStack(alignment: .leading, spacing: 2) {
             ForEach(
@@ -110,7 +110,7 @@ struct RunSettingsSheet: View {
         }
       }
       .scrollBounceBehavior(.basedOnSize)
-      if let agent = controller.agent {
+      if let agent = controller.selectorAgent {
         let rows = ModelOptions.rows(agent, selectedModel: controller.runModel)
         let efforts = (rows.first { $0.id == controller.runModel } ?? rows.first)?.efforts ?? []
         VStack(alignment: .leading, spacing: 6) {

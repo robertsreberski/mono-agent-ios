@@ -76,9 +76,12 @@ actor RouteTransport: HTTPTransport {
   var routes: [String: [Reply]] = [:]
   var requests: [URLRequest] = []
   var paused: [CheckedContinuation<HTTPResponse, any Error>] = []
+  /// Dispatches and releases in the order they happened, for deterministic ordering checks.
+  var timeline: [String] = []
   func set(_ path: String, _ replies: [Reply]) { routes[path] = replies }
   func send(_ request: URLRequest) async throws -> HTTPResponse {
     requests.append(request)
+    timeline.append((request.httpMethod ?? "GET") + " " + (request.url?.path ?? ""))
     let path = request.url!.path
     guard var queue = routes[path], !queue.isEmpty else { throw URLError(.notConnectedToInternet) }
     let reply = queue.removeFirst()
@@ -89,7 +92,10 @@ actor RouteTransport: HTTPTransport {
     case .paused: return try await withCheckedThrowingContinuation { paused.append($0) }
     }
   }
-  func release(_ response: HTTPResponse) { paused.removeFirst().resume(returning: response) }
+  func release(_ response: HTTPResponse) {
+    timeline.append("release")
+    paused.removeFirst().resume(returning: response)
+  }
   func count(_ path: String, method: String? = nil) -> Int {
     requests.filter { $0.url?.path == path && (method == nil || $0.httpMethod == method) }.count
   }

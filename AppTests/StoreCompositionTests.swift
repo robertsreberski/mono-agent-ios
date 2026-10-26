@@ -130,6 +130,19 @@ import Testing
         #expect(
           store.isUnread(
             try #require(store.buckets[BucketKey(sourceID: DashboardFixture.atlas)]?.threads.last)))
+      case .agentSettings, .agentSettingsUnsaved, .agentSettingsSaveError, .agentSettingsOffline,
+        .agentSettingsDegraded, .notificationsExplainer, .notificationsInsecure:
+        let atlas = try #require(store.agents.first { $0.sourceId == DashboardFixture.atlas })
+        #expect(store.agents.count == 4)
+        #expect(atlas.models == ["sample:large", "sample:small"])
+        #expect(atlas.generation == "generation-1")
+        #expect(
+          atlas.status
+            == (scenario == .agentSettingsOffline
+              ? "offline" : scenario == .agentSettingsDegraded ? "degraded" : "online"))
+        #expect((atlas.runSettings.override != nil) == (scenario == .agentSettingsDegraded))
+        #expect(store.profile.endpoint.isInsecure == scenario.usesInsecureEndpoint)
+        #expect(model.launchSettings == nil, "only --open-settings opens settings")
       case .dashboardEmpty:
         #expect(store.agents.count == 1)
         #expect(store.buckets.values.allSatisfy { $0.threads.isEmpty })

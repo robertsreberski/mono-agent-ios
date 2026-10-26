@@ -203,6 +203,9 @@ public enum WebType: CaseIterable, Sendable {
   case settingsTitle, settingsSectionTitle, settingsAddress, stateTitle, stateStatusTitle,
     stateBody, notice, bannerRegular
   case replyName, replyMeta, replyAction, replyFailureCode, replyFailure, restartCopy
+  /// Agent settings (`styles.css` `.settings-*`): section summary 11, row note 10.5, key label
+  /// 11/650, button 11/650 and the mono source/config values at 10.
+  case settingsSummary, settingsNote, settingsLabel, settingsButton, settingsMono
 
   public struct Spec: Sendable, Equatable {
     public var size: CGFloat
@@ -240,6 +243,12 @@ public enum WebType: CaseIterable, Sendable {
       Spec(size: 18, weight: .bold, tracking: -0.01, lineHeight: 1.25, textStyle: .headline)
     case .stateStatusTitle:
       Spec(size: 18, weight: .semibold, tracking: -0.01, textStyle: .headline)
+    case .settingsSummary:
+      Spec(size: 11, weight: .regular, lineHeight: 1.45, tabular: true, textStyle: .caption)
+    case .settingsNote: Spec(size: 10.5, weight: .regular, lineHeight: 1.45, textStyle: .caption2)
+    case .settingsLabel: Spec(size: 11, weight: .semibold, textStyle: .caption)
+    case .settingsButton: Spec(size: 11, weight: .semibold, textStyle: .caption)
+    case .settingsMono: Spec(size: 10, weight: .regular, mono: true, textStyle: .caption2)
     case .stateTitle:
       Spec(size: 22, weight: .bold, tracking: -0.025, lineHeight: 1.18, textStyle: .title2)
     case .stateBody: Spec(size: 13, weight: .regular, lineHeight: 1.55, textStyle: .subheadline)

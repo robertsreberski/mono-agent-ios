@@ -40,6 +40,8 @@ final class AppModel {
   /// DEBUG fixture launch state applied once the dashboard is ready; always `nil` in Release.
   let launchQuery: String?
   let launchThreadID: String?
+  /// DEBUG `--open-settings <index|section>`: agent settings opened once after readiness.
+  let launchSettings: AgentSettingsTarget?
   @ObservationIgnored private var started = false
   #if DEBUG
     @ObservationIgnored private let scenario: Scenario?
@@ -54,6 +56,10 @@ final class AppModel {
     var opaqueFixtureSurfaces: Bool {
       scenario != nil && ProcessInfo.processInfo.arguments.contains("--fixture-opaque")
     }
+    /// Fixtures never leave the app: "Open web console" records the URL it would open.
+    private(set) var fixtureExternalURL: URL?
+    var isFixture: Bool { scenario != nil }
+    func recordExternalOpen(_ url: URL) { fixtureExternalURL = url }
   #else
     var offersSampleAttachments: Bool { false }
   #endif
@@ -74,6 +80,7 @@ final class AppModel {
       referenceDate = configuration.storeScenario?.isDashboard == true ? DashboardFixture.now : nil
       launchQuery = configuration.storeScenario?.launchQuery
       launchThreadID = configuration.storeScenario?.launchThreadID
+      launchSettings = configuration.storeScenario == nil ? nil : configuration.settings
       if let scenario {
         directory = FileManager.default.temporaryDirectory
           .appendingPathComponent("SyntheticFixtures", isDirectory: true)
@@ -92,6 +99,7 @@ final class AppModel {
       referenceDate = nil
       launchQuery = nil
       launchThreadID = nil
+      launchSettings = nil
       directory = Self.profileDirectory
       transport = URLSessionTransport()
     #endif
@@ -116,6 +124,7 @@ final class AppModel {
       referenceDate = storeScenario?.isDashboard == true ? DashboardFixture.now : nil
       launchQuery = storeScenario?.launchQuery
       launchThreadID = storeScenario?.launchThreadID
+      launchSettings = nil
       catalog = nil
       let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("SyntheticPreviews", isDirectory: true)
@@ -152,8 +161,11 @@ final class AppModel {
     #if DEBUG
       if let scenario, scenario != .connectionEmpty {
         do {
+          let insecure = storeScenario?.usesInsecureEndpoint == true
           let id = try await registry.add(
-            name: "Flockbox", endpoint: Scenario.endpoint, httpAcknowledged: false
+            name: "Flockbox",
+            endpoint: insecure ? AgentSettingsFixture.insecureEndpoint : Scenario.endpoint,
+            httpAcknowledged: insecure
           )
           await registry.connect(id)
           if ProcessInfo.processInfo.arguments.contains("--fixture-console-states") {
@@ -284,6 +296,8 @@ final class AppModel {
     let appearance: ColorScheme?
     /// `--fixture-theme <evergreen|ocean|plum|terracotta>` for the synthetic console identity.
     let fixtureTheme: String
+    /// `--open-settings <index|new-conversations|providers|agent>`.
+    let settings: AgentSettingsTarget?
 
     init(arguments: [String]) throws {
       func value(_ flag: String) throws -> String? {
@@ -322,6 +336,17 @@ final class AppModel {
       } else {
         appearance = nil
       }
+      if let name = try value("--open-settings") {
+        if name == "index" {
+          settings = AgentSettingsTarget()
+        } else if let section = AgentSettingsSection(rawValue: name) {
+          settings = AgentSettingsTarget(section: section)
+        } else {
+          throw LaunchError.unknownSettingsSection(name)
+        }
+      } else {
+        settings = nil
+      }
       if let name = try value("--fixture-theme") {
         guard ConsoleTheme(rawValue: name) != nil else { throw LaunchError.unknownTheme(name) }
         fixtureTheme = name
@@ -336,5 +361,6 @@ final class AppModel {
     case unknownScenario(String)
     case unknownAppearance(String)
     case unknownTheme(String)
+    case unknownSettingsSection(String)
   }
 #endif

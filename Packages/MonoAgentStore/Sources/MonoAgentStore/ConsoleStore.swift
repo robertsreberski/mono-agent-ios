@@ -82,6 +82,14 @@ public final class ConsoleStore {
   public internal(set) var skillRegistries: [String: SkillRegistryState] = [:]
   @ObservationIgnored var draftAttachmentContext: DraftAttachmentContext?
   @ObservationIgnored var uploadTasks: [UUID: Task<[WebAttachment], any Error>] = [:]
+  /// Per-agent settings (drafts, pin/save state); each state object is itself observable.
+  @ObservationIgnored var agentSettings: [String: AgentSettingsState] = [:]
+  @ObservationIgnored var agentWrites: [String: AgentWrite] = [:]
+  @ObservationIgnored var agentWriteClock: UInt64 = 0
+  /// Settings-specific provider catalogs, keyed by agent; memory only.
+  public internal(set) var modelCatalogs: [String: AgentModelCatalog] = [:]
+  @ObservationIgnored var catalogFlights: Set<String> = []
+  @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
   @ObservationIgnored var restartProposals: [ReplyPartReference: RestartProposalState] = [:]
   @ObservationIgnored let replyImages = ReplyImageCache()

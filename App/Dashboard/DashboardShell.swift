@@ -22,6 +22,11 @@ struct DashboardShell: View {
   @State private var projectDestination: AppRoute?
   @State private var columns: NavigationSplitViewVisibility = .all
   @State private var launched = false
+  /// Transient agent settings: covers the current context without replacing `route`.
+  @State private var settings: AgentSettingsPresentation?
+  /// Regular width: where the detail column is, so settings covers exactly that column.
+  @State private var detailFrame: CGRect = .zero
+  @State private var splitFrame: CGRect = .zero
   /// Search lives here so a size-class change (rotation, iPad resizing) keeps the query.
   @State private var query: String
   @State private var search: ThreadSearchModel
@@ -59,17 +64,86 @@ struct DashboardShell: View {
           dashboard(selectable: true)
             .navigationSplitViewColumnWidth(min: 320, ideal: WebMetrics.dashboardColumn, max: 520)
         } detail: {
+          // Regular: the covered destination stays mounted (composer, quote, uploads, transcript
+          // follow and MCP sessions survive) but is invisible, untouchable and withdrawn from
+          // VoiceOver. Settings is drawn over the detail column from outside the split view.
           NavigationStack {
             detail(regularDetailRoute).id(regularDetailRoute)
+              .accessibilityHidden(settings != nil)
+              .background(CoveredAccessibility(covered: settings != nil))
+          }
+          .environment(\.coveredBySettings, settings != nil)
+          .opacity(settings == nil ? 1 : 0)
+          .allowsHitTesting(settings == nil)
+          // Keyboard-inert too: no focus, typing, Tab target or ⌘Return send while covered.
+          // Disabling keeps the destination mounted, so draft, quote and uploads survive.
+          .disabled(settings != nil)
+          .onGeometryChange(for: CGRect.self) {
+            $0.frame(in: .global)
+          } action: {
+            detailFrame = $0
           }
         }
         .navigationSplitViewStyle(.balanced)
+        .onGeometryChange(for: CGRect.self) {
+          $0.frame(in: .global)
+        } action: {
+          splitFrame = $0
+        }
+        // Settings is the detail with a ✕; the sidebar stays usable and retargets it. It lives
+        // outside the split view's column hosts, so withdrawing the covered column from
+        // accessibility never withdraws settings.
+        .overlay(alignment: .topLeading) {
+          if let settings, detailFrame.width > 0 {
+            AgentSettingsScreen(
+              store: store, sourceID: store.dashboardAgentID, target: settings.target,
+              layout: .split, close: closeSettings
+            )
+            // The column's width, the split view's full height: settings draws its own header
+            // under the status bar, where the covered stack's (hidden) bar would be.
+            .frame(width: detailFrame.width, height: splitFrame.height)
+            .offset(x: detailFrame.minX - splitFrame.minX)
+          }
+        }
       } else {
+        // Compact: a full-size screen with Back over the retained stack, route and scroll. The
+        // cover's modal presentation keeps VoiceOver and touches out of the covered context.
         NavigationStack(path: path) {
           dashboard(selectable: false)
+            .background(CoveredAccessibility(covered: settings != nil, scope: .presenter))
             .navigationDestination(for: AppRoute.self) { detail($0) }
         }
+        .environment(\.coveredBySettings, settings != nil)
+        .fullScreenCover(
+          isPresented: Binding(
+            get: { settings != nil },
+            set: { presented in if !presented && sizeClass != .regular { settings = nil } })
+        ) {
+          if let settings {
+            AgentSettingsScreen(
+              store: store, sourceID: store.dashboardAgentID, target: settings.target,
+              layout: .stacked, close: closeSettings
+            )
+            .environment(\.agentSettingsEntry, settingsEntry)
+          }
+        }
       }
+    }
+    .environment(\.agentSettingsEntry, settingsEntry)
+    #if DEBUG
+      .environment(\.openWebConsole, openWebConsole)
+      .overlay(alignment: .bottomLeading) {
+        // Fixtures never leave the app; tests read the URL "Open web console" would open.
+        if let url = model.fixtureExternalURL {
+          Text(url.absoluteString).font(.system(size: 2)).opacity(0.02)
+          .accessibilityIdentifier("fixture-external-url")
+        }
+      }
+    #endif
+    .onChange(of: route) { old, new in
+      // Opening a destination closes settings, as on the web. Switching agent may clear the
+      // route (nil); settings then retargets to the new agent and stays open.
+      if old != new, new != nil, settings != nil { closeSettings() }
     }
     .environment(
       \.openNewConversation,
@@ -132,6 +206,43 @@ struct DashboardShell: View {
     }
   }
 
+  #if DEBUG
+    private var openWebConsole: OpenWebConsoleAction {
+      if model.isFixture {
+        return OpenWebConsoleAction { [model] url in model.recordExternalOpen(url) }
+      }
+      return OpenWebConsoleAction { url in UIApplication.shared.open(url) }
+    }
+  #endif
+
+  private var settingsEntry: AgentSettingsEntry {
+    AgentSettingsEntry(
+      isOpen: settings != nil,
+      open: { section in openSettings(section) },
+      toggle: {
+        // Web: where the dashboard stays visible a second press closes; otherwise it retargets.
+        if settings != nil && sizeClass == .regular {
+          closeSettings()
+        } else {
+          openSettings(nil)
+        }
+      },
+      close: { if settings != nil { closeSettings() } })
+  }
+
+  /// A new intent for the same section is still an explicit navigation.
+  private func openSettings(_ section: AgentSettingsSection?) {
+    let intent = (settings?.target.intent ?? 0) + 1
+    withAnimation(.snappy(duration: 0.25)) {
+      settings = AgentSettingsPresentation(
+        target: AgentSettingsTarget(section: section, intent: intent))
+    }
+  }
+
+  private func closeSettings() {
+    withAnimation(.snappy(duration: 0.25)) { settings = nil }
+  }
+
   private func navigateFromProject(_ target: AppRoute?) {
     if let target {
       route = target
@@ -153,6 +264,10 @@ struct DashboardShell: View {
   private func applyLaunchRoute() {
     guard model.isReady, !launched else { return }
     launched = true
+    // DEBUG launch destination (always nil in Release), applied once after Store readiness.
+    if let section = model.launchSettings {
+      openSettings(section.section)
+    }
     guard route == nil else { return }
     if let threadID = model.launchThreadID,
       let thread = store.buckets.values.lazy.flatMap(\.threads).first(where: { $0.id == threadID })
