@@ -228,7 +228,9 @@ extension ConsoleStore {
           baselineKnown = true
           baselineID = latest?.id
         }
-      } catch { /* A failed baseline read does not authorize recovery correlation. */  }
+      } catch {
+        // A failed baseline read does not authorize recovery correlation.
+      }
       guard current(), self.restartConfirmationScope(sourceID) == scope,
         self.agentRestartUnavailableReason(sourceID) == nil
       else { return }
@@ -272,7 +274,9 @@ extension ConsoleStore {
               self.adoptAgentRestart(latest, state: state)
               return
             }
-          } catch { /* A read failure is not a failure verdict or permission to retry. */  }
+          } catch {
+            // A read failure is not a failure verdict or permission to retry.
+          }
         }
         guard current() else { return }
         state.requestUnknown =
