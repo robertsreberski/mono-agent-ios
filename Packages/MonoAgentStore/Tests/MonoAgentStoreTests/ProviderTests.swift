@@ -426,12 +426,14 @@ import Testing
     await eventually { await h.clock.pending() >= 2 }
     await h.clock.advance(1)
     await eventually { await h.transport.pauseCount() == 1 }
+    let pendingPoll = state.sessionPoll
     await h.transport.set(
       base + "/sessions/auth-one/input", [.response(try response(try session(state: "succeeded")))])
     h.store.submitProviderAuth(
       sourceID: source, sessionID: "auth-one", promptID: "prompt-one", value: "fictional-input")
     await eventually { !state.busy }
     await h.transport.release(try response(try session()))
+    await pendingPoll?.value
     #expect(state.session?.state == "succeeded")
     #expect(state.authError == nil)
     h.store.closeProviders(sourceID: source)
@@ -495,9 +497,11 @@ import Testing
     await h.transport.set(base + "/sessions", [.paused])
     try start(h)
     await eventually { await h.transport.pauseCount() == 1 }
+    let pendingAdmission = state.sessionAdmission
     h.store.bootstrap?.agents[0].generation = "new-generation"
     h.store.reconcileProviderOwners()
     await h.transport.release(try response(try session(), status: 201))
+    await pendingAdmission?.value
     #expect(state.session == nil && !state.open)
     h.store.connection = .offline
     h.store.openProviders(sourceID: source)
