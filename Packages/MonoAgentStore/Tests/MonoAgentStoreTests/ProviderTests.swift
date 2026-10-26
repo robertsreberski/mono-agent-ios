@@ -11,12 +11,12 @@ import Testing
   var base: String { "/api/v1/agents/\(source)/provider-auth" }
   var usagePath: String { "/api/v1/agents/\(source)/provider-usage" }
   let statusJSON =
-    #"{"schema":"mono-agent.provider-auth.v1","generatedAt":"2026-05-17T12:00:00Z","providers":[{"providerId":"openai","label":"OpenAI","usages":[],"state":"present","source":"stored","credentialType":"oauth","verification":"not_verified","methods":[{"authType":"api_key","strategy":"api_key","label":"API key","recommended":true}]}]}"#
-  func session(_ id: String = "auth-one", state: String = "waiting_input") throws
+    #"{"schema":"mono-agent.provider-auth.v1","generatedAt":"2026-05-17T12:00:00Z","providers":[{"providerId":"openai","label":"OpenAI","usages":[],"state":"present","source":"stored","credentialType":"oauth","verification":"not_verified","methods":[{"authType":"api_key","strategy":"api_key_prompt","label":"API key","recommended":true}]}]}"#
+  func session(_ id: String = "auth-one", state: String = "awaiting_input") throws
     -> ProviderAuthSessionSnapshot
   {
     try decode(
-      #"{"schema":"mono-agent.provider-auth-session.v1","id":"\#(id)","providerId":"openai","authType":"api_key","strategy":"api_key","state":"\#(state)","createdAt":"2026-05-17T12:00:00Z","updatedAt":"2026-05-17T12:00:00Z","expiresAt":"2026-05-17T12:10:00Z","authUrl":{"url":"https://auth.example.net/private-flow","instructions":"Sign in"},"prompt":{"id":"prompt-one","type":"secret","message":"API key"}}"#
+      #"{"schema":"mono-agent.provider-auth-session.v1","id":"\#(id)","providerId":"openai","authType":"api_key","strategy":"api_key_prompt","state":"\#(state)","createdAt":"2026-05-17T12:00:00Z","updatedAt":"2026-05-17T12:00:00Z","expiresAt":"2026-05-17T12:10:00Z","authUrl":{"url":"https://auth.example.net/private-flow","instructions":"Sign in"},"prompt":{"id":"prompt-one","type":"secret","message":"API key"}}"#
     )
   }
   func usage(_ percent: Int = 25, stale: Bool = false) throws -> ProviderUsageSnapshot {
@@ -277,6 +277,42 @@ import Testing
     #expect(await h.transport.count(usagePath) == after)
     await h.clock.advance(1)
     await eventually { await h.transport.count(usagePath) == after + 1 }
+    h.store.closeProviders(sourceID: source)
+  }
+  @Test func latePollCannotRegressAnInputCompletion() async throws {
+    let h = try await live()
+    let state = h.store.providerState(source)
+    await h.transport.set(base + "/sessions", [.response(try response(try session(), status: 201))])
+    try start(h)
+    await eventually { !state.busy }
+    await h.transport.set(base + "/sessions/auth-one", [.paused])
+    await eventually { await h.clock.pending() >= 2 }
+    await h.clock.advance(1)
+    await eventually { await h.transport.pauseCount() == 1 }
+    await h.transport.set(
+      base + "/sessions/auth-one/input", [.response(try response(try session(state: "succeeded")))])
+    h.store.submitProviderAuth(
+      sourceID: source, sessionID: "auth-one", promptID: "prompt-one", value: "fictional-input")
+    await eventually { !state.busy }
+    await h.transport.release(try response(try session()))
+    #expect(state.session?.state == "succeeded")
+    #expect(state.authError == nil)
+    h.store.closeProviders(sourceID: source)
+  }
+  @Test func capabilityAndLiveStateAreRecheckedImmediatelyBeforeDispatch() async throws {
+    let h = try await live()
+    let state = h.store.providerState(source)
+    let m = try method(h)
+    h.store.startProviderAuth(sourceID: source, providerID: "openai", method: m)
+    h.store.startProviderAuth(
+      sourceID: source, providerID: "openai", method: m, confirmedReplacement: true)
+    h.store.bootstrap?.agents[0].supportsProviderAuth = false
+    await eventually { !state.busy }
+    #expect(await h.transport.count(base + "/sessions", method: "POST") == 0)
+    h.store.startProviderCheck(sourceID: source)
+    h.store.connection = .offline
+    await eventually { !state.busy }
+    #expect(await h.transport.count(base + "/checks", method: "POST") == 0)
     h.store.closeProviders(sourceID: source)
   }
   @Test func failedReplacementPreservesThePriorSession() async throws {

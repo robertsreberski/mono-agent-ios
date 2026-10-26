@@ -52,13 +52,16 @@ extension ConsoleStore {
     state.sessionPoll?.cancel()
     // Do not cancel admission tasks: observe IDs even if the view/lifetime disappears.
     Task { [weak self] in
-      guard let self, self.providerCurrent(state, owner: owner, epoch: epoch) else { return }
+      guard let self else { return }
       defer {
         if state.owner == owner {
           state.busy = false
           self.pollProviderSession(state)
         }
       }
+      guard self.providerCurrent(state, owner: owner, epoch: epoch),
+        self.agent(sourceID)?.supportsProviderAuth == true
+      else { return }
       do {
         let next = try await self.api.startAuth(
           id: sourceID,
@@ -111,13 +114,16 @@ extension ConsoleStore {
     let epoch = epoch
     state.sessionPoll?.cancel()
     Task { [weak self] in
-      guard let self, self.providerCurrent(state, owner: owner, epoch: epoch) else { return }
+      guard let self else { return }
       defer {
         if state.owner == owner {
           state.busy = false
           self.pollProviderSession(state)
         }
       }
+      guard self.providerCurrent(state, owner: owner, epoch: epoch),
+        self.agent(sourceID)?.supportsProviderAuth == true
+      else { return }
       do {
         let next = try await self.api.authInput(
           id: sourceID, sessionId: sessionID, body: .init(promptId: promptID, value: value))
@@ -158,13 +164,16 @@ extension ConsoleStore {
     let epoch = epoch
     state.sessionPoll?.cancel()
     Task { [weak self] in
-      guard let self, self.providerCurrent(state, owner: owner, epoch: epoch) else { return }
+      guard let self else { return }
       defer {
         if state.owner == owner {
           state.busy = false
           self.pollProviderSession(state)
         }
       }
+      guard self.providerCurrent(state, owner: owner, epoch: epoch),
+        self.agent(sourceID)?.supportsProviderAuth == true
+      else { return }
       do {
         try await self.api.cancelAuth(id: sourceID, sessionId: session.id)
         guard self.providerCurrent(state, owner: owner, epoch: epoch),
@@ -273,13 +282,16 @@ extension ConsoleStore {
     let sourceGeneration = state.generation
     let key = UUID().uuidString
     Task { [weak self] in
-      guard let self, self.providerCurrent(state, owner: owner, epoch: epoch) else { return }
+      guard let self else { return }
       defer {
         if state.owner == owner {
           state.busy = false
           self.pollProviderCheck(state)
         }
       }
+      guard self.providerCurrent(state, owner: owner, epoch: epoch),
+        self.agent(sourceID)?.supportsProviderAuthChecks == true
+      else { return }
       do {
         let next = try await self.api.startAuthCheck(id: sourceID, body: .init(idempotencyKey: key))
         guard self.providerCurrent(state, owner: owner, epoch: epoch),
@@ -312,13 +324,16 @@ extension ConsoleStore {
     let epoch = epoch
     state.checkPoll?.cancel()
     Task { [weak self] in
-      guard let self, self.providerCurrent(state, owner: owner, epoch: epoch) else { return }
+      guard let self else { return }
       defer {
         if state.owner == owner {
           state.busy = false
           self.pollProviderCheck(state)
         }
       }
+      guard self.providerCurrent(state, owner: owner, epoch: epoch),
+        self.agent(sourceID)?.supportsProviderAuthChecks == true
+      else { return }
       do {
         try await self.api.cancelAuthCheck(id: sourceID, checkId: check.id)
         guard self.providerCurrent(state, owner: owner, epoch: epoch),
