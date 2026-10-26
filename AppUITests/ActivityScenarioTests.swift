@@ -71,7 +71,11 @@ import XCTest
     XCTAssertTrue(band.waitForExistence(timeout: 10))
     band.tap()
     let event = reveal(app, "job-event-succeeded-terminal")
-    XCTAssertTrue(activityWait { event.label.contains("Bash job succeeded") && event.isHittable })
+    XCTAssertTrue(
+      activityWait {
+        event.exists && !event.frame.isEmpty && event.label.contains("Bash job succeeded")
+          && event.isHittable
+      })
     event.tap()
     XCTAssertTrue(app.staticTexts["Outcome"].firstMatch.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Exit"].firstMatch.waitForExistence(timeout: 5))
@@ -119,9 +123,18 @@ import XCTest
       predicate: NSPredicate { _, _ in predicate() }, object: nil)
     return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
   }
-  private func activityCapture(_ scenario: String, _ appearance: String, _ variant: String) {
-    XCTAssertTrue(activityWait { screenshotHasContent(XCUIScreen.main.screenshot()) })
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+  private func activityCapture(
+    _ app: XCUIApplication, _ scenario: String, _ appearance: String, _ variant: String
+  ) {
+    let checkSidebar = screenshotChecksSidebar(app)
+    let rendered = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        screenshotHasContent(XCUIScreen.main.screenshot(), checkSidebar: checkSidebar)
+      }, object: nil)
+    XCTAssertTrue(XCTWaiter.wait(for: [rendered], timeout: 30) == .completed)
+    let screenshot = XCUIScreen.main.screenshot()
+    XCTAssertTrue(screenshotHasContent(screenshot, checkSidebar: checkSidebar))
+    let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name = "synthetic-fixture__\(scenario)__\(appearance)__\(variant)"
     attachment.lifetime = .keepAlways
     add(attachment)
@@ -131,7 +144,7 @@ import XCTest
     let glance = element(app, "job-stack")
     XCTAssertTrue(
       activityWait { glance.exists && glance.label.contains("Check the sample catalog") })
-    activityCapture("conversation-jobs", appearance, "glance")
+    activityCapture(app, "conversation-jobs", appearance, "glance")
     app.terminate()
   }
   private func captureJobEvent(_ appearance: String) {
@@ -147,7 +160,7 @@ import XCTest
     XCTAssertTrue(
       element(app, "tool-call-launch-running").waitForNonExistence(timeout: 3),
       "The launch folds into the started fact")
-    activityCapture("conversation-jobs", appearance, "events")
+    activityCapture(app, "conversation-jobs", appearance, "events")
     app.terminate()
   }
   private func captureForegroundDelegation(_ appearance: String) {
@@ -156,7 +169,10 @@ import XCTest
     XCTAssertTrue(band.waitForExistence(timeout: 10))
     band.tap()
     let delegation = reveal(app, "subagent-delegation-complete")
-    XCTAssertTrue(activityWait { delegation.exists && delegation.isHittable })
+    XCTAssertTrue(
+      activityWait {
+        delegation.exists && !delegation.frame.isEmpty && delegation.isHittable
+      })
     delegation.tap()
     let task = reveal(app, "subagent-task-delegation-complete")
     XCTAssertTrue(activityWait { (task.value as? String) == "Collapsed" })
@@ -171,7 +187,7 @@ import XCTest
     XCTAssertTrue(
       delegation.descendants(matching: .button)["tool-cluster"].firstMatch.waitForNonExistence(
         timeout: 3))
-    activityCapture("conversation-subagents", appearance, "foreground")
+    activityCapture(app, "conversation-subagents", appearance, "foreground")
     app.terminate()
   }
 
