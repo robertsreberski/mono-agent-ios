@@ -78,7 +78,6 @@ struct ConversationTags: View {
     }
     .fixedSize(horizontal: true, vertical: false)
     .sheet(item: $editor) { TagSettings(store: store, request: $0) }
-    .task(id: thread.sourceId) { await store.refreshOrganizeLabels(sourceID: thread.sourceId) }
     .onChange(of: store.selectedThreadID) { editor = nil }
   }
 }

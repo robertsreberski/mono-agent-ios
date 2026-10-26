@@ -157,13 +157,8 @@ struct ConversationTranscript<Header: View>: View {
       }
     }
     .accessibilityIdentifier("conversation-transcript")
-    .onChange(of: policy.shouldShowJump, initial: true) { _, available in
-      jumpControl.available = available
-      jumpControl.jump = {
-        policy.jump()
-        scrollPosition.scrollTo(edge: .bottom)
-      }
-    }
+    .onChange(of: policy.shouldShowJump, initial: true) { syncJumpControl() }
+    .onAppear { syncJumpControl() }
     .onDisappear {
       jumpControl.available = false
       jumpControl.jump = nil
@@ -187,6 +182,14 @@ struct ConversationTranscript<Header: View>: View {
       }
     }
   }
+  private func syncJumpControl() {
+    jumpControl.available = policy.shouldShowJump
+    jumpControl.jump = {
+      policy.jump()
+      scrollPosition.scrollTo(edge: .bottom)
+    }
+  }
+
   @ViewBuilder private var historyStatus: some View {
     if state.truncated {
       ConnectionBanner(

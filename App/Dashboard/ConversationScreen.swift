@@ -202,8 +202,12 @@ struct ConversationScreen: View {
         header.frame(width: max(120, screenWidth - (16 + 60)), alignment: .leading)
       }
       .sharedBackgroundVisibility(.hidden)
-      ToolbarItem(placement: .topBarTrailing) { detailsMenu }
-        .sharedBackgroundVisibility(.hidden)
+      ToolbarItem(placement: .topBarTrailing) {
+        // Toolbar Menu is promoted to a native bar item: ButtonStyle does not supply its
+        // tile. Keep the system's one glass background and explicitly neutralize its tint.
+        detailsMenu.buttonStyle(.plain).tint(WebColor.textSoft.color)
+      }
+      .sharedBackgroundVisibility(.visible)
     }
   }
 
@@ -288,10 +292,11 @@ struct ConversationScreen: View {
   private var detailsMenu: some View {
     Menu {
       if let thread {
-        Button("Rename conversation", systemImage: "pencil") {
+        Button("Rename", systemImage: "pencil") {
           renamedTitle = title
           renaming = true
         }
+        .accessibilityLabel("Rename conversation")
         .accessibilityIdentifier("action-rename")
         .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
         Menu {
@@ -321,15 +326,17 @@ struct ConversationScreen: View {
         }
         .accessibilityIdentifier("action-project")
         .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
-        Button("New project from this chat", systemImage: "plus") {
+        Button("New project", systemImage: "plus") {
           projectEditor = .init(sourceID: thread.sourceId, threadID: thread.id)
         }
+        .accessibilityLabel("New project from this chat")
         .accessibilityIdentifier("action-new-project")
         .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
         if thread.projectId != nil {
-          Button("Remove from project", systemImage: "xmark") {
+          Button("Remove project", systemImage: "xmark") {
             store.setConversationProject(threadID: thread.id, projectID: nil)
           }
+          .accessibilityLabel("Remove from project")
           .accessibilityIdentifier("action-remove-project")
           .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
         }
@@ -340,18 +347,21 @@ struct ConversationScreen: View {
             }
           } label: {
             Label {
-              Text(thread.wakeSchedule == nil ? "Schedule wake-up" : "Edit wake-up schedule")
+              Text(thread.wakeSchedule == nil ? "Schedule wake-up" : "Edit wake-up")
               if let schedule = thread.wakeSchedule { Text(WakeScheduleModel.status(schedule)) }
             } icon: {
               Image(systemName: "clock")
             }
           }
+          .accessibilityLabel(
+            thread.wakeSchedule == nil ? "Schedule wake-up" : "Edit wake-up schedule"
+          )
           .accessibilityIdentifier("action-wake")
           .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
         }
         Divider()
         Button(
-          thread.archivedAt == nil ? "Archive conversation" : "Restore conversation",
+          thread.archivedAt == nil ? "Archive" : "Restore",
           systemImage: thread.archivedAt == nil ? "archivebox" : "arrow.uturn.backward"
         ) {
           if thread.archivedAt == nil {
@@ -360,12 +370,16 @@ struct ConversationScreen: View {
             store.restoreConversation(threadID: thread.id)
           }
         }
+        .accessibilityLabel(
+          thread.archivedAt == nil ? "Archive conversation" : "Restore conversation"
+        )
         .accessibilityIdentifier("action-archive")
         .disabled(!store.canOrganize || store.pendingConversationActions[thread.id] != nil)
         if store.canDeleteConversation(thread) {
-          Button("Permanently delete", systemImage: "trash", role: .destructive) {
+          Button("Delete", systemImage: "trash", role: .destructive) {
             store.requestConversationAction(.delete, threadID: thread.id)
           }
+          .accessibilityLabel("Permanently delete conversation")
           .accessibilityIdentifier("action-delete")
           .disabled(!store.canOrganize || store.conversationDeletionPending(thread.id))
         }

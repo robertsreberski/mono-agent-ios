@@ -11,6 +11,7 @@ import SwiftUI
 struct ComposerJobDock: View {
   let state: ConversationState
   let store: ConsoleStore
+  var topClearance: CGFloat = 0
   let onAnswer: (PeerProcessJobQuestion) -> Void
   @Environment(\.verticalSizeClass) private var verticalSizeClass
   @Environment(\.consoleTheme) private var theme
@@ -36,6 +37,7 @@ struct ComposerJobDock: View {
       // transcript: one veiled glass surface keeps shelf text legible over code. Reduce
       // Transparency keeps the web stack-bg fill with its 1 px line-strong edge.
       .padding(.horizontal, 10)
+      .padding(.top, topClearance)
       .webGlassContent()
       .background(
         WebGlass.sheetVeil.color,
@@ -58,6 +60,7 @@ struct ComposerJobDock: View {
 
 /// Pure glass, straddling the dock rather than floating over transcript prose. No extra bar.
 struct TranscriptJumpButton: View {
+  var sharesDockMaterial = false
   let jump: () -> Void
   var body: some View {
     Button(action: jump) {
@@ -66,7 +69,15 @@ struct TranscriptJumpButton: View {
         .font(.system(size: 13, weight: .semibold))
         .foregroundStyle(WebColor.textSoft.color)
         .frame(width: WebMetrics.tile, height: WebMetrics.tile)
-        .floatingGlass(in: Circle(), opaqueFill: WebColor.surfaceRaised.color)
+        .background {
+          Circle().fill(.clear)
+            .floatingGlass(in: Circle(), opaqueFill: WebColor.surfaceRaised.color)
+            .mask(alignment: .top) {
+              // Label inset 4, mount offset −20: only its upper 16 pt are above the
+              // dock. The dock supplies the lower 20 pt's single material.
+              Rectangle().frame(height: sharesDockMaterial ? 16 : WebMetrics.tile)
+            }
+        }
         .overlay {
           Circle().strokeBorder(
             WebColor.lineStrong.color(lightOpacity: 1, darkOpacity: 0), lineWidth: 1)

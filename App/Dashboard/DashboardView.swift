@@ -23,6 +23,7 @@ struct DashboardView: View {
   @State private var showOffline = false
   @State private var expandedAgents: Set<String> = []
   @State private var loadingOlder = false
+  @State private var footerHeight: CGFloat = 44
   @AppStorage("dashboard.projectsCollapsed") private var projectsCollapsed = false
 
   // MARK: Derived state
@@ -159,13 +160,20 @@ struct DashboardView: View {
         .padding(.top, typeSize.isAccessibilitySize ? 0 : 8)
         .padding(.bottom, 28)
       }
-      .contentMargins(.bottom, 60, for: .scrollContent)
+      .contentMargins(.bottom, footerHeight + 8, for: .scrollContent)
       .scrollIndicators(.hidden)
       .scrollDismissesKeyboard(.immediately)
       .accessibilityIdentifier("dashboard-list")
       .refreshable { await refresh() }
     }
-    .overlay(alignment: .bottom) { footer }
+    .overlay(alignment: .bottom) {
+      footer.onGeometryChange(for: CGFloat.self) {
+        $0.size.height
+      } action: { height in
+        // The overlay measures independently of scroll content margins: no feedback loop.
+        footerHeight = height
+      }
+    }
   }
 
   @ViewBuilder private func sections(now: Date) -> some View {

@@ -36,7 +36,7 @@ struct ModelSelectorMenu: View {
                   agent, model: controller.runModel, effort: controller.runEffort)
             )
             .webFont(.effortBadge)
-            .foregroundStyle(WebGlass.accentText(theme.palette).color)
+            .foregroundStyle(theme.palette.accentStrong.color)
             .lineLimit(1)
             .padding(.horizontal, 6).padding(.vertical, 3)
             .background(theme.palette.accentInk, in: RoundedRectangle(cornerRadius: 5))

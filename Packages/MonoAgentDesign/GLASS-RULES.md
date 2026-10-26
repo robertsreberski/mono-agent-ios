@@ -56,7 +56,7 @@ There are two kinds of floating surface:
    same component therefore stays solid in the transcript and turns translucent in a sheet.
 8. **Web accents for meters and figures.** Meter fills use `palette.accent`. Tracks use
    `WebGlass.track`. Accent *text* uses `WebGlass.accentText`. Icon tiles use
-   `palette.accentInk`. Thinking-chip labels/edges use `palette.accentStrong` in both
+   `palette.accentInk`. Thinking-chip labels/edges and composer effort badges use `palette.accentStrong` in both
    appearances: ordinary dark accent text on accent ink falls below AA on busy sheet bleed
    (`selectedEffortLabelsPassAA`).
 9. **Actions:** primary is `.glassProminent` tinted with the web accent, with `onAccent`
@@ -68,7 +68,10 @@ There are two kinds of floating surface:
     glass, with no `toolbarBackground`. The two standalone dashboard footer buttons are a
     bottom overlay: content scrolls beneath them, with bottom content margins so the last row
     clears their hit targets. No shared pill, hard scroll-edge effect, band or fade. Jump to
-    latest overlays the dock's top edge at −20 pt, with no reserved safe-area band.
+    latest overlays the dock's top edge at −20 pt, with no reserved safe-area band. While
+    shown, the first dock surface has 24 pt of non-interactive top padding, clear of its full
+    44 pt target. The circle's lower glass is clipped over full-width dock material (especially
+    the job shelf), so the dock supplies that part's material rather than stacking two glasses.
 11. **Text keeps the web scale, spacing and hierarchy.** The web colour is used unless it
     fails AA on the material. In that case use the `WebGlass` adjustment (table below).
 12. **The large detent is opaque** (the system does this). The veil and inks are translucent,

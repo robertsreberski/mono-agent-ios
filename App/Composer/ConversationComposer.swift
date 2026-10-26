@@ -85,12 +85,7 @@ private struct ConversationComposerMount: ViewModifier {
       .environment(\.composerActions, actions)
       .safeAreaBar(edge: .bottom) {
         if let controller = mountState.controller {
-          ComposerBar(controller: controller)
-            .overlay(alignment: .top) {
-              if jumpControl.available {
-                TranscriptJumpButton { jumpControl.jump?() }.offset(y: -20)
-              }
-            }
+          ComposerBar(controller: controller, jumpControl: jumpControl)
             .environment(\.composerSampleAttachments, sampleAttachments)
         }
       }
