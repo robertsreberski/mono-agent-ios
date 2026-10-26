@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
+import MonoAgentDesign
 import MonoAgentKit
 import MonoAgentStore
 
@@ -315,24 +316,7 @@ enum TranscriptPresentation {
       return
         "Resumed · \(date(marker.at)?.formatted(date: .abbreviated, time: .shortened) ?? marker.at)"
     case "compaction":
-      let label =
-        [
-          "succeeded": "Context compacted", "skipped": "Context compaction skipped",
-          "running": "Compacting context…",
-        ][marker.status ?? ""]
-        ?? (marker.reason == "outcome_unknown"
-          ? "Context compaction outcome unknown" : "Context compaction failed")
-      let counts: String
-      if marker.status == "succeeded", let before = marker.tokensBefore,
-        let after = marker.tokensAfter, before.isFinite, after.isFinite
-      {
-        counts =
-          " · \(String(format: "%.0f", before)) → \(marker.tokenCountsExact == true ? "" : "≈")\(String(format: "%.0f", after)) tokens"
-      } else {
-        counts = ""
-      }
-      return label + " · " + (marker.trigger ?? "automatic") + counts
-        + (marker.reason.map { " · " + $0.replacingOccurrences(of: "_", with: " ") } ?? "")
+      return compactionMarker(marker, running: marker.status == "running").text
     default: return "Conversation marker · " + marker.kind
     }
   }
@@ -355,31 +339,87 @@ enum TranscriptPresentation {
     return recognized ? best ?? [:] : nil
   }
   static func compaction(_ value: TelemetryPart, running: Bool) -> String? {
+    compactionContent(value, running: running)?.text
+  }
+  static func compactionContent(_ value: TelemetryPart, running: Bool) -> CompactionMarkerContent? {
     guard let payload = compactionPayload(value) else { return nil }
-    let reported = string(payload["status"]) ?? "failed"
-    let status = reported == "running" && !running ? "interrupted" : reported
-    var label =
+    func number(_ key: String) -> Double? {
+      guard case .number(let value) = payload[key] else { return nil }
+      return value
+    }
+    return compactionContent(
+      status: string(payload["status"]), reason: string(payload["reason"]),
+      trigger: string(payload["trigger"]), before: number("tokensBefore"),
+      after: number("tokensAfter"),
+      exact: payload["tokenCountsExact"] == .bool(true), running: running)
+  }
+  static func compactionMarker(_ marker: WebConversationMarkerPart, running: Bool)
+    -> CompactionMarkerContent
+  {
+    compactionContent(
+      status: marker.status, reason: marker.reason, trigger: marker.trigger,
+      before: marker.tokensBefore, after: marker.tokensAfter,
+      exact: marker.tokenCountsExact == true,
+      running: running)
+  }
+  static func compactionContent(
+    status reported: String?, reason: String?, trigger: String?, before: Double?, after: Double?,
+    exact: Bool, running: Bool
+  ) -> CompactionMarkerContent {
+    let recognized =
+      ["running", "succeeded", "skipped", "failed"].contains(reported ?? "") ? reported! : "failed"
+    let status = recognized == "running" && !running ? "interrupted" : recognized
+    let label =
       [
         "running": "Compacting context…", "succeeded": "Context compacted",
         "skipped": "Context compaction skipped", "interrupted": "Context compaction interrupted",
-      ][status] ?? "Context compaction failed"
-    if string(payload["reason"]) == "outcome_unknown" {
-      label = "Context compaction outcome unknown"
+      ][status]
+      ?? (reason == "outcome_unknown"
+        ? "Context compaction outcome unknown" : "Context compaction failed")
+    let approximation = exact ? "" : "≈"
+    var counts: String?
+    if status == "succeeded" {
+      switch (compactionTokenCount(before), compactionTokenCount(after)) {
+      case (.some(let before), .some(let after)):
+        counts = before + " → " + approximation + after + " tokens"
+      case (.some(let before), .none): counts = approximation + before + " tokens before"
+      case (.none, .some(let after)): counts = approximation + after + " tokens after"
+      default: break
+      }
     }
-    label += " · " + (string(payload["trigger"]) ?? "automatic")
-    if status == "succeeded", case .number(let before) = payload["tokensBefore"],
-      case .number(let after) = payload["tokensAfter"], before.isFinite, after.isFinite,
-      before >= 0, after >= 0
-    {
-      label +=
-        " · " + String(format: "%.0f", before) + " → "
-        + (payload["tokenCountsExact"] == .bool(true) ? "" : "≈") + String(format: "%.0f", after)
-        + " tokens"
+    let detail =
+      status == "succeeded"
+      ? nil
+      : [
+        "model_changed": "Model changed.", "nothing_to_compact": "Nothing to compact yet.",
+        "outcome_unknown": "Response lost; it may have completed.",
+      ][reason ?? ""]
+    return .init(
+      label: label, counts: counts, detail: detail,
+      trigger: trigger == "manual" ? "manual" : "automatic",
+      running: status == "running", failed: status == "failed" || status == "interrupted")
+  }
+  static func compactionTokenCount(_ value: Double?) -> String? {
+    guard let value, value.isFinite, value >= 0 else { return nil }
+    guard value < 999_950_000_000 else { return "≥1T" }
+    var unit = 0
+    let divisors: [Double] = [1, 1_000, 1_000_000, 1_000_000_000]
+    let suffixes = ["", "k", "M", "B"]
+    while unit < divisors.count - 1 {
+      let rounded = unit == 0 ? value.rounded() : (value / divisors[unit] * 10).rounded() / 10
+      guard rounded >= 1_000 else { break }
+      unit += 1
     }
-    if let reason = string(payload["reason"]) {
-      label += " · " + reason.replacingOccurrences(of: "_", with: " ")
-    }
-    return label
+    let text =
+      unit == 0 ? String(format: "%.0f", value) : String(format: "%.1f", value / divisors[unit])
+    return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + suffixes[unit]
+  }
+  static func liveInputLabel(_ status: String) -> String? {
+    [
+      "pending": "Steering current run…", "applied": "Consumed by current run",
+      "queued": "Queued as next turn", "uncertain": "Delivery uncertain — not retried",
+      "cancelled": "Cancelled",
+    ][status]
   }
   static func hasManualCompactionResult(_ message: WebMessage, since at: String) -> Bool {
     guard let started = date(at) else { return false }

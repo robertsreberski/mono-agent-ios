@@ -76,6 +76,14 @@
       return call
     }
     static func messages(_ scenario: StoreScenario, older: Bool = false) throws -> [WebMessage] {
+      if scenario == .conversationTranscript {
+        if ProcessInfo.processInfo.arguments.contains("--fixture-markers") {
+          return try markerMessages()
+        }
+        if ProcessInfo.processInfo.arguments.contains("--fixture-message-statuses") {
+          return try statusMessages()
+        }
+      }
       if scenario.isMcp { return try McpUiScript.messages(scenario) }
       if scenario == .conversationRestartCard { return try RichReplyFixture.restarts() }
       if scenario == .conversationAttachments { return try RichReplyFixture.images(scenario) }
@@ -89,6 +97,9 @@
             text:
               "Sample message \(index) · A fictional field note for the scrolling performance fixture.",
             turn: "turn-\(index / 2)")
+          if ProcessInfo.processInfo.arguments.contains("--fixture-long-markdown") {
+            row.parts = [.text(.init(text: String(repeating: markdown + "\n\n", count: 3)))]
+          }
           if index % 100 == 1 {
             var call = try tool(index, full: true)
             call.result = .string(String(repeating: "Large synthetic output line.\n", count: 2000))
@@ -103,7 +114,20 @@
         id: "sample-assistant", role: "assistant",
         text: "The sample is ready. **Two checks** passed; one fictional file needs attention.")
       switch scenario {
-      case .conversationMarkdown: assistant.parts = [.text(.init(text: markdown))]
+      case .conversationMarkdown:
+        if ProcessInfo.processInfo.arguments.contains("--fixture-code-chips") {
+          assistant.parts = [
+            .text(
+              .init(
+                text:
+                  "# `npm test`\n\n`swift test`\n\n`start` then prose and `end`\n\n[![A fictional linked garden](https://example.com/garden.png)](https://example.com/guide)"
+              ))
+          ]
+          return [user, assistant]
+        }
+        assistant.parts = [
+          .text(.init(text: markdown + "\n\n![A fictional garden](https://example.com/garden.png)"))
+        ]
       case .conversationTools:
         assistant.parts = [
           .toolCall(try tool(1)), .toolCall(try tool(2)),
@@ -146,6 +170,49 @@
         return [user, followup, assistant]
       }
       return [user, assistant]
+    }
+    static func markerMessages() throws -> [WebMessage] {
+      var row = try message(id: "sample-markers", role: "assistant", text: "Compaction examples")
+      row.parts = [.text(.init(text: "Fictional compaction events"))]
+      for status in ["succeeded", "skipped", "failed", "running"] {
+        let marker: WebConversationMarkerPart = try decode(
+          #"{"type":"conversation-marker","at":"2030-01-02T11:59:00Z","kind":"compaction","trigger":"automatic","status":"\#(status)","tokensBefore":12000,"tokensAfter":2000,"tokenCountsExact":false,"reason":"\#(status == "failed" ? "outcome_unknown" : "nothing_to_compact")"}"#
+        )
+        row.parts.append(.conversationMarker(marker))
+      }
+      var active = try message(id: "sample-manual-compaction", role: "assistant", text: "")
+      active.status = "running"
+      active.finishedAt = nil
+      active.parts = [
+        .telemetry(
+          try decode(
+            #"{"type":"telemetry","event":"context_compaction","data":{"status":"running","trigger":"manual"}}"#
+          ))
+      ]
+      return [row, active]
+    }
+    static func statusMessages() throws -> [WebMessage] {
+      var rows = [
+        try message(id: "sample-system", role: "system", text: "This is a fictional system notice.")
+      ]
+      for (status, text) in [
+        ("pending", "Review the sample."), ("applied", "Focus on readability."),
+        ("cancelled", "Skip the draft."),
+      ] {
+        var row = try message(id: "sample-" + status, role: "user", text: text)
+        row.liveInputStatus = status
+        rows.append(row)
+      }
+      var wake = try message(id: "sample-wake", role: "assistant", text: "")
+      wake.parts = [
+        .scheduledWake(
+          try decode(
+            #"{"type":"scheduled-wake","occurrenceId":"sample-wake","scheduledAt":"2030-01-02T11:00:00Z","firedAt":"2030-01-02T11:00:02Z","timezone":"UTC","message":"Review the fictional release."}"#
+          )),
+        try decode(#"{"type":"future-sample-part"}"#, as: WebMessagePart.self),
+      ]
+      rows.append(wake)
+      return rows
     }
     static func cached(_ scenario: StoreScenario) throws -> CachedConversation {
       .init(

@@ -7,6 +7,51 @@ import Testing
 @testable import MonoAgent
 
 struct TranscriptPresentationTests {
+  @Test func compactCountsPromoteAfterRoundingAndBoundAbsurdValues() {
+    #expect(TranscriptPresentation.compactionTokenCount(999_949) == "999.9k")
+    #expect(TranscriptPresentation.compactionTokenCount(999_960) == "1M")
+    #expect(TranscriptPresentation.compactionTokenCount(999.96) == "1k")
+    #expect(TranscriptPresentation.compactionTokenCount(999_960_000) == "1B")
+    #expect(TranscriptPresentation.compactionTokenCount(.greatestFiniteMagnitude) == "≥1T")
+    #expect(TranscriptPresentation.compactionTokenCount(-1) == nil)
+    #expect(TranscriptPresentation.compactionTokenCount(.infinity) == nil)
+    #expect(TranscriptPresentation.compactionTokenCount(.nan) == nil)
+  }
+  @Test func compactionSegmentsNormalizeStatusCountsAndTrigger() {
+    let success = TranscriptPresentation.compactionContent(
+      status: "succeeded", reason: "model_changed", trigger: "manual", before: 12000,
+      after: 2500, exact: false, running: false)
+    #expect(success.label == "Context compacted")
+    #expect(success.counts == "12k → ≈2.5k tokens")
+    #expect(success.detail == nil)
+    #expect(success.trigger == "manual")
+    #expect(!success.running && !success.failed)
+    let interrupted = TranscriptPresentation.compactionContent(
+      status: "running", reason: nil, trigger: "unexpected", before: nil, after: nil,
+      exact: false, running: false)
+    #expect(interrupted.label == "Context compaction interrupted")
+    #expect(interrupted.failed && !interrupted.running)
+    #expect(interrupted.trigger == "automatic")
+    let partial = TranscriptPresentation.compactionContent(
+      status: "succeeded", reason: nil, trigger: nil, before: .nan, after: 800,
+      exact: false, running: false)
+    #expect(partial.counts == "≈800 tokens after")
+    let failed = TranscriptPresentation.compactionContent(
+      status: "unknown", reason: "outcome_unknown", trigger: nil, before: -1, after: .infinity,
+      exact: true, running: false)
+    #expect(failed.failed)
+    #expect(failed.counts == nil)
+    #expect(failed.detail == "Response lost; it may have completed.")
+  }
+  @Test func liveInputWordingRejectsUnknownStatuses() {
+    #expect(TranscriptPresentation.liveInputLabel("pending") == "Steering current run…")
+    #expect(TranscriptPresentation.liveInputLabel("applied") == "Consumed by current run")
+    #expect(TranscriptPresentation.liveInputLabel("queued") == "Queued as next turn")
+    #expect(
+      TranscriptPresentation.liveInputLabel("uncertain") == "Delivery uncertain — not retried")
+    #expect(TranscriptPresentation.liveInputLabel("cancelled") == "Cancelled")
+    #expect(TranscriptPresentation.liveInputLabel("unknown") == nil)
+  }
   @Test func onlyRunningMessagesScheduleElapsedTicks() {
     #expect(TranscriptPresentation.needsElapsedTimeline(status: "running"))
     for status in ["complete", "failed", "cancelled", "interrupted", "queued", ""] {
@@ -86,7 +131,7 @@ struct TranscriptPresentationTests {
       #"{"type":"telemetry","event":"runtime","data":{"kind":"context_compaction","data":{"status":"succeeded","trigger":"manual","timestamp":1893585600000,"tokensBefore":12000,"tokensAfter":2000}}}"#
     )
     #expect(
-      TranscriptPresentation.compaction(telemetry, running: false)?.contains("12000 → ≈2000")
+      TranscriptPresentation.compaction(telemetry, running: false)?.contains("12k → ≈2k")
         == true)
     message.parts = [.telemetry(telemetry)]
     #expect(

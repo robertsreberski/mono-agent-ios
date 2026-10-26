@@ -117,7 +117,16 @@ import XCTest
   private func draftLifecycle(_ app: XCUIApplication, capture: () -> Void) {
     let message = element(app, "message-sample-assistant")
     XCTAssertTrue(message.waitForExistence(timeout: 10))
-    message.press(forDuration: 1.2)
+    // Long-press the action area, not selectable prose (which can open the native
+    // text-selection menu instead of the message menu on iPad).
+    let action = message.buttons.matching(identifier: "message-copy").firstMatch
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        action.exists && !action.frame.isEmpty && action.isHittable
+          && app.windows.firstMatch.frame.contains(action.frame)
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+    action.press(forDuration: 1.2)
     let quote = app.buttons["Quote"].firstMatch
     XCTAssertTrue(quote.waitForExistence(timeout: 5))
     quote.tap()
@@ -260,7 +269,7 @@ import XCTest
     enabledElement(app, "composer-queue").tap()
     // Admission's status is ephemeral (4 seconds); a slow AX snapshot can miss it.
     // The durable applied live-input message proves admission without that timing race.
-    XCTAssertTrue(waitForText(app, "Follow-up · applied"))
+    XCTAssertTrue(waitForText(app, "Consumed by current run"))
     element(app, "composer-stop").tap()
     let stopped = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"), object: element(app, "composer-stop"))

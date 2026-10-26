@@ -3,7 +3,13 @@ import XCTest
 
 /// Explicit opt-in timing drill; does not alter transcript regression assertions.
 @MainActor final class PerformanceProbeTests: XCTestCase {
+  func testLongMarkdownSwipeTiming() throws {
+    try swipeTiming(markdown: true)
+  }
   func testLongSwipeTiming() throws {
+    try swipeTiming(markdown: false)
+  }
+  private func swipeTiming(markdown: Bool) throws {
     guard ProcessInfo.processInfo.environment["MONO_PERF_PROBE"] == "1" else {
       throw XCTSkip("Opt-in performance timing drill")
     }
@@ -11,6 +17,7 @@ import XCTest
     app.launchArguments = [
       "--scenario", "conversation-long", "--reset-test-data", "--performance-probe",
     ]
+    if markdown { app.launchArguments += ["--fixture-long-markdown"] }
     app.launch()
     XCTAssertTrue(
       app.descendants(matching: .any)["scenario-ready"].firstMatch.waitForExistence(timeout: 20))
@@ -18,13 +25,13 @@ import XCTest
     let scroll = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
     let older = app.descendants(matching: .any)["transcript-load-older"].firstMatch
     var swipes = 0
-    for _ in 0..<120 {
+    for _ in 0..<(markdown ? 12 : 120) {
       if older.exists && older.isHittable { break }
       scroll.swipeDown(velocity: .fast)
       swipes += 1
     }
     print(
-      "PERF_SWIPES count=\(swipes) elapsed=\(start.duration(to: .now)) reachedOlder=\(older.exists && older.isHittable)"
+      "PERF_SWIPES markdown=\(markdown) count=\(swipes) elapsed=\(start.duration(to: .now)) reachedOlder=\(older.exists && older.isHittable)"
     )
     app.terminate()
   }
