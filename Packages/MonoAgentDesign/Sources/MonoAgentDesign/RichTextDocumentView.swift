@@ -85,13 +85,12 @@ public struct RichTextDocumentView: View {
     case .rule:
       Rectangle().fill(WebColor.line.color).frame(height: 1)
     case .table:
-      MarkdownTableView(rows: block.rows, inlineText: inlineText, compact: sizeClass != .regular)
+      MarkdownTableView(rows: block.rows, inlineText: inlineContent, compact: sizeClass != .regular)
     case .heading(let level):
-      inlineText(block.runs)
+      inlineContent(block.runs)
         .font(.system(size: headingSize(level), weight: .bold))
         .tracking(level <= 2 ? -0.01 * headingSize(level) : 0)
         .foregroundStyle(WebColor.text.color)
-        .textRenderer(InlineChipRenderer())
         .accessibilityAddTraits(.isHeader).textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
     case .paragraph, .quote:
@@ -115,9 +114,8 @@ public struct RichTextDocumentView: View {
         } else if block.depth > 0 && block.kind != .quote {
           Color.clear.frame(width: 1.45 * em, height: 1)
         }
-        inlineText(block.runs)
+        inlineContent(block.runs)
           .webFont(.prose)
-          .textRenderer(InlineChipRenderer())
           // CSS line boxes retain half-leading above/below even a single line; SwiftUI's
           // lineSpacing only inserts the leading BETWEEN lines.
           .padding(.vertical, (1.62 - WebType.naturalLineHeight) * em / 2)
@@ -135,6 +133,15 @@ public struct RichTextDocumentView: View {
       .fixedSize(horizontal: false, vertical: true)
     }
   }
+  /// Keep ordinary/code-only paragraphs on SwiftUI's native cached attributed-text path.
+  /// A renderer on every prose run exceeded the long-markdown scrolling budget.
+  @ViewBuilder private func inlineContent(_ runs: [RichDocument.Run]) -> some View {
+    if runs.contains(where: \.image) {
+      inlineText(runs).textRenderer(InlineChipRenderer())
+    } else {
+      Text(attributed(runs))
+    }
+  }
   /// Interpolation preserves native selection and links while attaching drawing-only attributes.
   private func inlineText(_ runs: [RichDocument.Run]) -> Text {
     runs.reduce(Text("")) { text, run in
@@ -144,9 +151,6 @@ public struct RichTextDocumentView: View {
           .foregroundColor(WebColor.textMuted.color)
           .customAttribute(InlineChipAttribute())
         return Text("\(text)\(chip)")
-      }
-      if run.code {
-        return Text("\(text)\(part.customAttribute(InlineChipAttribute()))")
       }
       return Text("\(text)\(part)")
     }
@@ -162,6 +166,7 @@ public struct RichTextDocumentView: View {
         if run.code {
           intent.insert(.code)
           part.font = .system(size: 0.88 * em, design: .monospaced)
+          part.backgroundColor = WebColor.surfaceSubtle.color
 
         }
         if run.strike {
@@ -182,9 +187,9 @@ public struct RichTextDocumentView: View {
 
 /// Web `.markdown-table`: framed radius 8 on `--surface`, subtle header row in soft 650 text with
 /// a line-strong rule, 1 px row lines, alternate rows washed with surface-hover at 55%.
-struct MarkdownTableView: View {
+struct MarkdownTableView<InlineContent: View>: View {
   let rows: [[[RichDocument.Run]]]
-  let inlineText: ([RichDocument.Run]) -> Text
+  let inlineText: ([RichDocument.Run]) -> InlineContent
   let compact: Bool
   @ScaledMetric(relativeTo: .footnote) private var tableLeading: CGFloat = 2.5
   private var columns: Int { rows.map(\.count).max() ?? 0 }
@@ -200,7 +205,6 @@ struct MarkdownTableView: View {
         GridRow {
           ForEach(0..<columns, id: \.self) { column in
             inlineText(column < row.count ? row[column] : [])
-              .textRenderer(InlineChipRenderer())
               .webFont(.table)
               .fontWeight(index == 0 ? .semibold : .regular)
               .foregroundStyle(index == 0 ? WebColor.textSoft.color : WebColor.text.color)
