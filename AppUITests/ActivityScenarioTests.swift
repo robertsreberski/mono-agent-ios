@@ -123,8 +123,8 @@ import XCTest
   }
   func testCopyIsAvailableWhileResponseIsRunning() {
     let app = activityApp("composer-running")
-    let state = element(app, "conversation-run-state")
-    XCTAssertTrue(activityWait { state.exists && state.label.contains("Running") })
+    // The header no longer shows a run-state chip; status is spoken as the title's value.
+    WaitFor.value(element(app, "rename-conversation"), contains: "Running")
     let row = element(app, "message-sample-assistant")
     let copy = row.buttons["message-copy"].firstMatch
     XCTAssertTrue(activityWait { copy.exists && copy.isEnabled })
