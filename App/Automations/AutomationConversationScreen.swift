@@ -28,7 +28,9 @@ struct AutomationConversationScreen: View {
           message: "No saved job conversation is available.")
       }
     }.task(id: sourceID + jobID) {
-      threadID = await store.selectAutomation(sourceID: sourceID, jobID: jobID)
+      let resolved = await store.selectAutomation(sourceID: sourceID, jobID: jobID)
+      guard !Task.isCancelled else { return }
+      threadID = resolved
       loading = false
     }
   }

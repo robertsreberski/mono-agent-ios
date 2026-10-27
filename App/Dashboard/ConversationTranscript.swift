@@ -45,18 +45,9 @@ struct ConversationTranscript<Header: View>: View {
   var body: some View {
     transcript.onChange(of: runAnchor) { _, runID in
       guard let runID else { return }
-      let message = state.messages.first { message in
-        message.parts.contains { part in
-          guard case .telemetry(let value) = part,
-            case .cron(let run) = TranscriptTelemetry.presentation(value, hasVisibleContent: true)
-          else { return false }
-          return run.runID == runID
-        }
-      }
-      missingRunAnchor = message == nil
-      if let message {
-        scrollPosition.scrollTo(id: message.id, anchor: .top)
-      }
+      let target = state.cronRunAnchor(runID)
+      missingRunAnchor = target == nil
+      if let target { scrollPosition.scrollTo(id: target, anchor: .top) }
       runAnchor = nil
     }
   }

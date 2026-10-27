@@ -66,6 +66,22 @@ import XCTest
     WaitFor.absent(element(app, "cron-confirm-submit"), timeout: 30)
     WaitFor.label(element(app, "cron-notice"), contains: "applied", timeout: 30)
   }
+  func testControlsRecoverAfterBackgroundWithoutRenavigation() {
+    let app = launch("cron-conversation", "light")
+    expand(app)
+    reveal(app, "cron-run-now")
+    WaitFor.enabled(element(app, "cron-run-now"), true, timeout: 30)
+    XCUIDevice.shared.press(.home)
+    XCTAssertTrue(app.wait(for: .runningBackground, timeout: 30))
+    app.activate()
+    reveal(app, "cron-run-now")
+    WaitFor.enabled(element(app, "cron-run-now"), true, timeout: 30)
+    tap(app, "cron-run-now")
+    WaitFor.label(element(app, "cron-notice"), contains: "applied", timeout: 30)
+    WaitFor.enabled(element(app, "cron-enabled"), true, timeout: 30)
+    tap(app, "cron-config")
+    WaitFor.hittable(element(app, "cron-config-view"), timeout: 30)
+  }
   func testOfflineSnapshotCannotRun() {
     let app = launch("automations-offline", "light")
     tap(app, "automation-row-sample-digest")

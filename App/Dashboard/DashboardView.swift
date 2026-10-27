@@ -740,7 +740,7 @@ struct DashboardView: View {
           Image(systemName: "clock")
           Text("Automations")
           if let source = selectedAgentID,
-            let count = store.automationState(source).overview?.jobs.count
+            let count = store.automationSnapshot(source)?.overview?.jobs.count
           {
             Text(String(count))
           }

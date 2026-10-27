@@ -12,16 +12,16 @@ struct AutomationsList: View {
   let open: (String) -> Void
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.consoleTheme) private var theme
-  private var state: AutomationState { store.automationState(sourceID) }
+  private var state: AutomationState? { store.automationSnapshot(sourceID) }
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      if let overview = state.overview {
+      if let overview = state?.overview {
         let live = store.automationIsAuthoritative(sourceID)
         if !live {
           ConnectionBanner(
             .notice, title: "Saved automation snapshot",
-            message: state.error ?? overview.degradedReason
-              ?? "Live schedule status is unavailable. Saved \(state.savedAt?.formatted() ?? overview.generatedAt)."
+            message: state?.error ?? overview.degradedReason
+              ?? "Live schedule status is unavailable. Saved \(state?.savedAt?.formatted() ?? overview.generatedAt)."
           )
           .accessibilityIdentifier("automations-snapshot")
         }
@@ -86,17 +86,17 @@ struct AutomationsList: View {
             .accessibilityIdentifier("automation-row-" + job.jobId)
           }
         }
-      } else if state.loading {
+      } else if state?.loading == true {
         LoadingStateView("Loading automations…")
       } else {
         EmptyStateView(
           store.connection != .live ? "Automations unavailable offline" : "Automations unavailable",
           systemImage: "clock",
-          message: state.error ?? "No saved automation snapshot is available for this agent."
+          message: state?.error ?? "No saved automation snapshot is available for this agent."
         )
         .accessibilityIdentifier("automations-unavailable")
       }
-      if state.error != nil {
+      if state?.error != nil {
         Button("Try again") { Task { await store.refreshAutomations(sourceID: sourceID) } }
           .designButtonStyle(.secondary).accessibilityIdentifier("automations-retry")
       }

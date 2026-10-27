@@ -11,11 +11,11 @@ struct CronChannelHeader: View {
   let threadID: String
   var lastRunAnchor: (String) -> Void = { _ in }
   @State private var expanded = false
-  private var state: AutomationState { store.automationState(sourceID) }
+  private var state: AutomationState? { store.automationSnapshot(sourceID) }
   private var job: WebCronJob? {
-    state.overview?.jobs.first { $0.jobId == jobID && $0.threadId == threadID }
+    state?.overview?.jobs.first { $0.jobId == jobID && $0.threadId == threadID }
   }
-  private var control: CronJobState? { state.job }
+  private var control: CronJobState? { state?.job }
   private var reason: String? {
     store.cronActionUnavailableReason(sourceID: sourceID, jobID: jobID, threadID: threadID)
   }
@@ -29,7 +29,7 @@ struct CronChannelHeader: View {
         Text("\(job?.expression ?? "Unknown") · \(stateLabel) · Next \(nextTime)")
           .webFont(.system).foregroundStyle(WebColor.textSoft.color)
       }
-      if let error = control?.error ?? state.error {
+      if let error = control?.error ?? state?.error {
         Text(error).webFont(.system).foregroundStyle(DesignColor.danger.color)
           .accessibilityIdentifier("cron-error")
       }
@@ -37,7 +37,7 @@ struct CronChannelHeader: View {
         Text(notice).webFont(.system).foregroundStyle(WebColor.textSoft.color)
           .accessibilityIdentifier("cron-notice")
       }
-      if state.overview?.jobsTruncated == true {
+      if state?.overview?.jobsTruncated == true {
         Text("Older historical jobs are omitted from this bounded overview.").webFont(.system)
       }
     }
@@ -120,7 +120,7 @@ struct CronChannelHeader: View {
     Button("Run now") { store.performCronAction(sourceID: sourceID, action: .run) }
       .designButtonStyle(.primary).disabled(
         reason != nil || control == nil
-          || (control?.busy == true || state.pendingJobs.contains(jobID))
+          || (control?.busy == true || state?.pendingJobs.contains(jobID) == true)
           || control?.confirmation != nil
       )
       .accessibilityIdentifier("cron-run-now")
@@ -129,7 +129,7 @@ struct CronChannelHeader: View {
         sourceID: sourceID, action: .enabled(!(job?.effectiveEnabled ?? false)))
     }.designButtonStyle(.secondary).disabled(
       reason != nil || control == nil
-        || (control?.busy == true || state.pendingJobs.contains(jobID))
+        || (control?.busy == true || state?.pendingJobs.contains(jobID) == true)
         || control?.confirmation != nil
     )
     .accessibilityIdentifier("cron-enabled")
@@ -138,7 +138,7 @@ struct CronChannelHeader: View {
       .disabled(
         store.connection != .live || store.agent(sourceID)?.status == "offline"
           || store.agent(sourceID)?.cron?.read != true || control == nil
-          || (control?.busy == true || state.pendingJobs.contains(jobID))
+          || (control?.busy == true || state?.pendingJobs.contains(jobID) == true)
           || control?.confirmation != nil
       )
       .accessibilityIdentifier("cron-config")
@@ -163,15 +163,19 @@ struct CronChannelHeader: View {
             "cron-confirm-cancel")
         Spacer()
         Button(
-          (control?.busy == true || state.pendingJobs.contains(jobID)) ? "Applying…" : "Confirm"
+          (control?.busy == true || state?.pendingJobs.contains(jobID) == true)
+            ? "Applying…" : "Confirm"
         ) {
           Task { await store.confirmCronAction(sourceID: sourceID) }
         }.designButtonStyle(.primary, placement: .floating).accessibilityIdentifier(
-          "cron-confirm-submit")
-      }.disabled((control?.busy == true || state.pendingJobs.contains(jobID)))
+          "cron-confirm-submit"
+        ).disabled(reason != nil)
+      }.disabled((control?.busy == true || state?.pendingJobs.contains(jobID) == true))
     }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .webSheetVeil().presentationDetents([.medium, .large])
-      .interactiveDismissDisabled((control?.busy == true || state.pendingJobs.contains(jobID)))
+      .interactiveDismissDisabled(
+        (control?.busy == true || state?.pendingJobs.contains(jobID) == true)
+      )
       .accessibilityElement(children: .contain).accessibilityIdentifier("cron-confirmation")
   }
 }
