@@ -28,7 +28,10 @@ import XCTest
     WaitFor.element(pin, "enabled pin switch with a non-empty frame") {
       $0.isEnabled && !$0.frame.isEmpty
     }
-    pin.tap()
+    // The Switch element spans the whole labelled row; a centre tap can land on the label,
+    // which a SwiftUI Toggle ignores. Tap the switch itself (trailing padding 14 + half of 51).
+    pin.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+      .withOffset(CGVector(dx: -40, dy: 0)).tap()
     WaitFor.value(pin, contains: "0")
     WaitFor.enabled(pin)
     close(app)
