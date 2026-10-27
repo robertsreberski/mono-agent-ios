@@ -232,6 +232,44 @@ import Testing
     h.store.performCronAction(sourceID: source, action: .run)
     #expect(state.job?.task == nil)
   }
+  @Test func schedulesAndStrictFutureDatesMatchWebGrammar() throws {
+    var job = try overview().jobs[0]
+    for (expression, expected) in [
+      ("* * * * *", "Every minute"), ("*/15 * * * *", "Every 15 minutes"),
+      ("7 * * * *", "Every hour at :07 (UTC)"), ("0 9 * * 1-5", "Weekdays at 09:00 (UTC)"),
+      ("30 8 * * 7", "Every Sunday at 08:30 (UTC)"), ("*/7 * * * *", "*/7 * * * * (UTC)"),
+    ] {
+      job.expression = expression
+      #expect(AutomationPresentation.schedule(job) == expected)
+    }
+    let now = try #require(ServerTimestamp.date("2030-01-01T00:00:00Z"))
+    for stamp in [
+      "2099-02-30T10:00:00Z", "2099-01-01T24:00:00Z", "2099-01-01T10:00:00", "2030-01-01T00:00:00Z",
+      "nonsense",
+    ] {
+      #expect(AutomationPresentation.futureInstant(stamp, now: now) == nil)
+    }
+    #expect(AutomationPresentation.futureInstant("2099-01-01T10:00:00+02:00", now: now) != nil)
+  }
+  @Test func snapshotCountAndAgeStayWithinExistingCacheBudgets() async throws {
+    let h = Harness()
+    let now = Date()
+    var cache = CacheRecord()
+    cache.revision = 1
+    cache.automationOverviews = try (0..<26).map { index in
+      .init(
+        sourceID: "source-\(index)", overview: try overview(),
+        savedAt: now.addingTimeInterval(Double(-index)))
+    }
+    cache.automationOverviews?.append(
+      .init(
+        sourceID: "expired", overview: try overview(),
+        savedAt: now.addingTimeInterval(-ConsoleBounds.maxAge - 1)))
+    try await h.repository.saveCache(cache, namespace: h.store.namespace)
+    let restored = try await h.repository.loadCache(h.store.namespace)
+    #expect(restored.automationOverviews?.count == 24)
+    #expect(restored.automationOverviews?.contains(where: { $0.sourceID == "expired" }) == false)
+  }
   @Test func filteringSortingAndSnapshotProjection() throws {
     var value = try overview()
     var other = value.jobs[0]

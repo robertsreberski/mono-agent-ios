@@ -66,6 +66,15 @@ import XCTest
     WaitFor.absent(element(app, "cron-confirm-submit"), timeout: 30)
     WaitFor.label(element(app, "cron-notice"), contains: "applied", timeout: 30)
   }
+  func testOfflineSnapshotCannotRun() {
+    let app = launch("automations-offline", "light")
+    tap(app, "automation-row-sample-digest")
+    expand(app)
+    reveal(app, "cron-run-now")
+    WaitFor.enabled(element(app, "cron-run-now"), false, timeout: 30)
+    WaitFor.enabled(element(app, "cron-enabled"), false, timeout: 30)
+    WaitFor.enabled(element(app, "cron-config"), false, timeout: 30)
+  }
   private func list(_ scenario: String, _ appearance: String) {
     let app = launch(scenario, appearance)
     switch scenario {

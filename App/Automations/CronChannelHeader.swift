@@ -169,7 +169,8 @@ struct CronChannelHeader: View {
         }.designButtonStyle(.primary, placement: .floating).accessibilityIdentifier(
           "cron-confirm-submit")
       }.disabled((control?.busy == true || state.pendingJobs.contains(jobID)))
-    }.padding(20).webSheetVeil().presentationDetents([.medium, .large])
+    }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .webSheetVeil().presentationDetents([.medium, .large])
       .interactiveDismissDisabled((control?.busy == true || state.pendingJobs.contains(jobID)))
       .accessibilityElement(children: .contain).accessibilityIdentifier("cron-confirmation")
   }

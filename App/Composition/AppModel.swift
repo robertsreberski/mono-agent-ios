@@ -81,11 +81,19 @@ final class AppModel {
       appearance = configuration.appearance
       fixtureTheme = configuration.fixtureTheme
       referenceDate = configuration.storeScenario?.isDashboard == true ? DashboardFixture.now : nil
-      launchAutomations = configuration.storeScenario?.isAutomations == true
+      launchAutomations =
+        configuration.storeScenario != nil
+        && (configuration.automationsQuery != nil
+          || configuration.storeScenario?.isAutomations == true)
       launchCronJob =
-        configuration.storeScenario?.rawValue.hasPrefix("cron-") == true
-        ? AutomationsFixture.jobID : nil
-      launchQuery = configuration.storeScenario?.launchQuery
+        configuration.storeScenario == nil
+        ? nil
+        : configuration.cronJob
+          ?? (configuration.storeScenario?.rawValue.hasPrefix("cron-") == true
+            ? AutomationsFixture.jobID : nil)
+      launchQuery =
+        configuration.storeScenario == nil
+        ? nil : configuration.automationsQuery ?? configuration.storeScenario?.launchQuery
       launchThreadID = configuration.storeScenario?.launchThreadID
       launchSettings = configuration.storeScenario == nil ? nil : configuration.settings
       if let scenario {
@@ -317,6 +325,9 @@ final class AppModel {
     let fixtureTheme: String
     /// `--open-settings <index|new-conversations|providers|agent>`.
     let settings: AgentSettingsTarget?
+    /// Synthetic-only launch destinations; Release and real profiles ignore these.
+    let automationsQuery: String?
+    let cronJob: String?
 
     init(arguments: [String]) throws {
       func value(_ flag: String) throws -> String? {
@@ -326,6 +337,8 @@ final class AppModel {
         }
         return arguments[index + 1]
       }
+      automationsQuery = try value("--open-automations")
+      cronJob = try value("--open-cron-job")
       let requestedScenario = try value("--scenario")
       storeScenario = requestedScenario.flatMap(StoreScenario.init(rawValue:))
       if let name = requestedScenario {
