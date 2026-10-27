@@ -540,6 +540,7 @@ public final class ConsoleStore {
         record = CacheMerge.rebase(record, onto: disk, authoritativeAt: authoritativeRows)
         cacheRevision = max(cacheRevision, record.revision)
         bootstrap = record.bootstrap
+        adoptAutomationCache(record.automationOverviews ?? [])
         reconcileAgentRestarts()
         reconcileAutomations()
         result = try await repository.saveCache(record, namespace: namespace)

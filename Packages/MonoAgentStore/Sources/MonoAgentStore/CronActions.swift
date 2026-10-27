@@ -89,7 +89,10 @@ extension ConsoleStore {
       return
     }
     let now = await serverNow()
-    guard automations[sourceID]?.job === job, !job.busy else { return }
+    guard automations[sourceID]?.job === job, !job.busy,
+      job.confirmation?.idempotencyKey == pending.idempotencyKey,
+      job.confirmation?.challenge.token == pending.challenge.token
+    else { return }
     guard let expires = ServerTimestamp.date(pending.challenge.expiresAt), expires > now
     else {
       job.confirmation = nil
@@ -104,7 +107,7 @@ extension ConsoleStore {
     sourceID: String, job: CronJobState, action: CronAction,
     key: String, confirmation: String?
   ) {
-    guard cronJobCurrent(sourceID, job),
+    guard !automationState(sourceID).pendingJobs.contains(job.jobID), cronJobCurrent(sourceID, job),
       cronActionUnavailableReason(sourceID: sourceID, jobID: job.jobID, threadID: job.threadID)
         == nil
     else { return }
@@ -114,12 +117,14 @@ extension ConsoleStore {
     let revision = automationState(sourceID).revision
     let effective = automationJob(sourceID: sourceID, jobID: job.jobID)?.effectiveEnabled
     if case .enabled(let value) = action, value == effective { return }
+    automationState(sourceID).pendingJobs.insert(job.jobID)
     job.busy = true
     job.error = nil
     job.notice = nil
     job.task = Task { [weak self] in
       guard let self else { return }
       defer {
+        self.automations[sourceID]?.pendingJobs.remove(job.jobID)
         job.busy = false
         job.task = nil
       }
@@ -187,16 +192,18 @@ extension ConsoleStore {
   }
   public func openCronConfig(sourceID: String) {
     guard let job = automations[sourceID]?.job, !job.busy, job.confirmation == nil,
-      cronJobCurrent(sourceID, job)
+      cronJobCurrent(sourceID, job), !automationState(sourceID).pendingJobs.contains(job.jobID)
     else { return }
     let epoch = epoch
     let scope = cronScope(sourceID)
     let lifetime = job.lifetime
+    automationState(sourceID).pendingJobs.insert(job.jobID)
     job.busy = true
     job.error = nil
     job.task = Task { [weak self] in
       guard let self else { return }
       defer {
+        self.automations[sourceID]?.pendingJobs.remove(job.jobID)
         job.busy = false
         job.task = nil
       }

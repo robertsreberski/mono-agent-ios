@@ -88,6 +88,7 @@ public actor FileConsoleRepository: ConsoleRepository {
     var merged = record
     let old = try loadCache(namespace)
     merged.bootstrap = record.bootstrap ?? old.bootstrap
+    merged.automationOverviews = record.automationOverviews ?? old.automationOverviews
     let ids = Set(record.conversations.map { $0.thread.id })
     merged.conversations += old.conversations.filter {
       !ids.contains($0.thread.id) && record.tombstones[$0.thread.id] == nil

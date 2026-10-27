@@ -12,6 +12,7 @@ import Observation
   public internal(set) var loading = false
   public internal(set) var error: String?
   public internal(set) var job: CronJobState?
+  public internal(set) var pendingJobs: Set<String> = []
   @ObservationIgnored var scope = ""
   @ObservationIgnored var revision: UInt64 = 0
   @ObservationIgnored var dirty = false
@@ -126,6 +127,17 @@ extension ConsoleStore {
       state.flight = nil
       state.loading = false
       closeCronJob(sourceID: state.sourceID)
+    }
+  }
+  func adoptAutomationCache(_ snapshots: [CachedAutomationOverview]) {
+    for entry in snapshots {
+      let state = automationState(entry.sourceID)
+      guard state.savedAt == nil || entry.savedAt > state.savedAt! else { continue }
+      state.overview = entry.overview
+      state.savedAt = entry.savedAt
+      state.freshness = .stale
+      state.revision &+= 1
+      state.job?.confirmation = nil
     }
   }
   func reconcileAutomations() {

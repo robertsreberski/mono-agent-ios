@@ -155,6 +155,83 @@ import Testing
     h.store.closeCronJob(sourceID: source)
     #expect(job.config == nil && !job.configOpen)
   }
+  @Test func changedEventsAreSourceScopedAndGapReadsReconcile() async throws {
+    let h = try await live()
+    let state = h.store.automationState(source)
+    let other: ApiEvent = try decode(
+      #"{"id":"event-other","version":1,"at":"2030-01-02T12:00:00Z","type":"cron.changed","payload":{"sourceId":"other-agent"}}"#
+    )
+    await h.store.receive(.event(generation: 1, gap: .initial, other))
+    #expect(await h.transport.count(path) == 1)
+    await h.transport.set(path, [.paused, .response(try response(overview("")))])
+    let changed: ApiEvent = try decode(
+      #"{"id":"event-cron","version":1,"at":"2030-01-02T12:00:00Z","type":"cron.changed","payload":{"sourceId":"agent-example","jobId":"sample-digest"}}"#
+    )
+    await h.store.receive(.event(generation: 1, gap: .initial, changed))
+    let flight = state.flight
+    await eventually { await h.transport.pauseCount() == 1 }
+    await h.store.receive(.event(generation: 1, gap: .initial, changed))
+    #expect(state.freshness == .stale)
+    await h.transport.release(try response(overview()))
+    await flight?.value
+    #expect(state.overview?.jobs.isEmpty == true)
+    #expect(await h.transport.count(path) == 3)
+    await h.transport.set(path, [.response(try response(overview()))])
+    await h.store.receive(.gap(generation: 2, reason: .overflow))
+    #expect(state.freshness == .stale)
+    await h.store.reconciliationTask?.value
+    #expect(state.overview?.jobs.count == 1 && state.freshness == .fresh)
+  }
+  @Test func physicalCommandExclusionSurvivesClosingAndReopening() async throws {
+    let h = try await live()
+    let job = try #require(h.store.automationState(source).job)
+    let action = path + "/jobs/sample-digest/run"
+    await h.transport.set(action, [.paused])
+    h.store.performCronAction(sourceID: source, action: .run)
+    let task = job.task
+    await eventually { await h.transport.pauseCount() == 1 }
+    h.store.closeCronJob(sourceID: source)
+    let next = h.store.openCronJob(
+      sourceID: source, jobID: "sample-digest", threadID: "thread-cron")
+    h.store.performCronAction(sourceID: source, action: .run)
+    h.store.openCronConfig(sourceID: source)
+    #expect(next.task == nil)
+    #expect(h.store.automationState(source).pendingJobs.contains("sample-digest"))
+    await h.transport.release(try challenge())
+    await task?.value
+    #expect(next.confirmation == nil && next.error == nil)
+    #expect(h.store.automationState(source).pendingJobs.isEmpty)
+    #expect(await h.transport.count(action, method: "POST") == 1)
+  }
+  @Test func oldCacheDecodingAndSnapshotMergeRemainBackwardCompatible() throws {
+    var old = CacheRecord()
+    old.bootstrap = nil
+    let encoded = try JSONEncoder().encode(old)
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    object.removeValue(forKey: "automationOverviews")
+    let decoded = try JSONDecoder().decode(
+      CacheRecord.self, from: JSONSerialization.data(withJSONObject: object))
+    #expect(decoded.automationOverviews == nil)
+    var local = decoded
+    var disk = decoded
+    let now = Date()
+    local.automationOverviews = [.init(sourceID: source, overview: try overview(), savedAt: now)]
+    disk.automationOverviews = [
+      .init(sourceID: source, overview: try overview(""), savedAt: now.addingTimeInterval(1))
+    ]
+    let merged = CacheMerge.rebase(local, onto: disk)
+    #expect(merged.automationOverviews?.first?.overview.jobs.isEmpty == true)
+  }
+  @Test func failedReadRetainsSnapshotButRemovesAuthority() async throws {
+    let h = try await live()
+    await h.transport.set(path, [.failure])
+    await h.store.refreshAutomations(sourceID: source)
+    let state = h.store.automationState(source)
+    #expect(state.overview?.jobs.count == 1 && state.error != nil)
+    #expect(!h.store.automationIsAuthoritative(source))
+    h.store.performCronAction(sourceID: source, action: .run)
+    #expect(state.job?.task == nil)
+  }
   @Test func filteringSortingAndSnapshotProjection() throws {
     var value = try overview()
     var other = value.jobs[0]
