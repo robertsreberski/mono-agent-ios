@@ -18,6 +18,7 @@ struct DashboardView: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Binding var query: String
   let search: ThreadSearchModel
+  @State private var showingAutomations = false
   @State private var projectEditor: ProjectEditorRequest?
   @State private var tagEditor: TagEditorRequest?
   @State private var showOffline = false
@@ -133,7 +134,12 @@ struct DashboardView: View {
           .project(profile: store.profile.id, sourceID: project.sourceId, projectID: project.id))
       }
     }
-    .task(id: ready) { if ready { updateSearch() } }
+    .task(id: ready) {
+      if ready {
+        if model.launchAutomations { showingAutomations = true }
+        updateSearch()
+      }
+    }
   }
 
   /// Web dashboard column: fixed header, agent strip and search, then the scrolling sections
@@ -178,7 +184,9 @@ struct DashboardView: View {
 
   @ViewBuilder private func sections(now: Date) -> some View {
     bannerSection
-    if searching {
+    if showingAutomations {
+      automationSection
+    } else if searching {
       searchSections(now: now)
     } else {
       runningSection(now: now)
@@ -400,13 +408,15 @@ struct DashboardView: View {
         .foregroundStyle(WebColor.textMuted.color)
         .accessibilityHidden(true)
       TextField(
-        "Search conversations", text: $query,
-        prompt: Text("Search conversations").foregroundStyle(WebColor.textMuted.color)
+        showingAutomations ? "Search automations" : "Search conversations", text: $query,
+        prompt: Text(showingAutomations ? "Search automations" : "Search conversations")
+          .foregroundStyle(WebColor.textMuted.color)
       )
       .webFont(.search)
       .foregroundStyle(WebColor.text.color)
       .focused($searchFocused)
       .submitLabel(.search)
+      .onSubmit { searchFocused = false }
       .autocorrectionDisabled()
       .textInputAutocapitalization(.never)
       .accessibilityIdentifier("search-field")
@@ -654,10 +664,7 @@ struct DashboardView: View {
 
   @ViewBuilder private func recentSection(now: Date) -> some View {
     let threads = recentThreads
-    sectionHead(archived ? "Archived" : "Recent")
-      .accessibilityElement(children: .combine)
-      .accessibilityAddTraits(.isHeader)
-      .accessibilityIdentifier("recent-section")
+    recentHeader
     if threads.isEmpty {
       recentEmpty
     }
@@ -695,6 +702,71 @@ struct DashboardView: View {
       .padding(.top, 8)
       .accessibilityIdentifier("load-older")
     }
+  }
+
+  private var recentHeader: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack {
+        recentTitle
+        Spacer(minLength: 8)
+        recentChips
+      }
+      VStack(alignment: .leading, spacing: 8) {
+        recentTitle
+        recentChips
+      }
+    }.padding(.top, 20).padding(.bottom, 8)
+  }
+  private var recentTitle: some View {
+    Text(showingAutomations ? "Automations" : archived ? "Archived" : "Recent")
+      .webFont(.eyebrow).foregroundStyle(WebColor.textMuted.color)
+      .accessibilityAddTraits(.isHeader).accessibilityIdentifier("recent-section")
+  }
+  private var recentChips: some View {
+    HStack(spacing: 6) {
+      Button("Chats") {
+        showingAutomations = false
+        updateSearch()
+      }
+      .modifier(RecentModeChip(selected: !showingAutomations)).accessibilityAddTraits(
+        showingAutomations ? [] : [.isSelected]
+      )
+      .accessibilityIdentifier("recent-chats")
+      Button {
+        showingAutomations = true
+        updateSearch()
+      } label: {
+        HStack(spacing: 4) {
+          Image(systemName: "clock")
+          Text("Automations")
+          if let source = selectedAgentID,
+            let count = store.automationState(source).overview?.jobs.count
+          {
+            Text(String(count))
+          }
+        }
+      }.modifier(RecentModeChip(selected: showingAutomations)).accessibilityAddTraits(
+        showingAutomations ? [.isSelected] : []
+      )
+      .accessibilityIdentifier("recent-automations")
+    }.buttonStyle(.plain).webFont(.rowSubtitle)
+  }
+  private var automationSection: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      recentHeader
+      if let source = selectedAgentID {
+        AutomationsList(
+          store: store, sourceID: source, query: query,
+          selectedJobID: selectable ? selectedAutomationJobID : nil
+        ) { job in
+          open(.automation(profile: store.profile.id, sourceID: source, jobID: job))
+        }
+      }
+    }
+  }
+  private var selectedAutomationJobID: String? {
+    if case .automation(_, _, let id) = route { return id }
+    return nil
   }
 
   @ViewBuilder private var recentEmpty: some View {
@@ -886,7 +958,8 @@ struct DashboardView: View {
 
   private func updateSearch() {
     search.update(
-      query: query, sourceID: selectedAgentID, lean: store.effectiveDataMode == .lean)
+      query: showingAutomations ? "" : query, sourceID: selectedAgentID,
+      lean: store.effectiveDataMode == .lean)
   }
 
   private func perform(_ action: DashboardBanner.Action) async {
@@ -907,5 +980,22 @@ struct DashboardView: View {
     } else {
       await model.registry.connect(store.profile.id)
     }
+  }
+}
+
+/// Inline content chips use solid web tokens, never floating glass.
+private struct RecentModeChip: ViewModifier {
+  let selected: Bool
+  @Environment(\.consoleTheme) private var theme
+  func body(content: Content) -> some View {
+    content.webFont(.rowSubtitle)
+      .foregroundStyle(selected ? theme.palette.accentStrong.color : WebColor.textSoft.color)
+      .padding(.horizontal, 8).padding(.vertical, 6)
+      .background(
+        selected ? theme.palette.accentSoft.color : WebColor.surfaceSubtle.color,
+        in: RoundedRectangle(cornerRadius: 8)
+      )
+      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(WebColor.line.color))
+      .frame(minHeight: DesignMetrics.minimumHitTarget).contentShape(Rectangle())
   }
 }

@@ -43,6 +43,8 @@ final class AppModel {
   let launchThreadID: String?
   /// DEBUG `--open-settings <index|section>`: agent settings opened once after readiness.
   let launchSettings: AgentSettingsTarget?
+  let launchAutomations: Bool
+  let launchCronJob: String?
   @ObservationIgnored private var started = false
   #if DEBUG
     @ObservationIgnored private let scenario: Scenario?
@@ -79,6 +81,10 @@ final class AppModel {
       appearance = configuration.appearance
       fixtureTheme = configuration.fixtureTheme
       referenceDate = configuration.storeScenario?.isDashboard == true ? DashboardFixture.now : nil
+      launchAutomations = configuration.storeScenario?.isAutomations == true
+      launchCronJob =
+        configuration.storeScenario?.rawValue.hasPrefix("cron-") == true
+        ? AutomationsFixture.jobID : nil
       launchQuery = configuration.storeScenario?.launchQuery
       launchThreadID = configuration.storeScenario?.launchThreadID
       launchSettings = configuration.storeScenario == nil ? nil : configuration.settings
@@ -98,6 +104,8 @@ final class AppModel {
       // Release ignores all fixture/reset/appearance arguments.
       appearance = nil
       referenceDate = nil
+      launchAutomations = false
+      launchCronJob = nil
       launchQuery = nil
       launchThreadID = nil
       launchSettings = nil
@@ -123,6 +131,9 @@ final class AppModel {
       self.appearance = appearance
       self.fixtureTheme = fixtureTheme
       referenceDate = storeScenario?.isDashboard == true ? DashboardFixture.now : nil
+      launchAutomations = storeScenario?.isAutomations == true
+      launchCronJob =
+        storeScenario?.rawValue.hasPrefix("cron-") == true ? AutomationsFixture.jobID : nil
       launchQuery = storeScenario?.launchQuery
       launchThreadID = storeScenario?.launchThreadID
       launchSettings = nil

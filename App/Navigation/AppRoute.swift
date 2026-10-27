@@ -14,11 +14,13 @@ enum AppRoute: Hashable, Codable {
   /// A project page placeholder (the page itself belongs to the organize feature).
   case project(profile: UUID, sourceID: String, projectID: String)
 
+  case automation(profile: UUID, sourceID: String, jobID: String)
+
   var profile: UUID {
     switch self {
     case .console(let id): id
     case .conversation(let profile, _, _, _), .newConversation(let profile, _, _),
-      .project(let profile, _, _):
+      .project(let profile, _, _), .automation(let profile, _, _):
       profile
     }
   }
@@ -28,7 +30,7 @@ enum AppRoute: Hashable, Codable {
     switch self {
     case .console: nil
     case .conversation(_, let source, _, _), .newConversation(_, let source, _),
-      .project(_, let source, _):
+      .project(_, let source, _), .automation(_, let source, _):
       source
     }
   }

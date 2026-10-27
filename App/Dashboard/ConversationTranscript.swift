@@ -8,6 +8,8 @@ struct ConversationTranscript<Header: View>: View {
   let store: ConsoleStore
   let jumpControl: TranscriptJumpControl
   let header: Header
+  @Binding var runAnchor: String?
+  @State private var missingRunAnchor = false
   @State private var policy = TranscriptFollowPolicy()
   @State private var phase: ScrollPhase = .idle
   @State private var paging = false
@@ -29,8 +31,10 @@ struct ConversationTranscript<Header: View>: View {
   }
   init(
     state: ConversationState, store: ConsoleStore, jumpControl: TranscriptJumpControl,
+    runAnchor: Binding<String?> = .constant(nil),
     @ViewBuilder header: () -> Header
   ) {
+    self._runAnchor = runAnchor
     self.state = state
     self.store = store
     self.header = header()
@@ -38,13 +42,34 @@ struct ConversationTranscript<Header: View>: View {
   }
   // Messages carry no relative ages (web parity), so nothing schedules a transcript-wide tick;
   // only running leaves read the clock (`RunningTimeline`).
-  var body: some View { transcript }
+  var body: some View {
+    transcript.onChange(of: runAnchor) { _, runID in
+      guard let runID else { return }
+      let message = state.messages.first { message in
+        message.parts.contains { part in
+          guard case .telemetry(let value) = part,
+            case .cron(let run) = TranscriptTelemetry.presentation(value, hasVisibleContent: true)
+          else { return false }
+          return run.runID == runID
+        }
+      }
+      missingRunAnchor = message == nil
+      if let message {
+        scrollPosition.scrollTo(id: message.id, anchor: .top)
+      }
+      runAnchor = nil
+    }
+  }
   @ViewBuilder private var transcript: some View {
     let regular = sizeClass == .regular
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         // Keep the header eager: lazy offscreen headers can disappear from the AX hierarchy.
         header
+        if missingRunAnchor {
+          Text("The last run is not in loaded history. Load earlier messages to find it.")
+            .webFont(.system).padding().accessibilityIdentifier("cron-anchor-unavailable")
+        }
         // Web `.message-list`: 23 pt rhythm on phones, 28 on tablets; no avatar rail.
         LazyVStack(
           alignment: .leading, spacing: regular ? WebSpace.sectionGapRegular : WebSpace.sectionGap

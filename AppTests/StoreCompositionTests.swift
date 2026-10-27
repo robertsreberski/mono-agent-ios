@@ -112,6 +112,15 @@ import Testing
       let store = try #require(model.store)
       #expect(store.hydrated)
       switch scenario {
+      case .automations, .automationsFiltered, .automationsEmpty, .automationsOffline,
+        .automationsDegraded, .cronConversation, .cronConfirm, .cronConfig:
+        let snapshot = store.automationState(DashboardFixture.atlas)
+        #expect(snapshot.overview != nil)
+        #expect(model.launchAutomations)
+        #expect(store.conversations[AutomationsFixture.threadID] != nil)
+        let result = try await store.api.cronOverview(id: DashboardFixture.atlas, etag: nil)
+          .valueRequired()
+        #expect(result.jobs.count == (scenario == .automationsEmpty ? 0 : 3))
       case .offline:
         #expect(store.connection == .offline)
         #expect(store.conversations["thread-example"]?.freshness == .stale)
