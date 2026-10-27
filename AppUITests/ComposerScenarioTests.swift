@@ -194,7 +194,7 @@ import XCTest
         action.exists && !action.frame.isEmpty && action.isHittable
           && app.windows.firstMatch.frame.contains(action.frame)
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
     action.press(forDuration: 1.2)
     let quote = app.buttons["Quote"].firstMatch
     XCTAssertTrue(quote.waitForExistence(timeout: 5))
@@ -363,7 +363,7 @@ import XCTest
     element(app, "composer-stop").tap()
     let stopped = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"), object: element(app, "composer-stop"))
-    XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 10), .completed, "Stop ends the run")
+    XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 30), .completed, "Stop ends the run")
     XCTAssertTrue(
       element(app, "composer-send").waitForExistence(timeout: 10),
       "Idle again: Send replaces Queue")
@@ -553,10 +553,12 @@ import XCTest
       }, object: nil)
     return XCTWaiter.wait(for: [expectation], timeout: 15) == .completed
   }
+  /// Composite predicates issue several accessibility queries per evaluation; hosted iPad
+  /// runners take 2–4 s per query, so a 10 s budget allowed only one or two evaluations.
   private func composerWait(_ predicate: @escaping () -> Bool) -> Bool {
     let expectation = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in predicate() }, object: nil)
-    return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
+    return XCTWaiter.wait(for: [expectation], timeout: 30) == .completed
   }
   private func scrollTo(_ app: XCUIApplication, _ target: XCUIElement) -> Bool {
     let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
