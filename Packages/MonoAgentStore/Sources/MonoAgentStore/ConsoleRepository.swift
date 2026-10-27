@@ -158,9 +158,9 @@ public actor FileConsoleRepository: ConsoleRepository {
     record.buckets = try input.buckets.map(CacheSanitizer.sanitize)
     record.tombstones = CacheMerge.prune(record.tombstones, now: now())
     let cutoff = now().addingTimeInterval(-ConsoleBounds.maxAge)
-    record.automationOverviews = Array(
-      (record.automationOverviews ?? [])
-        .filter { $0.savedAt >= cutoff }.sorted { $0.savedAt > $1.savedAt }.prefix(24))
+    record.automationOverviews = try (record.automationOverviews ?? [])
+      .filter { $0.savedAt >= cutoff }.sorted { $0.savedAt > $1.savedAt }.prefix(24)
+      .map(CacheSanitizer.automation)
     record.conversations = try record.conversations.filter {
       $0.savedAt >= cutoff && record.tombstones[$0.thread.id] == nil
     }

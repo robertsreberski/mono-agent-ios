@@ -123,6 +123,7 @@ public final class ConsoleStore {
   @ObservationIgnored var bootstrapClock: UInt64 = 0
   @ObservationIgnored var epoch: UInt64 = 0
   @ObservationIgnored var selection: UInt64 = 0
+  @ObservationIgnored var automationSelectionIntent = UUID()
   @ObservationIgnored var visible = false
   @ObservationIgnored var backgrounded = false
   @ObservationIgnored var started = false
@@ -271,6 +272,7 @@ public final class ConsoleStore {
     if !completedSubmissions.isEmpty { try? await persistJournal() }
   }
   public func select(sourceID: String, archived: Bool = false, threadID: String? = nil) async {
+    automationSelectionIntent = UUID()
     // Reappearing may refresh detail, but is not a context abandonment.
     let bucket = BucketKey(sourceID: sourceID, archived: archived)
     let changingSelection = selectedBucket != bucket || selectedThreadID != threadID
@@ -285,7 +287,13 @@ public final class ConsoleStore {
       visible = false
       selectedBucket = bucket
       selectedThreadID = threadID
-      for state in automations.values { closeCronJob(sourceID: state.sourceID) }
+      for state in automations.values {
+        if state.sourceID == sourceID, state.job?.threadID == threadID {
+          resetCronJob(sourceID: state.sourceID)
+        } else {
+          closeCronJob(sourceID: state.sourceID)
+        }
+      }
     }
     let generation = epoch
     let selected = selection

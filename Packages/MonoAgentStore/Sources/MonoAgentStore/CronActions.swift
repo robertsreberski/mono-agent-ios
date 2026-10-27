@@ -40,6 +40,10 @@ extension ConsoleStore {
     return job
   }
   public func closeCronJob(sourceID: String) {
+    resetCronJob(sourceID: sourceID)
+    automations[sourceID]?.job = nil
+  }
+  func resetCronJob(sourceID: String) {
     guard let job = automations[sourceID]?.job else { return }
     job.lifetime = UUID()
     job.confirmation = nil
@@ -47,7 +51,8 @@ extension ConsoleStore {
     job.configOpen = false
     // Cancellation is not proof a POST was not admitted. No automatic retry.
     job.task?.cancel()
-    automations[sourceID]?.job = nil
+    job.error = nil
+    job.notice = nil
   }
   private func cronJobCurrent(_ sourceID: String, _ job: CronJobState) -> Bool {
     automations[sourceID]?.job === job && selectedBucket?.sourceID == sourceID
@@ -56,9 +61,9 @@ extension ConsoleStore {
   public func cronActionUnavailableReason(sourceID: String, jobID: String, threadID: String)
     -> String?
   {
-    let state = automationState(sourceID)
+    let state = automations[sourceID]
     if !cronReadable(sourceID) { return "Cron controls require a live, readable agent." }
-    if let reason = state.overview?.degradedReason {
+    if let reason = state?.overview?.degradedReason {
       return ProviderPresentation.boundedText(reason)
     }
     if !automationIsAuthoritative(sourceID) {
@@ -68,7 +73,7 @@ extension ConsoleStore {
       return "Cron job identity is unavailable."
     }
     if !row.configured { return "This historical job is no longer configured." }
-    if state.overview?.actionsEnabled != true {
+    if state?.overview?.actionsEnabled != true {
       return "Cron operator actions are disabled by agent configuration."
     }
     if agent(sourceID)?.cron?.actions != true { return "Cron actions require an operator API key." }
@@ -173,17 +178,18 @@ extension ConsoleStore {
             replayed = duplicate
           }
         }
-        guard current() else { return }
+        let publish = current() && self.automations[sourceID]?.revision == revision
+        self.cronOutcome(sourceID)
+        guard publish else { return }
         if let challenge {
-          guard self.automationState(sourceID).revision == revision else { return }
           job.confirmation = .init(action: action, idempotencyKey: key, challenge: challenge)
         } else {
-          job.confirmation = nil
           job.notice = replayed ? "Cron action was already applied." : "Cron action applied."
-          self.requestAutomations(sourceID: sourceID, invalidate: true)
         }
       } catch {
-        guard current() else { return }
+        let publish = current()
+        self.cronOutcome(sourceID)
+        guard publish else { return }
         job.error =
           (error as? APIError)?.safeDetails
           ?? "Cron action failed. Check the job before trying again."

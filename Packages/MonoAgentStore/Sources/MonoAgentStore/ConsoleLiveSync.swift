@@ -197,8 +197,9 @@ extension ConsoleStore {
     case .attachmentChanged:
       if let id = envelope.threadId { requestDetailRepair(id) }
     case .cronChanged(let payload):
+      invalidateAutomation(payload.sourceId)
       if payload.sourceId == selectedBucket?.sourceID {
-        requestAutomations(sourceID: payload.sourceId, invalidate: true)
+        requestAutomations(sourceID: payload.sourceId)
       }
     case .pushPending: break
     }

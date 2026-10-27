@@ -22,6 +22,8 @@ import Observation
 }
 
 extension ConsoleStore {
+  /// Non-mutating observation seam for SwiftUI bodies. Commands create owners explicitly.
+  public func automationSnapshot(_ sourceID: String) -> AutomationState? { automations[sourceID] }
   public func automationState(_ sourceID: String) -> AutomationState {
     if let state = automations[sourceID] { return state }
     let state = AutomationState(sourceID: sourceID)
@@ -41,7 +43,7 @@ extension ConsoleStore {
       && agent(sourceID)?.status != "offline" && agent(sourceID)?.cron?.read == true
   }
   public func automationIsAuthoritative(_ sourceID: String) -> Bool {
-    let state = automationState(sourceID)
+    guard let state = automations[sourceID] else { return false }
     return cronReadable(sourceID) && state.scope == cronScope(sourceID)
       && state.freshness == .fresh && state.error == nil && state.overview != nil
       && state.overview?.degradedReason == nil
@@ -53,11 +55,7 @@ extension ConsoleStore {
   /// One physical read per source, with one trailing obligation for any number of invalidations.
   func requestAutomations(sourceID: String, invalidate: Bool = false) {
     let state = automationState(sourceID)
-    if invalidate {
-      state.job?.confirmation = nil
-      state.revision &+= 1
-      state.freshness = .stale
-    }
+    if invalidate { invalidateAutomation(sourceID) }
     guard cronReadable(sourceID) else {
       state.freshness = .stale
       if state.overview == nil { state.error = "Automations are unavailable for this agent." }
@@ -112,12 +110,20 @@ extension ConsoleStore {
     self.epoch == epoch && state.owner == owner && automations[state.sourceID] === state
       && cronReadable(state.sourceID) && cronScope(state.sourceID) == scope && !Task.isCancelled
   }
+  func invalidateAutomation(_ sourceID: String) {
+    guard let state = automations[sourceID] else { return }
+    state.revision &+= 1
+    state.freshness = .stale
+    state.job?.confirmation = nil
+    if state.flight != nil { state.dirty = true }
+  }
   func invalidateAutomations() {
-    for state in automations.values {
-      state.revision &+= 1
-      state.freshness = .stale
-      state.job?.confirmation = nil
-    }
+    for source in automations.keys { invalidateAutomation(source) }
+  }
+  /// Every dispatched POST outcome removes authority, even when its view has departed.
+  func cronOutcome(_ sourceID: String) {
+    invalidateAutomation(sourceID)
+    if sourceID == selectedBucket?.sourceID { requestAutomations(sourceID: sourceID) }
   }
   func suspendAutomations() {
     invalidateAutomations()
@@ -126,7 +132,7 @@ extension ConsoleStore {
       state.flight?.cancel()
       state.flight = nil
       state.loading = false
-      closeCronJob(sourceID: state.sourceID)
+      resetCronJob(sourceID: state.sourceID)
     }
   }
   func adoptAutomationCache(_ snapshots: [CachedAutomationOverview]) {
@@ -138,6 +144,7 @@ extension ConsoleStore {
       state.freshness = .stale
       state.revision &+= 1
       state.job?.confirmation = nil
+      if state.flight != nil { state.dirty = true }
     }
   }
   func reconcileAutomations() {
@@ -148,25 +155,48 @@ extension ConsoleStore {
       state.loading = false
       state.freshness = .stale
       state.scope = cronScope(state.sourceID)
-      closeCronJob(sourceID: state.sourceID)
+      resetCronJob(sourceID: state.sourceID)
+      if state.sourceID == selectedBucket?.sourceID {
+        requestAutomations(sourceID: state.sourceID, invalidate: true)
+      }
     }
   }
   /// Resolve a durable job identity through this source's overview, never a caller-supplied thread ID.
   public func automationJob(sourceID: String, jobID: String) -> WebCronJob? {
-    automationState(sourceID).overview?.jobs.first { $0.jobId == jobID }
+    automations[sourceID]?.overview?.jobs.first { $0.jobId == jobID }
   }
   public func selectAutomation(sourceID: String, jobID: String) async -> String? {
+    guard !Task.isCancelled else { return nil }
     let epoch = epoch
+    let selection = selection
+    let intent = UUID()
+    automationSelectionIntent = intent
     if !automationIsAuthoritative(sourceID), cronReadable(sourceID) {
       await refreshAutomations(sourceID: sourceID)
     }
-    guard self.epoch == epoch, let job = automationJob(sourceID: sourceID, jobID: jobID) else {
+    guard !Task.isCancelled, automationSelectionIntent == intent, self.selection == selection,
+      self.epoch == epoch, let job = automationJob(sourceID: sourceID, jobID: jobID)
+    else {
       return nil
     }
     await select(sourceID: sourceID, threadID: job.threadId)
-    guard self.epoch == epoch, selectedBucket?.sourceID == sourceID,
+    guard !Task.isCancelled, self.epoch == epoch, selectedBucket?.sourceID == sourceID,
       selectedThreadID == job.threadId
     else { return nil }
     return job.threadId
+  }
+}
+
+extension ConversationState {
+  /// Only IDs in the rendered projection are valid scroll targets (silent cron rows are omitted).
+  public func cronRunAnchor(_ runID: String) -> String? {
+    transcriptMessageIDs.first { id in
+      messageStates[id]?.message.parts.contains { part in
+        guard case .telemetry(let value) = part,
+          case .cron(let run) = TranscriptTelemetry.presentation(value, hasVisibleContent: true)
+        else { return false }
+        return run.runID == runID
+      } == true
+    }
   }
 }

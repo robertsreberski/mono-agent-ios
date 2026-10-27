@@ -280,6 +280,17 @@ public enum CacheSanitizer {
     let json = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
     return try JSONDecoder().decode(T.self, from: JSONEncoder().encode(scrub(json)))
   }
+  public static func automation(_ input: CachedAutomationOverview) throws
+    -> CachedAutomationOverview
+  {
+    var entry = input
+    // Cached overview metadata is useful; opaque run output/error is not needed by PR4a.
+    for index in entry.overview.jobs.indices {
+      entry.overview.jobs[index].lastRun?.text = nil
+      entry.overview.jobs[index].lastRun?.error = nil
+    }
+    return try sanitize(entry)
+  }
   public static func conversation(_ input: CachedConversation) throws -> CachedConversation {
     var entry = try sanitize(input)
     entry.thread.compaction = nil

@@ -58,6 +58,7 @@ import Testing
   @Test func enableUsesEffectiveStateAndConfirmationReusesExactIdentity() async throws {
     let h = try await live()
     let job = try #require(h.store.automationState(source).job)
+    await h.transport.set(path, [.response(try response(overview()))])
     let action = path + "/jobs/sample-digest/effective-enabled"
     await h.transport.set(
       action,
@@ -72,6 +73,7 @@ import Testing
     h.store.performCronAction(sourceID: source, action: .enabled(false))
     h.store.performCronAction(sourceID: source, action: .run)
     await job.task?.value
+    await h.store.automationState(source).flight?.value
     #expect(job.confirmation?.action == .enabled(false))
     let first = await AgentSettingsTests().body(h, action)
     #expect(first?["enabled"] == .bool(false))
@@ -102,22 +104,31 @@ import Testing
     case "stale": h.store.automationState(source).freshness = .stale
     default: h.store.automationState(source).overview?.actionsEnabled = false
     }
+    #expect(h.store.automationState(source).job === job)
     h.store.performCronAction(sourceID: source, action: .run)
     await job.task?.value
     #expect(await h.transport.count(path + "/jobs/sample-digest/run", method: "POST") == 0)
     #expect(!job.busy)
   }
-  @Test func dispatchRechecksCapabilityBeforeTaskStarts() async throws {
+  @Test(arguments: ["capability", "background", "selection", "generation"])
+  func dispatchRechecksCapabilityBeforeTaskStarts(_ change: String) async throws {
     let h = try await live()
     let job = try #require(h.store.automationState(source).job)
     h.store.performCronAction(sourceID: source, action: .run)
     let task = job.task
-    h.store.bootstrap?.agents[0].cron?.actions = false
+    switch change {
+    case "background": await h.store.scenePhaseChanged(.background)
+    case "selection": h.store.selectedThreadID = "other-thread"
+    case "generation": h.store.bootstrap?.agents[0].generation = "replacement"
+    default: h.store.bootstrap?.agents[0].cron?.actions = false
+    }
+    #expect(h.store.automationState(source).job === job)
     await task?.value
     #expect(await h.transport.count(path + "/jobs/sample-digest/run", method: "POST") == 0)
     #expect(!job.busy)
   }
-  @Test func lateMutationCannotPublishAfterSelectionOrEpochReplacement() async throws {
+  @Test(arguments: ["background", "selection"])
+  func lateMutationCannotPublishAfterSelectionOrEpochReplacement(_ change: String) async throws {
     let h = try await live()
     let job = try #require(h.store.automationState(source).job)
     let action = path + "/jobs/sample-digest/run"
@@ -125,10 +136,16 @@ import Testing
     h.store.performCronAction(sourceID: source, action: .run)
     let task = job.task
     await eventually { await h.transport.pauseCount() == 1 }
-    await h.store.scenePhaseChanged(.background)
+    if change == "background" {
+      await h.store.scenePhaseChanged(.background)
+    } else {
+      await h.store.select(sourceID: "other-agent", threadID: "other-thread")
+    }
     await h.transport.release(try challenge())
     await task?.value
     #expect(job.confirmation == nil && job.notice == nil && job.error == nil)
+    #expect(!h.store.automationIsAuthoritative(source))
+    #expect(h.store.automationState(source).freshness == .stale)
     #expect(await h.transport.count(action, method: "POST") == 1)
   }
   @Test func configIsReadOnlyRedactedEphemeralAndSharesActionExclusion() async throws {
@@ -162,6 +179,8 @@ import Testing
       #"{"id":"event-other","version":1,"at":"2030-01-02T12:00:00Z","type":"cron.changed","payload":{"sourceId":"other-agent"}}"#
     )
     await h.store.receive(.event(generation: 1, gap: .initial, other))
+    await h.store.automationState("other-agent").flight?.value
+    await h.store.reconciliationTask?.value
     #expect(await h.transport.count(path) == 1)
     await h.transport.set(path, [.paused, .response(try response(overview("")))])
     let changed: ApiEvent = try decode(
@@ -285,5 +304,175 @@ import Testing
     value.jobs[0].nextRunAt = "2099-01-01T00:00:00Z"
     #expect(AutomationPresentation.nextRun(value.jobs[0], live: false, now: Date()) == nil)
     #expect(AutomationPresentation.state(value.jobs[0], live: false) == "Snapshot")
+  }
+
+  @Test func foregroundAndScopeReconciliationKeepSelectedJobUsable() async throws {
+    let h = try await live()
+    let state = h.store.automationState(source)
+    let job = try #require(state.job)
+    let lifetime = job.lifetime
+    await h.store.scenePhaseChanged(.background)
+    #expect(state.job === job && job.lifetime != lifetime)
+    await h.transport.set(path, Array(repeating: .response(try response(overview())), count: 5))
+    await h.store.scenePhaseChanged(.active)
+    await h.store.receive(
+      .event(
+        generation: 1, gap: .initial,
+        try event("ready", thread: nil, payload: .object(["version": .number(1)]))))
+    await h.store.reconciliationTask?.value
+    await state.flight?.value
+    #expect(state.job === job && h.store.automationIsAuthoritative(source))
+    h.store.performCronAction(sourceID: source, action: .run)
+    await job.task?.value
+    #expect(await h.transport.count(path + "/jobs/sample-digest/run", method: "POST") == 1)
+    await state.flight?.value
+    h.store.bootstrap?.agents[0].generation = "replacement"
+    h.store.reconcileAutomations()
+    #expect(state.job === job)
+    await state.flight?.value
+    #expect(h.store.automationIsAuthoritative(source))
+    h.store.selectedThreadID = "previous-thread"
+    await h.store.select(sourceID: source, threadID: job.threadID)
+    #expect(state.job === job)
+    #expect(
+      h.store.cronActionUnavailableReason(
+        sourceID: source, jobID: job.jobID, threadID: job.threadID) == nil)
+  }
+  @Test func nonselectedChangedEventRevokesAuthorityWithoutReading() async throws {
+    let h = try await live()
+    let state = h.store.automationState(source)
+    await h.store.select(sourceID: "other-agent", threadID: nil)
+    let before = await h.transport.count(path)
+    await h.store.receive(
+      .event(
+        generation: 1, gap: .initial,
+        try event("cron.changed", thread: nil, payload: .object(["sourceId": .string(source)]))))
+    await h.store.reconciliationTask?.value
+    #expect(state.freshness == .stale && state.flight == nil)
+    #expect(await h.transport.count(path) == before)
+    await h.transport.set(path, [.paused])
+    await h.store.select(sourceID: source, threadID: "thread-cron")
+    await eventually { await h.transport.pauseCount() == 1 }
+    #expect(!h.store.automationIsAuthoritative(source))
+    await h.transport.release(try response(overview()))
+    await state.flight?.value
+    #expect(h.store.automationIsAuthoritative(source))
+  }
+  @Test(arguments: ["transport", "server"])
+  func unknownOutcomeRequiresFreshReadBeforeAnotherTap(_ failure: String) async throws {
+    let h = try await live()
+    let state = h.store.automationState(source)
+    let job = try #require(state.job)
+    let action = path + "/jobs/sample-digest/run"
+    let reply: RouteTransport.Reply =
+      failure == "transport"
+      ? .failure
+      : .response(try response(JSONValue.object(["error": .string("sample failure")]), status: 503))
+    await h.transport.set(action, [reply])
+    await h.transport.set(path, [.paused])
+    h.store.performCronAction(sourceID: source, action: .run)
+    await job.task?.value
+    await eventually { await h.transport.pauseCount() == 1 }
+    #expect(job.error != nil && !h.store.automationIsAuthoritative(source))
+    h.store.performCronAction(sourceID: source, action: .run)
+    #expect(job.task == nil)
+    #expect(await h.transport.count(action, method: "POST") == 1)
+    await h.transport.release(try response(overview()))
+    await state.flight?.value
+    #expect(h.store.automationIsAuthoritative(source))
+  }
+  @Test func snapshotAdoptionDuringReadObligesTrailingRead() async throws {
+    let h = try await live()
+    let state = h.store.automationState(source)
+    await h.transport.set(path, [.paused, .response(try response(overview("")))])
+    h.store.requestAutomations(sourceID: source)
+    let flight = state.flight
+    await eventually { await h.transport.pauseCount() == 1 }
+    h.store.adoptAutomationCache([
+      .init(
+        sourceID: source, overview: try overview(),
+        savedAt: Date(timeIntervalSince1970: 4_102_444_800))
+    ])
+    await h.transport.release(try response(overview()))
+    await flight?.value
+    #expect(state.freshness == .fresh && state.overview?.jobs.isEmpty == true)
+    #expect(await h.transport.count(path) == 3)
+  }
+  @Test func cachedRunOutputIsProjectedAndCapabilitiesAreScrubbedOnWriteAndHydrate() async throws {
+    let h = Harness()
+    var value = try overview()
+    value.jobs[0].lastRun = try decode(
+      #"{"runId":"run-sample","jobId":"sample-digest","scheduledAt":"2030-01-02T09:00:00Z","orderedAt":"2030-01-02T09:00:00Z","sequence":1,"trigger":"manual","status":"failed","eventCount":0,"projection":"summary"}"#
+    )
+    let capability =
+      "https://console.example.ts.net/api/v1/threads/sample/content?token=fictional-capability"
+    value.jobs[0].lastRun?.text = capability
+    value.jobs[0].lastRun?.error = capability
+    value.degradedReason = capability
+    var cache = CacheRecord()
+    cache.revision = 1
+    cache.automationOverviews = [.init(sourceID: source, overview: value, savedAt: Date())]
+    try await h.repository.saveCache(cache, namespace: h.store.namespace)
+    let file = h.directory.appendingPathComponent(h.profile.id.uuidString).appendingPathComponent(
+      h.store.namespace.identity
+    ).appendingPathComponent("cache-v1.json")
+    #expect(
+      !String(decoding: try Data(contentsOf: file), as: UTF8.self).contains("fictional-capability"))
+    // Simulate a legacy unsanitized file; load/hydrate applies the same projection as writes.
+    try JSONEncoder().encode(cache).write(to: file)
+    await h.store.hydrate()
+    let restored = try #require(h.store.automationSnapshot(source)?.overview)
+    #expect(restored.jobs[0].lastRun?.text == nil && restored.jobs[0].lastRun?.error == nil)
+    #expect(restored.degradedReason == "[local capability removed]")
+  }
+  @Test(arguments: ["cancel", "newer-route"])
+  func delayedNavigationCannotCommitAfterCancellationOrNewIntent(_ change: String) async throws {
+    let h = try await live()
+    let state = h.store.automationState(source)
+    state.freshness = .stale
+    let second = jobJSON.replacingOccurrences(of: "sample-digest", with: "newer-job")
+      .replacingOccurrences(of: "thread-cron", with: "newer-thread")
+    let updated = try response(overview(jobJSON + "," + second))
+    await h.transport.set(path, [.paused, .response(updated)])
+    let old = Task { await h.store.selectAutomation(sourceID: source, jobID: "sample-digest") }
+    await eventually { await h.transport.pauseCount() == 1 }
+    let originalIntent = h.store.automationSelectionIntent
+    var newer: Task<String?, Never>?
+    if change == "cancel" {
+      old.cancel()
+    } else {
+      newer = Task { await h.store.selectAutomation(sourceID: source, jobID: "newer-job") }
+      await eventually { h.store.automationSelectionIntent != originalIntent }
+    }
+    await h.transport.release(updated)
+    #expect(await old.value == nil)
+    if let newer {
+      #expect(await newer.value == "newer-thread")
+      #expect(h.store.selectedThreadID == "newer-thread")
+    } else {
+      #expect(h.store.selectedThreadID == "thread-cron")
+    }
+  }
+  @Test func observationAccessorDoesNotCreateOwnersAndAnchorsUseRenderedRows() async throws {
+    let h = Harness()
+    #expect(h.store.automationSnapshot(source) == nil)
+    #expect(!h.store.automationIsAuthoritative(source))
+    #expect(h.store.automationJob(sourceID: source, jobID: "sample-digest") == nil)
+    #expect(h.store.automations.isEmpty)
+    var message = try sampleMessage("silent-run")
+    message.status = "complete"
+    message.parts = [
+      .telemetry(
+        try decode(
+          #"{"type":"telemetry","event":"cron_run","data":{"runId":"run-sample","status":"succeeded","silent":true}}"#
+        ))
+    ]
+    let state = ConversationState(
+      .init(thread: try sampleThread(), messages: [message], savedAt: Date()))
+    #expect(state.cronRunAnchor("run-sample") == nil)
+    message.parts.append(.text(.init(text: "Visible sample run summary")))
+    state.record.messages = [message]
+    state.publish()
+    #expect(state.cronRunAnchor("run-sample") == message.id)
   }
 }
