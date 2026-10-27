@@ -98,6 +98,9 @@ extension ConsoleStore {
       connection = .live
       for state in providers.values where state.open { resumeProviders(state) }
       for state in agentRestarts.values where state.open { resumeAgentRestart(state) }
+      if let source = selectedBucket?.sourceID {
+        requestAutomations(sourceID: source, invalidate: true)
+      }
       requestReconciliation()
     case .messageDelta(let delta):
       guard let id = envelope.threadId else {
@@ -193,7 +196,11 @@ extension ConsoleStore {
       requestReconciliation()
     case .attachmentChanged:
       if let id = envelope.threadId { requestDetailRepair(id) }
-    case .cronChanged, .pushPending: break
+    case .cronChanged(let payload):
+      if payload.sourceId == selectedBucket?.sourceID {
+        requestAutomations(sourceID: payload.sourceId, invalidate: true)
+      }
+    case .pushPending: break
     }
   }
   func applyThreadChange(_ payload: ThreadChangedPayload) {
@@ -250,6 +257,7 @@ extension ConsoleStore {
       bootstrapClock &+= 1
       if freshness != .stale { freshness = .stale }
     }
+    invalidateAutomations()
     for id in conversations.keys {
       observations[id] = observation
       if conversations[id]?.freshness != .stale { conversations[id]?.freshness = .stale }
@@ -294,6 +302,9 @@ extension ConsoleStore {
     guard epoch == generation, !Task.isCancelled else { return }
     await refreshActiveFleet()
     guard epoch == generation, !Task.isCancelled else { return }
+    if let source = selectedBucket?.sourceID, automationState(source).freshness != .fresh {
+      await refreshAutomations(sourceID: source)
+    }
     await refreshRegistries()
     guard epoch == generation, !Task.isCancelled else { return }
     await recoverSubmissions()
@@ -340,6 +351,7 @@ extension ConsoleStore {
     await discardStagedUploads()
   }
   func stopEffects() async {
+    suspendAutomations()
     for state in providers.values { suspendProviders(state) }
     for state in agentRestarts.values { suspendAgentRestart(state) }
     invalidateMcpApps()

@@ -21,6 +21,12 @@ public enum CacheMerge {
     var result = local
     result.bootstrap = local.bootstrap ?? disk.bootstrap
     result.revision = disk.revision + 1
+    var snapshots: [String: CachedAutomationOverview] = [:]
+    for entry in (disk.automationOverviews ?? []) + (local.automationOverviews ?? []) {
+      if let previous = snapshots[entry.sourceID], previous.savedAt > entry.savedAt { continue }
+      snapshots[entry.sourceID] = entry
+    }
+    result.automationOverviews = Array(snapshots.values)
     result.tombstones = disk.tombstones.merging(local.tombstones) { old, new in
       if old.revision != new.revision { return old.revision > new.revision ? old : new }
       if old.origin != new.origin {

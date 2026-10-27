@@ -83,21 +83,34 @@ public struct ThreadTombstone: Codable, Sendable, Equatable {
     origin = try c.decodeIfPresent(Origin.self, forKey: .origin) ?? .legacyUnknown
   }
 }
+public struct CachedAutomationOverview: Codable, Sendable {
+  public var sourceID: String
+  public var overview: WebCronOverview
+  public var savedAt: Date
+  public init(sourceID: String, overview: WebCronOverview, savedAt: Date) {
+    self.sourceID = sourceID
+    self.overview = overview
+    self.savedAt = savedAt
+  }
+}
 public struct CacheRecord: Codable, Sendable {
   public var version = 1
   public var revision: UInt64 = 0
+  public var automationOverviews: [CachedAutomationOverview]?
   public var bootstrap: ApiBootstrap?
   public var buckets: [ThreadBucket] = []
   public var conversations: [CachedConversation] = []
   public var tombstones: [String: ThreadTombstone] = [:]
   public init() {}
   private enum CodingKeys: String, CodingKey {
-    case version, revision, bootstrap, buckets, conversations, tombstones
+    case version, revision, bootstrap, buckets, conversations, tombstones, automationOverviews
   }
   public init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     version = try c.decode(Int.self, forKey: .version)
     revision = try c.decode(UInt64.self, forKey: .revision)
+    automationOverviews = try c.decodeIfPresent(
+      [CachedAutomationOverview].self, forKey: .automationOverviews)
     bootstrap = try c.decodeIfPresent(ApiBootstrap.self, forKey: .bootstrap)
     buckets = try c.decode([ThreadBucket].self, forKey: .buckets)
     conversations = try c.decode([CachedConversation].self, forKey: .conversations)

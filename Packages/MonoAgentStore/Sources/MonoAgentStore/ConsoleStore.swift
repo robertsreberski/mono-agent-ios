@@ -91,6 +91,7 @@ public final class ConsoleStore {
   @ObservationIgnored var catalogFlights: Set<String> = []
   @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
+  public internal(set) var automations: [String: AutomationState] = [:]
   @ObservationIgnored var agentRestarts: [String: AgentRestartState] = [:]
   @ObservationIgnored var providers: [String: ProviderState] = [:]
   /// Set synchronously by composition before any asynchronous scene work.
@@ -222,6 +223,11 @@ public final class ConsoleStore {
       guard epoch == generation else { return }
       cacheRevision = cache.revision
       tombstones = cache.tombstones
+      for entry in cache.automationOverviews ?? [] {
+        let state = automationState(entry.sourceID)
+        state.overview = entry.overview
+        state.savedAt = entry.savedAt
+      }
       bootstrap = cache.bootstrap
       if let bootstrap {
         tags = bootstrap.tags
@@ -279,6 +285,7 @@ public final class ConsoleStore {
       visible = false
       selectedBucket = bucket
       selectedThreadID = threadID
+      for state in automations.values { closeCronJob(sourceID: state.sourceID) }
     }
     let generation = epoch
     let selected = selection
@@ -303,6 +310,7 @@ public final class ConsoleStore {
     }
     guard epoch == generation, selection == selected, started, !backgrounded else { return }
     scheduleSubscription()
+    if automationState(sourceID).freshness != .fresh { requestAutomations(sourceID: sourceID) }
     if let threadID { await refreshDetail(threadID) }
     guard epoch == generation, selection == selected else { return }
     if let key = selectedBucket, buckets[key]?.freshness != .fresh { await refreshBucket(key) }
@@ -519,6 +527,11 @@ public final class ConsoleStore {
     record.buckets = Array(buckets.values)
     record.conversations = conversations.values.map(\.record)
     record.tombstones = tombstones
+    record.automationOverviews = automations.values.compactMap { state in
+      guard let overview = state.overview, let savedAt = state.savedAt else { return nil }
+      return CachedAutomationOverview(
+        sourceID: state.sourceID, overview: overview, savedAt: savedAt)
+    }
     do {
       var result = try await repository.saveCache(record, namespace: namespace)
       if case .superseded = result {
@@ -528,6 +541,7 @@ public final class ConsoleStore {
         cacheRevision = max(cacheRevision, record.revision)
         bootstrap = record.bootstrap
         reconcileAgentRestarts()
+        reconcileAutomations()
         result = try await repository.saveCache(record, namespace: namespace)
       }
       guard cacheRevision == record.revision else { return }
