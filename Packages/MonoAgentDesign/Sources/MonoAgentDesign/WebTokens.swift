@@ -506,11 +506,10 @@ struct WebShadowModifier: ViewModifier {
 // MARK: Web primitives
 
 /// The dashboard/chat header action tile: 36×36 (44 pt hit target), radius 10, subtle fill, soft
-/// glyph; `.accent` is the new-conversation tile (accent-soft fill, accent glyph). Floats above
-/// content, so it is Liquid Glass tinted with the web fill (opaque under Reduce Transparency).
+/// glyph. Floating tiles are untinted pure glass; tone only affects the flat/opaque fallback.
 public struct WebTileButtonStyle: ButtonStyle {
   public enum Tone: Sendable { case standard, accent }
-  /// `.glass` floats the tile on Liquid Glass tinted with its fill; `.flat` is the web's plain
+  /// `.glass` floats the tile on untinted Liquid Glass; `.flat` is the web's plain
   /// fill (used where glass would read heavier than the web header, e.g. the phone chat bar).
   public enum Material: Sendable { case glass, flat }
   private let tone: Tone
@@ -529,8 +528,10 @@ public struct WebTileButtonStyle: ButtonStyle {
     let fill = tone == .accent ? palette.accentSoft : WebColor.surfaceSubtle
     configuration.label
       .labelStyle(.iconOnly)
-      .font(.system(size: 15, weight: .medium))
-      .foregroundStyle(tone == .accent ? palette.accent.color : WebColor.textSoft.color)
+      .font(.system(size: 13, weight: .regular))
+      .foregroundStyle(
+        material == .flat && tone == .accent ? palette.accent.color : WebColor.textSoft.color
+      )
       .frame(width: WebMetrics.tile, height: WebMetrics.tile)
       .background {
         if material == .flat {
@@ -554,7 +555,7 @@ struct TileGlass<S: Shape>: ViewModifier {
   let fill: Color
   func body(content: Content) -> some View {
     if enabled {
-      content.floatingGlass(in: shape, tint: fill, opaqueFill: fill)
+      content.floatingGlass(in: shape, opaqueFill: fill)
     } else {
       content
     }

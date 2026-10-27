@@ -153,6 +153,16 @@ struct SkillDiscoveryTests {
 }
 
 struct ModelOptionsTests {
+  @Test func compactBadgesUseWireTokensAndKeepFullSpokenMeaning() throws {
+    let agent = try agent()
+    #expect(ModelOptions.compactEffortLabel(agent, model: "", effort: "xhigh") == "XHIGH")
+    #expect(ModelOptions.compactEffortLabel(agent, model: "", effort: "none") == "OFF")
+    #expect(ModelOptions.compactEffortLabel(agent, model: "", effort: "") == "HIGH")
+    #expect(ModelOptions.compactEffortLabel(agent, model: "", effort: "future") == "FUTURE")
+    #expect(ModelOptions.compactEffortLabel(nil, model: "", effort: "") == "")
+    #expect(ModelOptions.summary(agent, model: "", effort: "xhigh").hasSuffix("Extra high"))
+  }
+
   private func agent() throws -> WebAgentSummary {
     try ComposerFixture.agent(
       DashboardFixture.agents().first { $0.sourceId == DashboardFixture.atlas }!)

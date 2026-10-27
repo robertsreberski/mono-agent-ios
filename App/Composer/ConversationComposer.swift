@@ -6,6 +6,18 @@ import Observation
 import SwiftUI
 import UIKit
 
+/// Shared only by one conversation destination: the transcript owns follow policy and scrolling;
+/// the dock owns placement. The action never reaches Store or another conversation.
+@MainActor @Observable
+final class TranscriptJumpControl {
+  var available = false
+  var jump: (() -> Void)?
+  /// The dock's frame in global coordinates, published by the dock; Jump straddles its top.
+  var dockFrame: CGRect?
+  /// The dock's first surface is full-width material that supplies the circle's lower part.
+  var sharesDockMaterial = false
+}
+
 /// What transcript surfaces may ask of the visible composer: quote a message, send a suggested
 /// reply, or insert a drafted block (peer replies). Absent outside a conversation screen.
 struct ComposerActions {
@@ -32,12 +44,12 @@ extension View {
   /// exposes `ComposerActions` to the transcript beneath it.
   func conversationComposer(
     store: ConsoleStore, route: AppRoute, createdThreadID: Binding<String?>,
-    sampleAttachments: Bool = false
+    sampleAttachments: Bool = false, jumpControl: TranscriptJumpControl
   ) -> some View {
     modifier(
       ConversationComposerMount(
         store: store, route: route, createdThreadID: createdThreadID,
-        sampleAttachments: sampleAttachments))
+        sampleAttachments: sampleAttachments, jumpControl: jumpControl))
   }
 
   /// The minimal transcript hook: a "Quote" context menu, VoiceOver action and a native
@@ -68,6 +80,7 @@ private struct ConversationComposerMount: ViewModifier {
   let route: AppRoute
   @Binding var createdThreadID: String?
   let sampleAttachments: Bool
+  let jumpControl: TranscriptJumpControl
   @State private var mountState = ComposerMountState()
   @Environment(\.openNewConversation) private var openNewConversation
 
@@ -76,10 +89,13 @@ private struct ConversationComposerMount: ViewModifier {
       .environment(\.composerActions, actions)
       .safeAreaBar(edge: .bottom) {
         if let controller = mountState.controller {
-          ComposerBar(controller: controller)
+          ComposerBar(controller: controller, jumpControl: jumpControl)
             .environment(\.composerSampleAttachments, sampleAttachments)
         }
       }
+      // Above the bar rather than inside it: a safe-area bar's host can clip touches to the
+      // bar's bounds (iPad), which would cut off the target's part above the dock edge.
+      .overlay { TranscriptJumpOverlay(control: jumpControl) }
       .task(id: route) {
         guard let source = route.sourceID, let next = mountState.mount(store: store, route: route)
         else { return }

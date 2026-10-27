@@ -113,7 +113,7 @@ public struct WebModelRow: View {
 }
 
 /// Web effort option. Unselected: translucent group ink with a hairline edge (it sits on the
-/// sheet material); selected: the accent-strong fill with `onAccent` text.
+/// sheet material); selected: accent ink, accent text and a 1 px accent edge.
 public struct WebEffortButtonStyle: ButtonStyle {
   private let selected: Bool
   @Environment(\.consoleTheme) private var theme
@@ -121,17 +121,20 @@ public struct WebEffortButtonStyle: ButtonStyle {
   public func makeBody(configuration: Configuration) -> some View {
     let shape = RoundedRectangle(cornerRadius: 8)
     configuration.label.webFont(.effortOption)
-      .foregroundStyle(selected ? theme.palette.onAccent.color : WebGlass.textSoft.color)
+      .foregroundStyle(
+        selected ? theme.palette.accentStrong.color : WebGlass.textSoft.color
+      )
       .padding(.horizontal, 10).frame(minWidth: 44, minHeight: 44)
       .background(
         selected
-          ? theme.palette.accentStrong.color
+          ? theme.palette.accentInk
           : configuration.isPressed ? WebGlass.selectedFill.color : WebGlass.groupFill.color,
         in: shape
       )
       .overlay(
         shape.strokeBorder(
-          selected ? theme.palette.accentStrong.color : WebGlass.hairline.color, lineWidth: 1)
+          selected ? theme.palette.accentStrong.color : WebGlass.hairline.color,
+          lineWidth: 1)
       )
       .opacity(configuration.isPressed ? 0.75 : 1)
       .accessibilityAddTraits(selected ? [.isSelected] : [])

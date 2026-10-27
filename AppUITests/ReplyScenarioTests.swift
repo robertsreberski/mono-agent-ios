@@ -3,6 +3,45 @@ import UIKit
 import XCTest
 
 @MainActor final class ReplyScenarioTests: XCTestCase {
+  func testJumpReturnsAfterImageCoverDismisses() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-images", "--appearance", "light",
+      "--reset-test-data", "--fixture-long-history",
+    ]
+    app.launch()
+    defer { app.terminate() }
+    let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    WaitFor.hittable(transcript)
+    transcript.swipeDown(velocity: .fast)
+    let jump = element(app, "jump-to-latest")
+    WaitFor.hittable(jump)
+    let header = element(app, "conversation-header")
+    let window = app.windows.firstMatch
+    WaitFor.element(header, "header frame for the system scroll-to-top region") {
+      !$0.frame.isEmpty
+    }
+    window.coordinate(withNormalizedOffset: .zero).withOffset(
+      CGVector(
+        dx: transcript.frame.maxX - window.frame.minX - 24,
+        dy: (header.frame.minY - window.frame.minY) / 4)
+    ).tap()
+    let image = app.buttons["View sample-landscape-1.png"].firstMatch
+    WaitFor.hittable(image)
+    WaitFor.hittable(jump)
+    image.tap()
+    WaitFor.hittable(element(app, "reply-lightbox"))
+    WaitFor.hittable(app.buttons["Close image"].firstMatch)
+    app.buttons["Close image"].firstMatch.tap()
+    WaitFor.absent(element(app, "reply-lightbox"))
+    // No extra scroll/geometry threshold crossing: onAppear must reattach the existing policy.
+    WaitFor.hittable(jump)
+    jump.tap()
+    WaitFor.absent(jump)
+    WaitFor.hittable(element(app, "message-chrome-history-29"))
+  }
+
   func testFilesLight() { files("light") }
   func testFilesDark() { files("dark") }
   func testImagesLight() { images("light") }

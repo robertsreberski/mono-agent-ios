@@ -179,6 +179,16 @@ enum ModelOptions {
     return name + " · " + effortLabel.replacingOccurrences(of: "Default · ", with: "")
   }
 
+  /// Web route-label: compact badges use the wire effort token, not its long display name.
+  static func compactEffortLabel(_ agent: WebAgentSummary?, model: String, effort: String) -> String
+  {
+    guard let agent else { return "" }
+    let effective =
+      effort.isEmpty
+      ? inheritedEffort(agent, model, defaultEffort: agent.defaultEffort) : effort
+    return effective == "none" ? "OFF" : effective?.uppercased() ?? "PROVIDER"
+  }
+
   /// Web `setModel`: switching model clears an effort the new model cannot run.
   static func effortAfterSwitching(
     _ agent: WebAgentSummary, to model: String, currentEffort: String

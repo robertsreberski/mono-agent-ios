@@ -14,16 +14,111 @@ final class ScenarioTests: XCTestCase {
       "Expected \(predicate)", file: file, line: line)
   }
 
-  private func swipePicker(_ app: XCUIApplication, _ id: String) {
-    let menu = element(app, id)
-    XCTAssertTrue(menu.waitForExistence(timeout: 5))
-    XCTAssertGreaterThan(menu.frame.width, 0)
-    XCTAssertGreaterThan(menu.frame.height, 0)
-    // Popover UIScrollViews report an empty AX visible-frame on this runtime.
-    // A real finger drag inside the measured viewport still exercises native scrolling.
-    menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).press(
-      forDuration: 0.05,
-      thenDragTo: menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+  private func reachNativeMenuItem(
+    _ app: XCUIApplication, _ target: XCUIElement, discoverVirtualized: Bool = true
+  ) -> XCUIElement {
+    let targetExists = target.waitForExistence(timeout: 2)
+    let menu = app.collectionViews.firstMatch
+    guard menu.waitForExistence(timeout: 2) else {
+      XCTFail("Native menu missing for \(target); last visible labels: []")
+      return target
+    }
+    // Native menu virtualization instantiates only the first ~8 rows. Its collection frame
+    // is unclipped; the smallest containing ancestor supplies the actual menu viewport.
+    let window = app.windows.firstMatch
+    func viewport() -> CGRect? {
+      app.otherElements.containing(.collectionView, identifier: nil)
+        .allElementsBoundByIndex.map { $0.frame.intersection(window.frame) }
+        .filter { !$0.isEmpty && $0.intersects(menu.frame) }
+        .min { $0.width * $0.height < $1.width * $1.height }
+    }
+    guard let clipped = viewport(), clipped.height > 20, clipped.width > 20 else {
+      XCTFail("No clipped menu frame for \(target); last visible labels: []")
+      return target
+    }
+    func labels() -> Set<String> {
+      guard let snapshot = try? menu.snapshot() else { return [] }
+      func collect(_ row: any XCUIElementSnapshot) -> [String] {
+        let own =
+          row.elementType == .button && !row.frame.isEmpty
+            && clipped.contains(CGPoint(x: row.frame.midX, y: row.frame.midY))
+          ? [row.label] : []
+        return own + row.children.flatMap { collect($0) }
+      }
+      return Set(collect(snapshot))
+    }
+    var lastLabels = labels()
+    func fail(_ reason: String) {
+      XCTFail("\(reason) for \(target); last visible labels: \(lastLabels.sorted())")
+    }
+    let virtualized = menu.frame.height > clipped.height + 1
+    guard targetExists || (discoverVirtualized && virtualized) else {
+      fail("Exact native menu target did not appear (discovery disallowed or menu not virtualized)")
+      return target
+    }
+    let identifier = menu.identifier
+    for drag in 0...12 {
+      if target.exists && !target.frame.isEmpty
+        && clipped.insetBy(dx: -1, dy: -1).contains(target.frame)
+      {
+        WaitFor.element(
+          target, "exact menu target hittable: \(target); labels: \(labels().sorted())"
+        ) {
+          $0.exists && !$0.frame.isEmpty && $0.isHittable
+        }
+        return target
+      }
+      guard drag < 12 else {
+        fail("Reached 12-drag native menu discovery cap")
+        return target
+      }
+      guard target.exists || (discoverVirtualized && virtualized) else {
+        fail("Strict native menu target disappeared")
+        return target
+      }
+      let before = labels()
+      lastLabels = before
+      guard !before.isEmpty else {
+        fail("No visible native menu rows")
+        return target
+      }
+      let origin = window.coordinate(withNormalizedOffset: .zero)
+      func point(_ fraction: CGFloat) -> XCUICoordinate {
+        origin.withOffset(
+          CGVector(
+            dx: clipped.midX - window.frame.minX,
+            dy: clipped.minY + clipped.height * fraction - window.frame.minY))
+      }
+      point(0.9).press(
+        forDuration: 0.05, thenDragTo: point(0.1), withVelocity: .fast,
+        thenHoldForDuration: 0)
+      guard menu.exists, menu.identifier == identifier, viewport() == clipped else {
+        fail("Native menu changed or disappeared after drag")
+        return target
+      }
+      let progress = XCTNSPredicateExpectation(
+        predicate: NSPredicate { _, _ in
+          let current = labels()
+          guard !current.isEmpty, current != before else { return false }
+          lastLabels = current
+          return true
+        }, object: nil)
+      guard XCTWaiter.wait(for: [progress], timeout: 5) == .completed else {
+        fail("Native menu reached its end or made no visible-label progress")
+        return target
+      }
+    }
+    return target
+  }
+
+  /// The OS drops accessibilityIdentifier/Label modifiers below native Menu's root. Keep
+  /// source IDs, but use the self-contained, unique visible label only for nested items.
+  @discardableResult
+  private func tapNestedMenuItem(_ app: XCUIApplication, label: String) -> XCUIElement {
+    let item = reachNativeMenuItem(
+      app, app.collectionViews.buttons[label].firstMatch, discoverVirtualized: false)
+    if item.exists && !item.frame.isEmpty && item.isHittable { item.tap() }
+    return item
   }
 
   func testArchivedSearchResultOpensColdWithoutNavigatingAway() {
@@ -46,10 +141,7 @@ final class ScenarioTests: XCTestCase {
   func testLongTagAndProjectPickersAtAccessibilitySize() {
     let app = launch("organize-long", accessibilityText: true)
     func reach(_ id: String, in menu: String) -> XCUIElement {
-      let target = app.buttons[id]
-      for _ in 0..<18 where !target.isHittable { self.swipePicker(app, menu) }
-      XCTAssertTrue(target.isHittable)
-      return target
+      self.reachNativeMenuItem(app, app.buttons[id])
     }
     app.buttons["conversation-tags"].tap()
     reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
@@ -57,7 +149,7 @@ final class ScenarioTests: XCTestCase {
       app.buttons["conversation-tags"], NSPredicate(format: "value == %@", "Label 30"))
     app.buttons["conversation-tags"].tap()
     reach("edit-tags", in: "tag-picker-scroll").tap()
-    reach("tag-menu-label-30", in: "tag-picker-scroll").tap()
+    reachNativeMenuItem(app, app.collectionViews.buttons["Edit Label 30"].firstMatch).tap()
     XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
     app.buttons["Cancel"].tap()
     app.buttons["conversation-tags"].tap()
@@ -66,7 +158,7 @@ final class ScenarioTests: XCTestCase {
     app.buttons["Cancel"].tap()
     app.buttons["conversation-actions"].tap()
     app.buttons["action-project"].tap()
-    reach("assign-project-collection-12", in: "project-picker-scroll").tap()
+    reachNativeMenuItem(app, app.collectionViews.buttons["Collection 12"].firstMatch).tap()
     XCTAssertTrue(app.staticTexts["Collection 12"].waitForExistence(timeout: 5))
   }
 
@@ -86,9 +178,11 @@ final class ScenarioTests: XCTestCase {
         app.buttons["conversation-tags"].tap()
       }
       let target = app.buttons[projects ? "assign-project-collection-12" : "new-tag"]
-      let menu = projects ? "project-picker-scroll" : "tag-picker-scroll"
-      for _ in 0..<18 where !target.isHittable { self.swipePicker(app, menu) }
-      XCTAssertTrue(target.isHittable)
+      if projects {
+        _ = self.reachNativeMenuItem(app, app.collectionViews.buttons["Collection 12"].firstMatch)
+      } else {
+        _ = self.reachNativeMenuItem(app, target)
+      }
     }
   }
 
@@ -223,7 +317,9 @@ final class ScenarioTests: XCTestCase {
       XCTAssertTrue(button.waitForExistence(timeout: 5))
       button.tap()
     }
-    element(app, "rename-conversation").tap()
+    open()
+    WaitFor.hittable(app.buttons["action-rename"])
+    app.buttons["action-rename"].tap()
     let title = app.alerts.textFields["Title"]
     XCTAssertTrue(title.waitForExistence(timeout: 5))
     title.tap()
@@ -384,7 +480,7 @@ final class ScenarioTests: XCTestCase {
       if create { app.buttons["new-tag"].tap() }
       if settings {
         app.buttons["edit-tags"].tap()
-        app.buttons["tag-menu-research"].tap()
+        self.tapNestedMenuItem(app, label: "Edit Research")
       }
       if settings || create {
         XCTAssertTrue(app.textFields["tag-name"].waitForExistence(timeout: 5))
@@ -434,15 +530,14 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(trigger.waitForExistence(timeout: 5))
     trigger.tap()
     app.buttons["edit-tags"].tap()
-    XCTAssertTrue(app.buttons["tag-menu-tag-created-1"].waitForExistence(timeout: 5))
-    app.buttons["tag-menu-tag-created-1"].tap()
+    tapNestedMenuItem(app, label: "Edit Planning")
     XCTAssertTrue(name.waitForExistence(timeout: 5))
     name.tap()
     name.typeText(" notes")
     app.buttons["organize-save"].tap()
     trigger.tap()
     app.buttons["edit-tags"].tap()
-    app.buttons["tag-menu-tag-created-1"].tap()
+    tapNestedMenuItem(app, label: "Edit Planning notes")
     XCTAssertTrue(app.buttons["delete-tag"].waitForExistence(timeout: 5))
     app.buttons["delete-tag"].tap()
     XCTAssertTrue(
@@ -549,12 +644,12 @@ final class ScenarioTests: XCTestCase {
   func testConversationPlaceholderLight() {
     capture(
       "conversation-placeholder", "light",
-      expect: ["conversation-header", "conversation-run-state", "conversation-transcript"])
+      expect: ["conversation-header", "rename-conversation", "conversation-transcript"])
   }
   func testConversationPlaceholderDark() {
     capture(
       "conversation-placeholder", "dark",
-      expect: ["conversation-header", "conversation-run-state", "conversation-transcript"])
+      expect: ["conversation-header", "rename-conversation", "conversation-transcript"])
   }
 
   // Dashboard behaviour (no screenshots): sections, navigation, archive, consoles sheet.
@@ -583,8 +678,16 @@ final class ScenarioTests: XCTestCase {
   func testDashboardLastRowClearsFooterLight() { captureDashboardLastRow("light") }
   func testDashboardLastRowClearsFooterDark() { captureDashboardLastRow("dark") }
 
-  private func captureDashboardLastRow(_ appearance: String) {
-    capture("dashboard-populated", appearance, expect: ["agent-strip"], variant: "footerlast") {
+  func testDashboardLastRowClearsFooterAX5Light() { captureDashboardLastRow("light", ax5: true) }
+  func testDashboardLastRowClearsFooterAX5Dark() { captureDashboardLastRow("dark", ax5: true) }
+
+  private func captureDashboardLastRow(_ appearance: String, ax5: Bool = false) {
+    capture(
+      "dashboard-populated", appearance, expect: ["agent-strip"],
+      variant: ax5 ? "footerax5" : "footerlast",
+      arguments: ax5
+        ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] : []
+    ) {
       app in
       XCTAssertTrue(self.scrollTo(app, "load-older"))
       self.element(app, "load-older").tap()
@@ -594,18 +697,22 @@ final class ScenarioTests: XCTestCase {
       let footer = self.element(app, "archive-toggle")
       // Scroll to the actual end, not merely an AX-instantiated row behind floating pills.
       for _ in 0..<4 {
-        if last.isHittable && last.frame.maxY < footer.frame.minY { break }
+        if last.exists && !last.frame.isEmpty && footer.exists && !footer.frame.isEmpty
+          && last.isHittable && last.frame.maxY < footer.frame.minY
+        {
+          break
+        }
         list.swipeUp()
       }
-      let clearance = XCTNSPredicateExpectation(
-        predicate: NSPredicate { _, _ in
-          last.exists && !last.frame.isEmpty && last.frame.minY >= list.frame.minY
-            && last.isHittable
-            && last.frame.maxY < footer.frame.minY
-        }, object: nil)
-      XCTAssertEqual(
-        XCTWaiter.wait(for: [clearance], timeout: 10), .completed,
-        "Last row must settle fully above footer pills")
+      WaitFor.hittable(footer)
+      WaitFor.hittable(self.element(app, "data-mode"))
+      WaitFor.element(last, "last row fully clear of standalone footer buttons") { row in
+        guard !row.frame.isEmpty, list.exists, !list.frame.isEmpty,
+          footer.exists, !footer.frame.isEmpty
+        else { return false }
+        return row.frame.minY >= list.frame.minY && row.isHittable
+          && row.frame.maxY < footer.frame.minY
+      }
     }
   }
 
@@ -614,7 +721,7 @@ final class ScenarioTests: XCTestCase {
     XCTAssertTrue(element(app, "running-row-t-atlas-launch").waitForExistence(timeout: 10))
     element(app, "running-row-t-atlas-launch").tap()
     XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
-    XCTAssertTrue(element(app, "conversation-run-state").label.contains("Running"))
+    WaitFor.value(element(app, "rename-conversation"), contains: "Running")
     returnToDashboard(app)
     element(app, "new-conversation").tap()
     XCTAssertTrue(element(app, "composer-placeholder").waitForExistence(timeout: 10))

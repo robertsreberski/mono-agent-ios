@@ -5,6 +5,75 @@ import XCTest
 /// Composer and answer-surface scenarios (C8). Every test types and sends through the synthetic
 /// Store (`ComposerScript`), asserts the scripted round trip, and captures one screenshot.
 @MainActor final class ComposerScenarioTests: XCTestCase {
+  func testJumpKeepsSuggestionsLight() { jumpKeepsDock("light", state: .suggestions) }
+  func testJumpKeepsSuggestionsDark() { jumpKeepsDock("dark", state: .suggestions) }
+  func testJumpKeepsAttachmentsLight() { jumpKeepsDock("light", state: .attachments) }
+  func testJumpKeepsAttachmentsDark() { jumpKeepsDock("dark", state: .attachments) }
+  func testJumpKeepsPlainDockLight() { jumpKeepsDock("light", state: .plain) }
+  func testJumpKeepsPlainDockDark() { jumpKeepsDock("dark", state: .plain) }
+
+  private enum DockState { case suggestions, attachments, plain }
+
+  /// Jump overlays the first dock surface without reserving space: its frames are identical
+  /// with and without Jump, and rows beside the circle keep their taps.
+  private func jumpKeepsDock(_ appearance: String, state: DockState) {
+    let scenario =
+      switch state {
+      case .suggestions: "composer-model-selector"
+      case .attachments: "composer-draft-attachments"
+      // The model-selector fixture has a conversation; composer-empty is a new draft.
+      case .plain: "composer-model-selector"
+      }
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", scenario, "--appearance", appearance,
+      "--reset-test-data", "--fixture-long-history",
+    ]
+    app.launch()
+    defer { app.terminate() }
+    WaitFor.hittable(element(app, "composer-field"))
+    let surfaces: [String]
+    switch state {
+    case .attachments:
+      element(app, "composer-attach").tap()
+      WaitFor.hittable(element(app, "attach-samples"))
+      element(app, "attach-samples").tap()
+      WaitFor.hittable(app.buttons["Remove field-notes.txt"].firstMatch)
+      surfaces = ["composer-attachments"]
+    case .suggestions:
+      element(app, "composer-field").tap()
+      element(app, "composer-field").typeText("/")
+      WaitFor.hittable(element(app, "command-suggestion-settings"))
+      surfaces = ["composer-suggestions"]
+    case .plain:
+      surfaces = []
+    }
+    let dock = JumpDock(app: app, surfaces: surfaces, newest: "message-sample-assistant")
+    // The reach completing the 44 pt target: above the circle (plain), beside it above the
+    // dock edge (attachments); the shelf and suggestions tap the circle itself.
+    dock.assertGeometryIndependentOfJump(
+      tap: state == .plain ? .above : state == .attachments ? .beside : .circle)
+    captureJumpDock(
+      app, scenario: scenario, appearance: appearance,
+      variant: state == .plain ? "jumpplain" : "jump")
+    switch state {
+    case .attachments:
+      app.buttons["Remove field-notes.txt"].firstMatch.tap()
+      WaitFor.absent(element(app, "attachment-field-notes.txt"))
+      WaitFor.hittable(dock.jump)
+    case .suggestions:
+      // The first suggestion sits under the circle; beside it, the row keeps its tap.
+      let row = element(app, "command-suggestion-settings")
+      WaitFor.element(row, "first suggestion row under Jump") {
+        !$0.frame.isEmpty && $0.frame.intersects(dock.jump.frame)
+      }
+      dock.tapBesideCircle(row)
+      WaitFor.hittable(menuButton(app, "Sample Small"))
+    case .plain:
+      dock.jumpToLatest()
+    }
+  }
+
   func testComposerEmptyLight() { run("composer-empty", "light") }
   func testComposerEmptyDark() { run("composer-empty", "dark") }
   func testComposerKeyboardUp() { run("composer-empty", "light", variant: "keyboard") }
@@ -125,7 +194,7 @@ import XCTest
         action.exists && !action.frame.isEmpty && action.isHittable
           && app.windows.firstMatch.frame.contains(action.frame)
       }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
     action.press(forDuration: 1.2)
     let quote = app.buttons["Quote"].firstMatch
     XCTAssertTrue(quote.waitForExistence(timeout: 5))
@@ -212,32 +281,53 @@ import XCTest
 
   private func modelSelector(_ app: XCUIApplication, capture: () -> Void) {
     let menu = element(app, "composer-model")
-    XCTAssertTrue(menu.waitForExistence(timeout: 10))
     WaitFor.value(menu, contains: "Sample Large")  // the agent default is shown
+    guard WaitFor.hittable(menu) else { return }
     menu.tap()
     let small = menuButton(app, "Sample Small")
-    XCTAssertTrue(small.waitForExistence(timeout: 5))
+    guard WaitFor.hittable(small) else { return }
     let catalog = menuButton(app, "Harbor catalog")
-    XCTAssertTrue(catalog.exists)
-    XCTAssertFalse(catalog.isEnabled, "Catalog-only providers are explained, not selectable")
+    WaitFor.enabled(catalog, false)
     capture()
+    // Capturing can outlive the presentation transition. Recheck the current frame before
+    // tapping, then wait for the sheet to dismiss rather than reopening during its animation.
+    guard WaitFor.hittable(small) else { return }
     small.tap()
-    let routed = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in
-        (menu.value as? String ?? "").contains("Sample Small")
-      }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [routed], timeout: 10), .completed)
+    WaitFor.value(menu, contains: "Sample Small")
+    WaitFor.absent(small)
+    guard WaitFor.hittable(menu) else { return }
     menu.tap()
     let low = menuButton(app, "Low")
-    XCTAssertTrue(low.waitForExistence(timeout: 5))
+    guard WaitFor.hittable(low) else { return }
     low.tap()
-    XCTAssertTrue(waitFor(app, "route-badge", containing: "sample:small"))
+    WaitFor.value(element(app, "rename-conversation"), contains: "sample:small")
     WaitFor.value(menu, contains: "Low")
     let field = composerField(app)
     field.tap()
     field.typeText("Try the small model")
     enabledElement(app, "composer-send").tap()
     XCTAssertTrue(waitForText(app, "Synthetic reply: received “Try the small model”"))
+  }
+
+  func testRunSettingsResetRestoresTheAgentDefault() {
+    let app = launch("composer-model-selector", "light", variant: nil)
+    let trigger = element(app, "composer-model")
+    WaitFor.hittable(trigger)
+    trigger.tap()
+    WaitFor.hittable(menuButton(app, "Sample Small"))
+    menuButton(app, "Sample Small").tap()
+    WaitFor.value(trigger, contains: "Sample Small")
+    trigger.tap()
+    let reset = element(app, "model-reset")
+    WaitFor.hittable(reset)
+    WaitFor.label(reset, contains: "Reset to agent default")
+    reset.tap()
+    WaitFor.absent(reset)
+    WaitFor.hittable(element(app, "sheet-close"))
+    element(app, "sheet-close").tap()
+    WaitFor.value(trigger, contains: "Sample Large")
+    WaitFor.value(trigger, contains: "High")
+    app.terminate()
   }
 
   /// SwiftUI menu items surface as buttons labelled "title, subtitle"; identifiers do not.
@@ -273,7 +363,7 @@ import XCTest
     element(app, "composer-stop").tap()
     let stopped = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == false"), object: element(app, "composer-stop"))
-    XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 10), .completed, "Stop ends the run")
+    XCTAssertEqual(XCTWaiter.wait(for: [stopped], timeout: 30), .completed, "Stop ends the run")
     XCTAssertTrue(
       element(app, "composer-send").waitForExistence(timeout: 10),
       "Idle again: Send replaces Queue")
@@ -321,25 +411,31 @@ import XCTest
   }
 
   private func askForm(_ app: XCUIApplication, capture: () -> Void) {
+    continueAfterFailure = false
     XCTAssertTrue(element(app, "ask-card").waitForExistence(timeout: 10))
     let today = element(app, "ask-option-window-today")
     XCTAssertTrue(scrollTo(app, today))
     XCTAssertTrue(
       composerWait { !self.element(app, "ask-submit").isEnabled }, "Every question is required")
     today.tap()
-    XCTAssertTrue(composerWait { today.isSelected })
+    WaitFor.selected(today)
     let links = element(app, "ask-option-checks-links")
     XCTAssertTrue(scrollTo(app, links))
     links.tap()
-    element(app, "ask-option-checks-copy").tap()
+    WaitFor.selected(links)
+    let copy = element(app, "ask-option-checks-copy")
+    WaitFor.hittable(copy)
+    copy.tap()
+    WaitFor.selected(copy)
     let custom = element(app, "ask-custom-checks")
     XCTAssertTrue(scrollTo(app, custom))
     custom.tap()
     custom.typeText("Also the captions")
+    WaitFor.value(custom, contains: "Also the captions")
     dismissKeyboard(app)
     let submit = element(app, "ask-submit")
     XCTAssertTrue(scrollTo(app, submit))
-    XCTAssertTrue(composerWait { submit.isEnabled })
+    WaitFor.enabled(submit)
     capture()
     submit.tap()
     XCTAssertTrue(element(app, "ask-complete").waitForExistence(timeout: 10))
@@ -457,39 +553,52 @@ import XCTest
       }, object: nil)
     return XCTWaiter.wait(for: [expectation], timeout: 15) == .completed
   }
+  /// Composite predicates issue several accessibility queries per evaluation; hosted iPad
+  /// runners take 2–4 s per query, so a 10 s budget allowed only one or two evaluations.
   private func composerWait(_ predicate: @escaping () -> Bool) -> Bool {
     let expectation = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in predicate() }, object: nil)
-    return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
+    return XCTWaiter.wait(for: [expectation], timeout: 30) == .completed
   }
   private func scrollTo(_ app: XCUIApplication, _ target: XCUIElement) -> Bool {
     let transcript = app.scrollViews.matching(identifier: "conversation-transcript").firstMatch
+    let header = element(app, "conversation-header")
     let composer = element(app, "composer")
-    let header = element(app, "conversation-top-bar")
+    guard target.waitForExistence(timeout: 5) else { return false }
     // Chrome stays fixed during transcript scrolling. Resolve its geometry once per reveal,
     // not on every predicate evaluation: each XCUI property is a fresh accessibility query.
     // Re-reading all three frames could itself exhaust the wait on a dense iPad transcript.
     let transcriptFrame = transcript.frame
-    let top = max(
-      transcriptFrame.minY,
-      header.exists ? header.frame.maxY : app.navigationBars.firstMatch.frame.maxY)
-    let bottom = composer.exists ? composer.frame.minY - 20 : transcriptFrame.maxY
+    let headerBottom = header.exists ? header.frame.maxY : app.navigationBars.firstMatch.frame.maxY
+    let composerTop = composer.exists ? composer.frame.minY : transcriptFrame.maxY
+    let top = max(transcriptFrame.minY, headerBottom) + 8
+    let bottom = min(transcriptFrame.maxY, composerTop) - 20
+    let viewport = CGRect(
+      x: transcriptFrame.minX, y: top, width: transcriptFrame.width, height: bottom - top)
+    guard viewport.height > 0 else { return false }
+    let window = app.windows.firstMatch
+    let windowFrame = window.frame
+    let origin = window.coordinate(withNormalizedOffset: .zero)
+    func point(_ fraction: CGFloat) -> XCUICoordinate {
+      origin.withOffset(
+        CGVector(
+          dx: viewport.midX - windowFrame.minX,
+          dy: viewport.minY + viewport.height * fraction - windowFrame.minY))
+    }
     func reachable() -> Bool {
       guard target.exists else { return false }
       let frame = target.frame
-      guard !frame.isEmpty else { return false }
-      return transcriptFrame.contains(frame.center) && frame.midY >= top + 8
-        && frame.midY < bottom && target.isHittable
+      // System hittability can include a transcript row underneath the floating header.
+      return !frame.isEmpty && viewport.contains(frame) && target.isHittable
     }
     for _ in 0..<8 {
       if reachable() { return composerWait { reachable() } }
-      // The scroll view extends behind both pieces of floating chrome. A target above the
-      // reading edge needs a downward swipe, not another upward swipe past its control.
-      if target.exists && target.frame.midY < top + 8 {
-        transcript.swipeDown()
-      } else {
-        transcript.swipeUp()
-      }
+      // A slow runner can briefly fail to resolve a row it just found while the card settles
+      // (XCUI "retry 1/2" then an empty frame). Wait for it to resolve again; don't give up.
+      guard composerWait({ target.exists && !target.frame.isEmpty }) else { return false }
+      let down = target.frame.minY < viewport.minY
+      point(down ? 0.25 : 0.75).press(
+        forDuration: 0.05, thenDragTo: point(down ? 0.75 : 0.25))
     }
     return composerWait { reachable() }
   }

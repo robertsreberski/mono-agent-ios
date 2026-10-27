@@ -3,6 +3,31 @@ import UIKit
 import XCTest
 
 @MainActor final class ActivityScenarioTests: XCTestCase {
+  func testJumpKeepsShelfLight() { jumpKeepsShelf("light") }
+  func testJumpKeepsShelfDark() { jumpKeepsShelf("dark") }
+  /// The shelf keeps its frame whether or not Jump is shown, and its header row beside the
+  /// circle keeps its tap.
+  private func jumpKeepsShelf(_ appearance: String) {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "--scenario", "conversation-job-stack", "--appearance", appearance,
+      "--reset-test-data",
+    ]
+    app.launch()
+    defer { app.terminate() }
+    let shelf = element(app, "job-stack")
+    WaitFor.hittable(shelf)
+    WaitFor.value(shelf, contains: "Collapsed")
+    let dock = JumpDock(
+      app: app, surfaces: ["composer-dock-scroll", "job-stack"],
+      newest: "message-activity-sample")
+    dock.assertGeometryIndependentOfJump()
+    captureJumpDock(app, scenario: "conversation-job-stack", appearance: appearance)
+    dock.tapBesideCircle(shelf)
+    WaitFor.value(shelf, contains: "Expanded")
+    XCTAssertTrue(dock.jump.exists, "A shelf tap is not a jump")
+  }
+
   func testJobsOpaque() { capture("conversation-jobs", "light", variant: "opaque") }
   func testContextOpaque() { capture("conversation-context", "light", variant: "opaque") }
   func testStackOpaque() { capture("conversation-job-stack", "light", variant: "opaque") }
@@ -98,8 +123,8 @@ import XCTest
   }
   func testCopyIsAvailableWhileResponseIsRunning() {
     let app = activityApp("composer-running")
-    let state = element(app, "conversation-run-state")
-    XCTAssertTrue(activityWait { state.exists && state.label.contains("Running") })
+    // The header no longer shows a run-state chip; status is spoken as the title's value.
+    WaitFor.value(element(app, "rename-conversation"), contains: "Running")
     let row = element(app, "message-sample-assistant")
     let copy = row.buttons["message-copy"].firstMatch
     XCTAssertTrue(activityWait { copy.exists && copy.isEnabled })

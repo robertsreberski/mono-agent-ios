@@ -46,6 +46,16 @@
       thread.messageCount = scenario == .conversationLong ? 540 : 2
       return thread
     }
+    /// Opt-in scrollable history for chrome regression drills; ordinary captures are unchanged.
+    static func chromeHistory() throws -> [WebMessage] {
+      guard ProcessInfo.processInfo.arguments.contains("--fixture-long-history") else { return [] }
+      return try (0..<30).map { index in
+        try message(
+          id: "chrome-history-\(index)", role: "assistant",
+          text: "Fictional history row \(index): review the sample planting notes.")
+      }
+    }
+
     static func message(id: String, role: String, text: String, turn: String = "turn-transcript")
       throws -> WebMessage
     {

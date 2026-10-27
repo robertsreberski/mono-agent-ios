@@ -11,6 +11,7 @@ import UIKit
 /// sit above it on their own glass surface with a frosted reading veil.
 struct ComposerBar: View {
   @Bindable var controller: ComposerController
+  var jumpControl: TranscriptJumpControl? = nil
   @Environment(\.composerSampleAttachments) private var sampleAttachments
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.dynamicTypeSize) private var typeSize
@@ -31,6 +32,11 @@ struct ComposerBar: View {
     controller.threadID.flatMap { store.conversations[$0] }
   }
   private var affordances: ComposerAffordances { controller.affordances }
+  private var hasJobs: Bool { conversation?.jobItems.isEmpty == false }
+  private var hasSuggestions: Bool {
+    !controller.skillSuggestions.isEmpty || !controller.commandSuggestions.isEmpty
+  }
+
   private var limits: UploadLimits? { store.bootstrap?.limits }
   private var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
 
@@ -45,11 +51,12 @@ struct ComposerBar: View {
     let regular = sizeClass == .regular
     VStack(spacing: 6) {
       if let state = conversation {
-        ComposerJobDock(state: state, store: store) { peerQuestion = .init(question: $0) }
+        ComposerJobDock(state: state, store: store) {
+          peerQuestion = .init(question: $0)
+        }
       }
       ComposerOverlay(
-        controller: controller, onCommand: perform,
-        onSkill: { controller.insertSkill($0) })
+        controller: controller, onCommand: perform, onSkill: { controller.insertSkill($0) })
       composerRoot
     }
     .padding(.horizontal, regular ? WebSpace.dockGutterRegular : WebSpace.dockGutter)
@@ -110,6 +117,19 @@ struct ComposerBar: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("composer")
+    // Jump to latest is drawn above the dock by the conversation (`TranscriptJumpOverlay`),
+    // never inside it, so the dock's geometry never depends on it. The dock publishes where
+    // it is and whether its first surface is full-width material: that material supplies
+    // the circle's lower part instead of stacking two glasses on the shelf.
+    .onGeometryChange(for: CGRect.self) {
+      $0.frame(in: .global)
+    } action: {
+      jumpControl?.dockFrame = $0
+    }
+    .onChange(of: hasJobs || !hasSuggestions, initial: true) { _, shares in
+      jumpControl?.sharesDockMaterial = shares
+    }
+    .onDisappear { jumpControl?.dockFrame = nil }
   }
 
   // MARK: Leading
@@ -299,7 +319,7 @@ struct ComposerBar: View {
       Button {
         Task { await controller.send() }
       } label: {
-        Image(systemName: affordances.primary == .queue ? "text.append" : "paperplane")
+        Image(systemName: "paperplane")
           .font(.system(size: 14, weight: .medium))
           .foregroundStyle(WebGlass.accentText(palette).color)
           .frame(width: WebMetrics.send, height: WebMetrics.send)
@@ -318,8 +338,8 @@ struct ComposerBar: View {
         Button {
           Task { await controller.stop() }
         } label: {
-          Image(systemName: "stop")
-            .font(.system(size: 13, weight: .regular))
+          Image(systemName: "stop.fill")
+            .font(.system(size: 11, weight: .regular))
             .foregroundStyle(WebColor.text.color)
             .frame(width: WebMetrics.send, height: WebMetrics.send)
             .background(WebGlass.selectedFill.color, in: tile)
@@ -338,9 +358,6 @@ struct ComposerBar: View {
 
   private var primaryTitle: String {
     affordances.primary == .queue ? "Send as live input" : "Send message"
-  }
-  private var primaryImage: String {
-    affordances.primary == .queue ? "text.append" : "arrow.up"
   }
 
   // MARK: Suggestions keyboard

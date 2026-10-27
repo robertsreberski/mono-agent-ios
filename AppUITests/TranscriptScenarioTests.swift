@@ -327,7 +327,25 @@ import XCTest
       XCTAssertTrue(element(app, "message-long-539").waitForExistence(timeout: 10))
       // User scrolls away: incoming geometry must not drag them back to the bottom.
       transcriptScroll(app).swipeDown()
-      XCTAssertTrue(element(app, "jump-to-latest").waitForExistence(timeout: 5))
+      let jump = element(app, "jump-to-latest")
+      let dock = element(app, "composer")
+      WaitFor.hittable(jump)
+      WaitFor.hittable(dock)
+      let field = element(app, "composer-field")
+      WaitFor.element(jump, "jump straddling dock, clear of transcript and input text") {
+        control in
+        guard dock.exists, field.exists, !dock.frame.isEmpty, !field.frame.isEmpty,
+          !control.frame.isEmpty
+        else { return false }
+        // The 36 pt glass circle sits at the bottom of its 44 pt target, which reaches 8 pt
+        // above it. Straddling means the frame crosses the dock edge; the dock's geometry
+        // does not change for it. The field frame includes its own padding; no more than
+        // that padding may overlap.
+        return control.frame.minY >= dock.frame.minY - control.frame.height
+          && control.frame.minY < dock.frame.minY
+          && control.frame.maxY > dock.frame.minY
+          && control.frame.maxY <= field.frame.minY + 4
+      }
     } else if scenario == "conversation-markdown" {
       XCTAssertTrue(element(app, "code-copy").waitForExistence(timeout: 10))
       XCTAssertTrue(element(app, "markdown-table").waitForExistence(timeout: 10))
@@ -342,12 +360,8 @@ import XCTest
     if (scenario == "conversation-transcript" && variant == nil)
       || scenario == "conversation-streaming"
     {
-      let idle = XCTNSPredicateExpectation(
-        predicate: NSPredicate { _, _ in
-          self.element(app, "conversation-run-state").label.contains("Idle")
-        }, object: nil)
-      XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 5), .completed)
-      XCTAssertTrue(waitUntil { self.element(app, "route-badge").label.contains("sample:large") })
+      WaitFor.value(element(app, "rename-conversation"), contains: "Idle")
+      WaitFor.value(element(app, "rename-conversation"), contains: "sample:large")
     }
     XCTAssertTrue(
       element(app, "running-row-t-atlas-launch").waitForNonExistence(timeout: 5),

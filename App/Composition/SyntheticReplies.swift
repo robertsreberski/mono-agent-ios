@@ -120,7 +120,7 @@
         ]
         return [user]
       }
-      return [message]
+      return try [message] + TranscriptFixture.chromeHistory()
     }
     static func response(_ request: URLRequest, scenario: StoreScenario) throws -> HTTPResponse? {
       if scenario == .conversationRestartCard, let path = request.url?.path {

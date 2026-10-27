@@ -6,6 +6,7 @@ import SwiftUI
 struct ConversationTranscript<Header: View>: View {
   let state: ConversationState
   let store: ConsoleStore
+  let jumpControl: TranscriptJumpControl
   let header: Header
   @State private var policy = TranscriptFollowPolicy()
   @State private var phase: ScrollPhase = .idle
@@ -26,10 +27,14 @@ struct ConversationTranscript<Header: View>: View {
     let gutter = regular ? WebSpace.transcriptGutterRegular : WebSpace.transcriptGutter
     return gutter + max(0, (viewportWidth - WebMetrics.column) / 2)
   }
-  init(state: ConversationState, store: ConsoleStore, @ViewBuilder header: () -> Header) {
+  init(
+    state: ConversationState, store: ConsoleStore, jumpControl: TranscriptJumpControl,
+    @ViewBuilder header: () -> Header
+  ) {
     self.state = state
     self.store = store
     self.header = header()
+    self.jumpControl = jumpControl
   }
   // Messages carry no relative ages (web parity), so nothing schedules a transcript-wide tick;
   // only running leaves read the clock (`RunningTimeline`).
@@ -59,11 +64,11 @@ struct ConversationTranscript<Header: View>: View {
                 policy.paging = false
               }
             } label: {
-              Label(
-                paging ? "Loading history…" : "Load older messages",
-                systemImage: "clock.arrow.circlepath")
+              Text(paging ? "Loading history…" : "Load earlier messages")
+                .webFont(.system).foregroundStyle(WebColor.textMuted.color)
+                .frame(minHeight: DesignMetrics.minimumHitTarget)
             }
-            .buttonStyle(WebQuietPillStyle())
+            .buttonStyle(.plain)
             .frame(maxWidth: .infinity)
             .disabled(paging).accessibilityIdentifier("transcript-load-older").id(
               "paging-" + cursor
@@ -152,32 +157,11 @@ struct ConversationTranscript<Header: View>: View {
       }
     }
     .accessibilityIdentifier("conversation-transcript")
-    .safeAreaBar(edge: .bottom) {
-      if policy.shouldShowJump {
-        HStack {
-          Spacer()
-          // Web `.scroll-bottom`: a 36 pt circle floating above the dock edge (glass here).
-          Button {
-            policy.jump()
-            scrollPosition.scrollTo(edge: .bottom)
-          } label: {
-            Label("Jump to latest", systemImage: "arrow.down")
-              .labelStyle(.iconOnly)
-              .font(.system(size: 13, weight: .semibold))
-              .foregroundStyle(WebColor.textSoft.color)
-              .frame(width: WebMetrics.tile, height: WebMetrics.tile)
-              .floatingGlass(in: Circle(), opaqueFill: WebColor.surfaceRaised.color)
-              .frame(
-                minWidth: DesignMetrics.minimumHitTarget,
-                minHeight: DesignMetrics.minimumHitTarget
-              )
-              .contentShape(Circle())
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("jump-to-latest")
-          Spacer()
-        }.padding(.bottom, 4)
-      }
+    .onChange(of: policy.shouldShowJump, initial: true) { syncJumpControl() }
+    .onAppear { syncJumpControl() }
+    .onDisappear {
+      jumpControl.available = false
+      jumpControl.jump = nil
     }
     .contentMargins(.bottom, DesignSpacing.xxl, for: .scrollContent)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
@@ -198,6 +182,14 @@ struct ConversationTranscript<Header: View>: View {
       }
     }
   }
+  private func syncJumpControl() {
+    jumpControl.available = policy.shouldShowJump
+    jumpControl.jump = {
+      policy.jump()
+      scrollPosition.scrollTo(edge: .bottom)
+    }
+  }
+
   @ViewBuilder private var historyStatus: some View {
     if state.truncated {
       ConnectionBanner(

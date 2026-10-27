@@ -28,7 +28,13 @@ import XCTest
     WaitFor.element(pin, "enabled pin switch with a non-empty frame") {
       $0.isEnabled && !$0.frame.isEmpty
     }
-    pin.tap()
+    WaitFor.hittable(pin)
+    // XCUI exposes the whole labelled row as the Switch. Its short synthesized tap can be
+    // swallowed by the native switch in the ScrollView without reaching the binding. Drag
+    // the ON thumb to OFF instead: one continuous switch gesture, not an action retry.
+    let trailing = pin.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+    trailing.withOffset(CGVector(dx: -14, dy: 0)).press(
+      forDuration: 0.1, thenDragTo: trailing.withOffset(CGVector(dx: -48, dy: 0)))
     WaitFor.value(pin, contains: "0")
     WaitFor.enabled(pin)
     close(app)
@@ -216,6 +222,8 @@ import XCTest
       element(app, "running-row-t-atlas-launch").tap()
       XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 15))
       XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 10))
+      // Non-vacuous witness: this same header is reachable before settings covers it.
+      WaitFor.hittable(element(app, "rename-conversation"))
       button.tap()
       waitForSettings(app)
       WaitFor.value(button, contains: "Expanded")
@@ -223,13 +231,14 @@ import XCTest
       // The covered conversation is retained but unreachable: transcript, composer, header.
       WaitFor.absent(element(app, "conversation-transcript"))
       WaitFor.absent(element(app, "composer-field"))
-      WaitFor.absent(element(app, "conversation-run-state"))
+      WaitFor.absent(element(app, "rename-conversation"))
       WaitFor.hittable(element(app, "agent-strip"))  // the sidebar stays usable
       button.tap()  // a second press closes on a wide layout
       WaitFor.absent(element(app, "agent-settings-screen"))
       WaitFor.value(button, contains: "Collapsed")
       XCTAssertTrue(element(app, "conversation-transcript").waitForExistence(timeout: 10))
       XCTAssertTrue(element(app, "composer-field").waitForExistence(timeout: 10))
+      WaitFor.hittable(element(app, "rename-conversation"))
       // Selecting another conversation while settings is open closes it.
       button.tap()
       waitForSettings(app)

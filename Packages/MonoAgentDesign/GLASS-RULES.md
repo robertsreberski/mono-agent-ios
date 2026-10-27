@@ -10,7 +10,7 @@ header band, a solid web body, and the system glass showing around the edges.
 | Layer | What belongs here | Material |
 |---|---|---|
 | **Content** | Dashboard lists and rows, the transcript canvas, transcript cards (messages, tool calls, code, Markdown, reply files, MCP app frames), forms that *are* the screen | Solid web tokens (`ThemePalette.panel/canvas`, `WebColor.surface…`, `--line`). Unchanged. |
-| **Floating / navigation** | Header controls, the composer, the composer job shelf, jump-to-latest, footer pills, toolbars, menus, popovers, sheets | **One** Liquid Glass material per surface |
+| **Floating / navigation** | Header controls, the composer, the composer job shelf, jump-to-latest, footer buttons, toolbars, menus, popovers, sheets | **One** Liquid Glass material per surface |
 
 ## Rules for the floating layer
 
@@ -19,10 +19,12 @@ There are two kinds of floating surface:
 - **Text-carrying sheets and popovers** use the system material plus the frosted web veil.
   This covers the context sheet and iPad popover, run settings, the skill browser, the
   peer-question sheet, quote selection, console management and the connection editor, MCP
-  consent, project/tag settings, the wake editor, custom conversation/tag/project-picker
-  menus, and the composer's job shelf, suggestion popover and status line.
+  consent, project/tag settings, the wake editor, and the composer's job shelf, suggestion
+  popover and status line. Menus are native SwiftUI `Menu`s: no veil and no custom background.
+  The veil is only for text-heavy custom popovers a `Menu` cannot express (for example a
+  model browser with search or a colour-swatch editor).
 - **Compact floating controls** stay pure glass with no veil. This covers the composer root,
-  header tiles, jump-to-latest, footer pills, toolbars and native system menus.
+  header tiles, jump-to-latest, footer buttons, toolbars and native system menus.
 
 1. **One material per surface.** Never put a solid web panel or surface fill on or inside
    glass. Bands, bodies, cards and footers inside a sheet have no fill of their own.
@@ -54,15 +56,27 @@ There are two kinds of floating surface:
    same component therefore stays solid in the transcript and turns translucent in a sheet.
 8. **Web accents for meters and figures.** Meter fills use `palette.accent`. Tracks use
    `WebGlass.track`. Accent *text* uses `WebGlass.accentText`. Icon tiles use
-   `palette.accentInk`.
+   `palette.accentInk`. Thinking-chip labels/edges and composer effort badges use `palette.accentStrong` in both
+   appearances: ordinary dark accent text on accent ink falls below AA on busy sheet bleed
+   (`selectedEffortLabelsPassAA`).
 9. **Actions:** primary is `.glassProminent` tinted with the web accent, with `onAccent`
    labels. Secondary is `.glass`. Use `.designButtonStyle(_, placement: .floating)`; it falls
    back to opaque styles under Reduce Transparency. Small in-row actions inside the job shelf
    (`WebSmallButtonStyle`) use translucent ink, not nested glass.
 10. **Navigation bars.** On phones, the conversation's web header is a `safeAreaBar` with the
     system hard scroll-edge effect and no panel band. On iPad, the system bar keeps its own
-    glass, with no `toolbarBackground`. The dashboard footer pills float over the list with
-    the hard scroll-edge effect, with no panel band or fade.
+    glass, with no `toolbarBackground`. The two standalone dashboard footer buttons are a
+    bottom overlay: content scrolls beneath them, with bottom content margins so the last row
+    clears their hit targets. No shared pill, hard scroll-edge effect, band or fade. Jump to
+    latest overlays the dock's top edge, with no reserved safe-area band: its 36 pt circle
+    straddles the first dock surface's edge, and no dock surface changes size, padding or
+    position when it appears. It is drawn over the conversation, not inside the bar, so the
+    bar's host cannot clip its target. Its hit shape (`JumpHitShape`) is the visible circle
+    plus, above the dock edge only, an upward and sideways reach to a 44 × 44 target. Below
+    the edge nothing outside the circle is interactive, so taps beside it reach the dock's
+    rows; the VoiceOver activation point is the circle's centre. The circle's lower glass is
+    clipped over full-width dock material (especially the job shelf), so the dock supplies
+    that part's material rather than stacking two glasses.
 11. **Text keeps the web scale, spacing and hierarchy.** The web colour is used unless it
     fails AA on the material. In that case use the `WebGlass` adjustment (table below).
 12. **The large detent is opaque** (the system does this). The veil and inks are translucent,
@@ -143,9 +157,11 @@ choices use accent ink with primary labels/checkmarks when selected, quiet group
 not seven nested glass surfaces (`selectedWakeDayLabelsPassAA`). Accent secondary affordances
 keep `WebGlass.accentText`; they must not silently become neutral labels.
 
-Custom tag, conversation-action and project-picker popovers use the standard veil too.
-`OrganizeMenuScroll` still owns only bounded scrolling, never a second material; menu details
-and `WakeSummaryView` resolve muted text from `webMaterial`. Native rename alerts, destructive
+Conversation actions, project pickers and tag checklists use native `Menu`s, including nested
+menus and toggles. Do not draw a solid background or veil behind menu content. Editors that
+need richer content (colour swatches, searchable model lists, wake forms) keep their veiled
+sheet/popover. `OrganizeMenuScroll` is only a bounded scrolling layout, not a menu material;
+`WakeSummaryView` resolves muted text from `webMaterial`. Rename alerts, destructive
 alerts/confirmation dialogs and the dashboard context menu retain the system appearance.
 The project page stays solid web content; header tiles remain compact glass controls and its
 inline context Edit action is plain web text, not glass on a content card.
@@ -194,7 +210,8 @@ legibility (as with a dimming layer behind clear glass).
 
 - [ ] No `presentationBackground`, `presentationCornerRadius` or `.background(WebColor…)`
       on or inside the surface.
-- [ ] Carries text? `.webSheetVeil()` (or the veil inside a custom `floatingGlass` shape).
+- [ ] Can a native `Menu` express it? Use one, with no veil or custom background.
+      Text-heavy sheet/custom popover? `.webSheetVeil()` (or the veil inside a custom `floatingGlass` shape).
       Compact control? Pure glass, with a light-mode `--line-strong` stroke if the web has
       an edge.
 - [ ] Header: `WebSheetHeader`. Sections: `WebSheetSection` / `WebHairline`. Boxes:
