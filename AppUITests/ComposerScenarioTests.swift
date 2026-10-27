@@ -591,7 +591,9 @@ import XCTest
     }
     for _ in 0..<8 {
       if reachable() { return composerWait { reachable() } }
-      guard target.exists, !target.frame.isEmpty else { return false }
+      // A slow runner can briefly fail to resolve a row it just found while the card settles
+      // (XCUI "retry 1/2" then an empty frame). Wait for it to resolve again; don't give up.
+      guard composerWait({ target.exists && !target.frame.isEmpty }) else { return false }
       let down = target.frame.minY < viewport.minY
       point(down ? 0.25 : 0.75).press(
         forDuration: 0.05, thenDragTo: point(down ? 0.75 : 0.25))
