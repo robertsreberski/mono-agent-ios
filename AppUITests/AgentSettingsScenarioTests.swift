@@ -28,10 +28,13 @@ import XCTest
     WaitFor.element(pin, "enabled pin switch with a non-empty frame") {
       $0.isEnabled && !$0.frame.isEmpty
     }
-    // The Switch element spans the whole labelled row; a centre tap can land on the label,
-    // which a SwiftUI Toggle ignores. Tap the switch itself (trailing padding 14 + half of 51).
-    pin.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
-      .withOffset(CGVector(dx: -40, dy: 0)).tap()
+    WaitFor.hittable(pin)
+    // XCUI exposes the whole labelled row as the Switch. Its short synthesized tap can be
+    // swallowed by the native switch in the ScrollView without reaching the binding. Drag
+    // the ON thumb to OFF instead: one continuous switch gesture, not an action retry.
+    let trailing = pin.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5))
+    trailing.withOffset(CGVector(dx: -14, dy: 0)).press(
+      forDuration: 0.1, thenDragTo: trailing.withOffset(CGVector(dx: -48, dy: 0)))
     WaitFor.value(pin, contains: "0")
     WaitFor.enabled(pin)
     close(app)
