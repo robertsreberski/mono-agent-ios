@@ -32,7 +32,7 @@ MARKERS = (b"--performance-probe", b"--performance-streaming", b"--performance-d
            b"AgentSettingsFixture", b"AgentSettingsScript", b"agent-settings-unsaved", b"agent-settings-save-error",
            b"agent-settings-offline", b"agent-settings-degraded", b"notifications-insecure", b"--open-settings",
            b"fixture-external-url", b"Grove Fast", b"generation-1",
-           b"ProviderFixture", b"ProviderScript", b"provider-auth-dense", b"provider-auth-device-code",
+           b"ProviderFixture", b"AgentRestartScript", b"agent-restart-not-confirmed", b"ProviderScript", b"provider-auth-dense", b"provider-auth-device-code",
            b"provider-auth-secret", b"provider-auth-manual-code", b"provider-auth-select",
            b"provider-checks", b"provider-usage-stale", b"FLOCK-2048")
 # The SDK-derived conformance resources and original licence belong only to tests.

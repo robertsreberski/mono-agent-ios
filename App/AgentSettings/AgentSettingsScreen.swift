@@ -57,6 +57,8 @@ struct AgentSettingsScreen: View {
   @AccessibilityFocusState private var focus: FocusTarget?
   @State private var shownTarget: AgentSettingsTarget?
   @State private var shownSource: String?
+  @State private var restartReveal = RestartRevealIntent()
+  @State private var viewportHeight: CGFloat = 0
 
   enum FocusTarget: Hashable {
     case title
@@ -90,7 +92,8 @@ struct AgentSettingsScreen: View {
   }
 
   private func page(_ agent: WebAgentSummary) -> some View {
-    VStack(spacing: 0) {
+    let readsComplete = providerReadsComplete(agent)
+    return VStack(spacing: 0) {
       header(agent)
       ScrollViewReader { proxy in
         ScrollView {
@@ -128,6 +131,32 @@ struct AgentSettingsScreen: View {
               ProvidersSection(store: store, agent: agent, compact: !wide)
             }
             WebHairline().opacity(0.9)
+            section(
+              .agent, title: "Restart",
+              summary: "Restart this agent and review its latest operation."
+            ) {
+              RestartSection(store: store, agent: agent, wide: wide)
+            }
+            .background {
+              GeometryReader { geometry in
+                Color.clear.preference(
+                  key: RestartHeadingMeasurementKey.self,
+                  value: RestartHeadingMeasurement(
+                    top: geometry.frame(in: .named("settings-scroll")).minY,
+                    providersComplete: readsComplete))
+              }
+            }
+            .onPreferenceChange(RestartHeadingMeasurementKey.self) { measurement in
+              guard let measurement else { return }
+              if restartReveal.measure(
+                source: agent.sourceId, generation: agent.generation, now: Date(),
+                top: measurement.top, viewport: viewportHeight,
+                providersComplete: measurement.providersComplete)
+              {
+                proxy.scrollTo(AgentSettingsSection.agent.rawValue, anchor: .top)
+              }
+            }
+            WebHairline().opacity(0.9)
             about(agent)
           }
           .onGeometryChange(for: CGFloat.self) {
@@ -140,6 +169,33 @@ struct AgentSettingsScreen: View {
           .padding(.horizontal, layout == .split ? 32 : WebSpace.dashboardGutter)
           .padding(.top, layout == .split ? 26 : 18)
           .padding(.bottom, 40)
+        }
+        .coordinateSpace(name: "settings-scroll")
+        .onGeometryChange(for: CGFloat.self) {
+          $0.size.height
+        } action: {
+          viewportHeight = $0
+        }
+        .onScrollPhaseChange { _, phase in
+          if phase == .interacting || phase == .tracking { restartReveal.stop() }
+        }
+        .simultaneousGesture(
+          DragGesture(minimumDistance: 0).onChanged { _ in restartReveal.stop() }
+        )
+        .onKeyPress { _ in
+          restartReveal.stop()
+          return .ignored
+        }
+        .onChange(of: agent.generation) { restartReveal.stop() }
+        .onChange(of: focus) {
+          if focus != .section(.agent) { restartReveal.stop() }
+        }
+        .task(id: restartReveal.deadline) {
+          guard let deadline = restartReveal.deadline else { return }
+          do { try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow))) } catch {
+            return
+          }
+          restartReveal.stop()
         }
         .scrollDismissesKeyboard(.immediately)
         // Readiness for tests and screenshots, never a timer: hydrated and answered.
@@ -163,6 +219,7 @@ struct AgentSettingsScreen: View {
   private func apply(agent sourceID: String, proxy: ScrollViewProxy) {
     if shownSource != sourceID {
       let switching = shownSource != nil
+      restartReveal.stop()
       shownSource = sourceID
       if switching {
         proxy.scrollTo("settings-top", anchor: .top)
@@ -172,6 +229,10 @@ struct AgentSettingsScreen: View {
     }
     guard shownTarget != target else { return }
     shownTarget = target
+    restartReveal.stop()
+    if target.section == .agent {
+      restartReveal.begin(source: sourceID, generation: agent?.generation, now: Date())
+    }
     if let section = target.section {
       proxy.scrollTo(section.rawValue, anchor: .top)
       focus = .section(section)
@@ -179,6 +240,17 @@ struct AgentSettingsScreen: View {
       proxy.scrollTo("settings-top", anchor: .top)
       focus = .title
     }
+  }
+
+  private func providerReadsComplete(_ agent: WebAgentSummary) -> Bool {
+    let provider = store.providerState(agent.sourceId)
+    let authDone =
+      agent.status == "offline" || agent.supportsProviderAuth != true
+      || provider.status != nil || provider.authError != nil
+    let usageDone =
+      agent.status == "offline" || agent.supportsProviderUsage != true
+      || provider.usage != nil || provider.usageError != nil
+    return authDone && usageDone
   }
 
   // MARK: Header
@@ -445,7 +517,7 @@ struct SettingsChip: View {
 
 /// Web `.settings-button` variants, in the content layer (never glass).
 struct SettingsButtonStyle: ButtonStyle {
-  enum Kind { case standard, primary, ghost }
+  enum Kind { case standard, primary, ghost, danger }
   var kind: Kind = .standard
   @Environment(\.consoleTheme) private var theme
   @Environment(\.isEnabled) private var enabled
@@ -454,11 +526,13 @@ struct SettingsButtonStyle: ButtonStyle {
     let foreground: Color =
       switch kind {
       case .primary: theme.palette.onAccent.color
+      case .danger: WebColor.danger.color
       default: configuration.isPressed ? WebColor.text.color : WebColor.textSoft.color
       }
     let fill: Color =
       switch kind {
       case .primary: theme.palette.accentStrong.color
+      case .danger: WebColor.dangerSoft.color
       case .standard: configuration.isPressed ? WebColor.surfaceHover.color : WebColor.surface.color
       case .ghost: configuration.isPressed ? WebColor.surfaceHover.color : .clear
       }
@@ -473,5 +547,19 @@ struct SettingsButtonStyle: ButtonStyle {
       .opacity(enabled ? 1 : 0.45)
       .frame(minHeight: DesignMetrics.minimumHitTarget)
       .contentShape(Rectangle())
+  }
+}
+
+/// Completion participates in the preference so a no-height-change response still measures.
+private struct RestartHeadingMeasurement: Equatable {
+  let top: CGFloat
+  let providersComplete: Bool
+}
+private struct RestartHeadingMeasurementKey: PreferenceKey {
+  static var defaultValue: RestartHeadingMeasurement? { nil }
+  static func reduce(
+    value: inout RestartHeadingMeasurement?, nextValue: () -> RestartHeadingMeasurement?
+  ) {
+    if let next = nextValue() { value = next }
   }
 }

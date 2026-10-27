@@ -91,6 +91,7 @@ public final class ConsoleStore {
   @ObservationIgnored var catalogFlights: Set<String> = []
   @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
+  @ObservationIgnored var agentRestarts: [String: AgentRestartState] = [:]
   @ObservationIgnored var providers: [String: ProviderState] = [:]
   /// Set synchronously by composition before any asynchronous scene work.
   public private(set) var providerPrivacyCovered = false
@@ -526,6 +527,7 @@ public final class ConsoleStore {
         record = CacheMerge.rebase(record, onto: disk, authoritativeAt: authoritativeRows)
         cacheRevision = max(cacheRevision, record.revision)
         bootstrap = record.bootstrap
+        reconcileAgentRestarts()
         result = try await repository.saveCache(record, namespace: namespace)
       }
       guard cacheRevision == record.revision else { return }

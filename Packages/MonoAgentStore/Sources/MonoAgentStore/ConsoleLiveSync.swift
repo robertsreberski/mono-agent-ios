@@ -97,6 +97,7 @@ extension ConsoleStore {
       pendingDiscontinuity = false
       connection = .live
       for state in providers.values where state.open { resumeProviders(state) }
+      for state in agentRestarts.values where state.open { resumeAgentRestart(state) }
       requestReconciliation()
     case .messageDelta(let delta):
       guard let id = envelope.threadId else {
@@ -340,6 +341,7 @@ extension ConsoleStore {
   }
   func stopEffects() async {
     for state in providers.values { suspendProviders(state) }
+    for state in agentRestarts.values { suspendAgentRestart(state) }
     invalidateMcpApps()
     epoch &+= 1
     wakeEditor = nil

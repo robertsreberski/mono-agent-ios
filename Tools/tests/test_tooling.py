@@ -105,6 +105,8 @@ class ToolingTests(unittest.TestCase):
                     "func testPage() {}\nfunc testPicker() {}\nfunc testNotifications() {}\n")
                 (root / "AppUITests/ProviderScenarioTests.swift").write_text(
                     "func testDense() {}\nfunc testSecret() {}\nfunc testChecks() {}\n")
+                (root / "AppUITests/AgentRestartScenarioTests.swift").write_text(
+                    "func testIdle() {}\nfunc testConfirm() {}\nfunc testSuccess() {}\n")
             calls = []
             run_options = []
 
@@ -235,7 +237,7 @@ class ToolingTests(unittest.TestCase):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
         connection = {(s, a) for s, a, v in keys
-                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-", "agent-settings", "notifications-", "provider-"))
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-", "agent-settings", "notifications-", "provider-", "agent-restart"))
                       and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
@@ -418,6 +420,33 @@ class ToolingTests(unittest.TestCase):
                                      "-only-testing:MonoAgentUITests/ProviderScenarioTests/testChecks"])
         with self.assertRaises(SystemExit):
             self.export(family="iPhone", focus="--providers-only --agent-settings-only")
+
+    RESTART_BASE = ("agent-restart", "agent-restart-confirm", "agent-restart-progress",
+                    "agent-restart-success", "agent-restart-failure")
+
+    def test_restart_exact_matrix_surfaces_and_focus_on_both_families(self):
+        matrix = [entry for entry in MATRIX if entry["scenario"].startswith("agent-restart")]
+        self.assertEqual({(e["scenario"], e["appearance"], e.get("variant")) for e in matrix},
+                         {(s, a, None) for s in self.RESTART_BASE for a in ("light", "dark")})
+        for entry in matrix:
+            self.assertEqual((entry["textSize"], entry["transparency"], entry["theme"]), ("standard", "system", "evergreen"))
+        for family in ("iPhone", "iPad"):
+            index = self.export(family=family, focus="--agent-restart-only", matrix=matrix)
+            self.assertTrue(all(row["surface"] == "agent settings" for row in index))
+            command = next(call for call in self.calls if call[0] == "xcodebuild")
+            self.assertIn("-only-testing:MonoAgentUITests/AgentRestartScenarioTests", command)
+            self.assertEqual(sum(arg.startswith("-only-testing:") for arg in command), 1)
+
+    def test_restart_batches_enumerate_only_restart_suite(self):
+        matrix = [entry for entry in MATRIX if entry["scenario"].startswith("agent-restart")]
+        self.export(family="iPad", focus="--agent-restart-only", matrix=matrix, batch_size=2)
+        selectors = [arg for command in self.calls if command[0] == "xcodebuild"
+                     for arg in command if arg.startswith("-only-testing:")]
+        self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/AgentRestartScenarioTests/testIdle",
+                                     "-only-testing:MonoAgentUITests/AgentRestartScenarioTests/testConfirm",
+                                     "-only-testing:MonoAgentUITests/AgentRestartScenarioTests/testSuccess"])
+        with self.assertRaises(SystemExit):
+            self.export(family="iPhone", focus="--agent-restart-only --providers-only")
 
     def test_focus_flags_are_mutually_exclusive(self):
         with self.assertRaises(SystemExit):
