@@ -32,7 +32,15 @@ public final class ConsoleStore {
   public internal(set) var tags: [WebTag] = []
   public internal(set) var projects: [WebProject] = []
   public internal(set) var selectedBucket: BucketKey?
-  public internal(set) var selectedThreadID: String?
+  public internal(set) var selectedThreadID: String? {
+    didSet {
+      if oldValue != selectedThreadID, let request = cronReplyNavigation,
+        selectedThreadID != request.threadID
+      {
+        cronReplyNavigation = nil
+      }
+    }
+  }
   public private(set) var unreadCounts: [String: Int] = [:]
   public private(set) var cachedThreads: [WebThread] = []
   public internal(set) var conversations: [String: ConversationState] = [:] {
@@ -91,6 +99,9 @@ public final class ConsoleStore {
   @ObservationIgnored var catalogFlights: Set<String> = []
   @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
+  public internal(set) var cronReplyNavigation: CronReplyNavigation?
+  public internal(set) var cronReplies: [CronReplyKey: CronReplyState] = [:]
+  public let cronReplyRecovery: CronReplyRecoveryStore
   public internal(set) var automations: [String: AutomationState] = [:]
   @ObservationIgnored var agentRestarts: [String: AgentRestartState] = [:]
   @ObservationIgnored var providers: [String: ProviderState] = [:]
@@ -177,8 +188,9 @@ public final class ConsoleStore {
     profile: SavedConsole, api: any ConsoleAPI, events: any ConsoleEventSource,
     repository: any ConsoleRepository, clock: any StreamClock = SystemStreamClock(),
     uploads: any UploadReservations = NoUploadReservations(),
-    replyFiles: ReplyFileCache? = nil
+    replyFiles: ReplyFileCache? = nil, cronReplyRecovery: CronReplyRecoveryStore? = nil
   ) {
+    self.cronReplyRecovery = cronReplyRecovery ?? CronReplyRecoveryStore()
     self.profile = profile
     namespace = ConsoleNamespace(profile: profile)
     self.replyFiles = replyFiles ?? .live(namespace: profile.id.uuidString + namespace.identity)
@@ -219,6 +231,8 @@ public final class ConsoleStore {
   public func hydrate() async {
     guard !hydrated else { return }
     let generation = epoch
+    // Optional cron persistence must not delay cache/authored/journal hydration or chat sends.
+    Task { [cronReplyRecovery, namespace] in await cronReplyRecovery.hydrate(namespace) }
     do {
       let cache = try await repository.loadCache(namespace)
       guard epoch == generation else { return }
@@ -406,8 +420,9 @@ public final class ConsoleStore {
   /// Observation dependency for drafts/unread stored in a private I/O record.
   var authoredRevision: UInt64 = 0
   var journalRevision: UInt64 = 0
-  func hold(_ entry: CachedConversation, fromDevice: Bool = false) {
-    guard !tombstones.keys.contains(entry.thread.id) else { return }
+  @discardableResult
+  func hold(_ entry: CachedConversation, fromDevice: Bool = false) -> Bool {
+    guard !tombstones.keys.contains(entry.thread.id) else { return false }
     let state = conversations[entry.thread.id] ?? ConversationState(entry)
     state.record = entry
     state.runningConfirmed = !fromDevice
@@ -418,6 +433,7 @@ public final class ConsoleStore {
     }
     refreshCachedThreads()
     touch(entry.thread.id)
+    return true
   }
   func refreshCachedThreads() {
     let threads = conversations.values.map(\.thread).sorted { $0.id < $1.id }

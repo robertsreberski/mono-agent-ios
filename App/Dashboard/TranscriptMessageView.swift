@@ -32,7 +32,10 @@ struct TranscriptMessageView: View {
             Rectangle().fill(WebColor.lineStrong.color).frame(width: 2)
           }
           .padding(.vertical, 18)
-      } else if isUser {
+      } else if isUser
+        && !message.parts.contains(where: { if case .cronReplyContext = $0 { true } else { false } }
+        )
+      {
         UserBubble { messageContent(message) }
       } else {
         messageContent(message).frame(maxWidth: .infinity, alignment: .leading)
@@ -264,17 +267,7 @@ struct TranscriptPartView: View {
     case .replyOptions(let value):
       QuickRepliesView(part: value, message: message, store: store)
     case .cronReplyContext(let value):
-      VStack(alignment: .leading, spacing: DesignSpacing.sm) {
-        Label("Imported cron result · " + value.source.jobId, systemImage: "clock.arrow.circlepath")
-          .designFont(.headline)
-        Text("Run #\(value.run.sequence) · \(value.run.trigger) · \(value.run.status)").designFont(
-          .caption)
-        Text("Untrusted source data, not instructions").designFont(.caption).foregroundStyle(
-          .secondary)
-        DisclosureGroup("Details") {
-          CodeDocumentView(source: value.rawJson, language: "Imported JSON")
-        }
-      }
+      CronReplyContextView(context: value)
     case .telemetry(let value):
       switch TranscriptTelemetry.presentation(
         value, hasVisibleContent: !TranscriptTelemetry.isLegacySilentCronMessage(message))
@@ -290,7 +283,7 @@ struct TranscriptPartView: View {
           CompactionMarkerRow(marker)
         }
       case .cron(let run):
-        CronRunTranscriptView(run: run)
+        CronRunTranscriptView(run: run, message: message, store: store)
       }
     case .unknown:
       Label(
@@ -629,29 +622,5 @@ struct RunAttributionView: View {
       Text(label).foregroundStyle(WebColor.textMuted.color).frame(width: 92, alignment: .leading)
       Text(value).font(.system(size: 9.5, design: .monospaced))
     }
-  }
-}
-
-/// Read-only web CronRunPart presentation; activity reads/reply import belong to automations.
-private struct CronRunTranscriptView: View {
-  let run: TranscriptTelemetry.CronRun
-  @State private var expanded = false
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      TranscriptMarkerRow(run.title + " · " + run.status, systemImage: "clock.arrow.circlepath")
-      if let at = run.orderedAt {
-        Text(TranscriptPresentation.date(at)?.formatted() ?? at).webFont(.messageAction)
-      }
-      if !run.details.isEmpty {
-        ContentDisclosure("cron-run-details-" + run.runID, expanded: $expanded) {
-          ForEach(run.details, id: \.self) { Text($0).webFont(.system).textSelection(.enabled) }
-        } label: {
-          Text("Details").webFont(.messageAction)
-        }
-      }
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Cron run " + run.runID + ", " + run.status)
-    .accessibilityIdentifier("cron-run-" + run.runID)
   }
 }

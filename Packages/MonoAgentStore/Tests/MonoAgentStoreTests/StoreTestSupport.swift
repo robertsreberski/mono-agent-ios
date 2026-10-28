@@ -169,7 +169,10 @@ struct Harness {
   let events = TestEvents()
   let clock = ManualStoreClock()
   let store: ConsoleStore
-  init(profile: SavedConsole? = nil, directory: URL? = nil) {
+  init(
+    profile: SavedConsole? = nil, directory: URL? = nil,
+    cronReplyRecovery: CronReplyRecoveryStore? = nil
+  ) {
     self.directory =
       directory ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     self.profile = profile ?? SavedConsole(name: "Flockbox", endpoint: Scenario.endpoint)
@@ -177,7 +180,8 @@ struct Harness {
     store = ConsoleStore(
       profile: self.profile, api: APIClient(endpoint: Scenario.endpoint, transport: transport),
       events: events, repository: repository, clock: clock,
-      replyFiles: ReplyFileCache(directory: self.directory.appendingPathComponent("reply-files")))
+      replyFiles: ReplyFileCache(directory: self.directory.appendingPathComponent("reply-files")),
+      cronReplyRecovery: cronReplyRecovery)
   }
   func seed(messages: [WebMessage] = [], revision: Int = 1) throws {
     store.hold(

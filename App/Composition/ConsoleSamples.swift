@@ -91,6 +91,9 @@
     case cronConversation = "cron-conversation"
     case cronConfirm = "cron-confirm"
     case cronConfig = "cron-config"
+    case cronRunDetail = "cron-run-detail"
+    case cronReplyRetry = "cron-reply-retry"
+    var isCronRuns: Bool { self == .cronRunDetail || self == .cronReplyRetry }
     var isAutomations: Bool { rawValue.hasPrefix("automations") || rawValue.hasPrefix("cron-") }
     var isAgentRestart: Bool { rawValue.hasPrefix("agent-restart") }
     var isProviders: Bool { rawValue.hasPrefix("provider-") }
@@ -232,9 +235,10 @@
     let restart: AgentRestartScript?
     init(
       _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
-      mcp: McpUiScript? = nil
+      mcp: McpUiScript? = nil, automations: AutomationsScript? = nil
     ) {
-      automations = scenario.flatMap { $0.isAutomations ? AutomationsScript($0) : nil }
+      self.automations =
+        automations ?? scenario.flatMap { $0.isAutomations ? AutomationsScript($0) : nil }
       self.scenario = scenario
       self.theme = theme
       self.script = script

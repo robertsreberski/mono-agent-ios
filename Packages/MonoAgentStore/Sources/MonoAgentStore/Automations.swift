@@ -126,6 +126,7 @@ extension ConsoleStore {
     if sourceID == selectedBucket?.sourceID { requestAutomations(sourceID: sourceID) }
   }
   func suspendAutomations() {
+    cronReplyNavigation = nil
     invalidateAutomations()
     for state in automations.values {
       state.owner = UUID()

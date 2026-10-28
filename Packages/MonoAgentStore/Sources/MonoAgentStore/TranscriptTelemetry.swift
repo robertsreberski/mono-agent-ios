@@ -15,6 +15,12 @@ public enum TranscriptTelemetry: Sendable, Equatable {
     public var status: String
     public var orderedAt: String?
     public var details: [String]
+    public var rawStatus: String
+    public var artifactID: String?
+    public var sessionID: String?
+    public var eventCount: Int
+    public var activityLoaded: Bool
+    public var activityStale: Bool
   }
 
   public static func presentation(_ part: TelemetryPart, hasVisibleContent: Bool = false) -> Self {
@@ -54,7 +60,7 @@ public enum TranscriptTelemetry: Sendable, Equatable {
     }
     if case .number(let count) = data["eventCount"], count > 0, count.rounded() == count {
       details.append(
-        "\(Int(min(count, Double(Int.max / 2)))) activity events · available in the web console")
+        "\(Int(min(count, Double(Int.max / 2)))) activity events")
     }
     if data["eventsTruncated"] == .bool(true) {
       details.append("Activity is truncated; retained and wire-bounded events are shown.")
@@ -70,7 +76,17 @@ public enum TranscriptTelemetry: Sendable, Equatable {
     return .cron(
       .init(
         runID: runID, title: title, status: trigger + " · " + state,
-        orderedAt: text(data["orderedAt"]), details: details))
+        orderedAt: text(data["orderedAt"]), details: details, rawStatus: status,
+        artifactID: text(data["artifactRunId"]), sessionID: text(data["conversationId"]),
+        eventCount: {
+          if case .number(let n) = data["eventCount"], n.isFinite, n > 0 {
+            Int(min(n, 1_000_000))
+          } else {
+            0
+          }
+        }(),
+        activityLoaded: data["activityLoaded"] == .bool(true),
+        activityStale: data["activityStale"] == .bool(true)))
   }
 
   private static func contains(_ data: JSONValue?, keys: [String], values: Set<String>) -> Bool {
@@ -85,7 +101,7 @@ public enum TranscriptTelemetry: Sendable, Equatable {
     return false
   }
   private static func text(_ value: JSONValue?) -> String? {
-    if case .string(let text) = value { return text }
+    if case .string(let text) = value { return ProviderPresentation.boundedText(text) }
     return nil
   }
   /// Matches the web message-level legacy silent-cron filter, not a server data field.

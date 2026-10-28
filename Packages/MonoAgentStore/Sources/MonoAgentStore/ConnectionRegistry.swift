@@ -20,6 +20,7 @@ public final class ConnectionRegistry {
   public private(set) var isLoaded = false
   @ObservationIgnored private let repository: any ProfileRepository
   @ObservationIgnored private let consoleRepository: (any ConsoleRepository)?
+  @ObservationIgnored private let cronReplyRecovery: CronReplyRecoveryStore?
   @ObservationIgnored private let probe: ConnectionProbe
   @ObservationIgnored private var loadStarted = false
   @ObservationIgnored private var revision: UInt64 = 0
@@ -27,8 +28,10 @@ public final class ConnectionRegistry {
 
   public init(
     repository: any ProfileRepository, probe: ConnectionProbe,
-    consoleRepository: (any ConsoleRepository)? = nil
+    consoleRepository: (any ConsoleRepository)? = nil,
+    cronReplyRecovery: CronReplyRecoveryStore? = nil
   ) {
+    self.cronReplyRecovery = cronReplyRecovery
     self.consoleRepository = consoleRepository
     self.repository = repository
     self.probe = probe
@@ -103,6 +106,7 @@ public final class ConnectionRegistry {
     generations[id] = nil
     states[id] = nil
     if selectedID == id { selectedID = consoles.first?.id }
+    await cronReplyRecovery?.delete(profileID: id)
     await persist()
     do { try await consoleRepository?.delete(profileID: id) } catch {
       localDataError =

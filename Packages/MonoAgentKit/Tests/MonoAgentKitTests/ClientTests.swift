@@ -230,3 +230,62 @@ private actor SensitiveErrorTransport: HTTPTransport {
     body: ApiPatchThread(title: "Title"))
   #expect(patch.timeoutInterval == 15)
 }
+
+@Test func pendingCronReplyRetainsOnlyValidatedAllowlistedOperationID() async throws {
+  let id = UUID()
+  for (status, code, detail, expected) in [
+    (409, "cron_reply_pending", id.uuidString, id),
+    (503, "cron_reply_pending", id.uuidString, nil),
+    (409, "other_conflict", id.uuidString, nil),
+    (409, "cron_reply_pending", "not-a-uuid", nil),
+  ] {
+    let transport = ScriptedTransport([
+      .response(
+        .init(
+          data: Data(
+            """
+            {"error":{"code":"\(code)","message":"fictional private prose",
+            "details":{"operationId":"\(detail)","pendingSince":"private","other":"private"}}}
+            """.utf8), status: status))
+    ])
+    let api = APIClient(endpoint: Scenario.endpoint, transport: transport)
+    do {
+      _ = try await api.createCronReply(
+        id: "agent", jobId: "job", runId: "run",
+        body: .init(operationId: UUID().uuidString, snapshotKind: "summary"))
+      Issue.record("Expected pending error")
+    } catch let error as APIError {
+      #expect(error.cronReplyPendingOperationID == expected)
+      #expect(error.cronReplyPendingSince == nil)
+      #expect(!String(reflecting: error).contains("private"))
+    }
+    #expect(await transport.requests.count == 1)
+  }
+}
+
+@Test func pendingCronReplySinceAllowsOnlyISOTimestampsForPendingErrors() throws {
+  let expected = try #require(ISO8601DateFormatter().date(from: "2030-01-02T12:00:00Z"))
+  for (stamp, valid) in [
+    ("2030-01-02T12:00:00Z", true),
+    ("2030-01-02T12:00:00.000Z", true),
+    ("2030-01-02T13:00:00+01:00", true),
+    ("2030-01-02", false), ("not-a-date", false),
+    ("2030-01-02T12:00:00Z extra", false), ("", false),
+  ] {
+    for (status, code) in [
+      (409, "cron_reply_pending"), (503, "cron_reply_pending"), (409, "other_conflict"),
+    ] {
+      let error = APIError.response(
+        .init(
+          data: Data(
+            """
+            {"error":{"code":"\(code)","message":"Ignored prose",
+            "details":{"operationId":"invalid","pendingSince":"\(stamp)"}}}
+            """.utf8), status: status))
+      #expect(
+        error.cronReplyPendingSince
+          == (valid && status == 409 && code == "cron_reply_pending" ? expected : nil))
+      #expect(error.cronReplyPendingOperationID == nil)
+    }
+  }
+}

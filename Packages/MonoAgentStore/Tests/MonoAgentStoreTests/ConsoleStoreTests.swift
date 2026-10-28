@@ -24,6 +24,37 @@ struct ConsoleStoreTests {
     #expect(h.store.conversations["thread-example"]?.freshness == .stale)
     await h.store.stop()
   }
+  @Test func authoritativeWindowDropsAbsentMessageAndLaterRefreshStillApplies() async throws {
+    let h = Harness()
+    let first = try sampleMessage("first")
+    let removed = try sampleMessage("removed")
+    try h.seed(messages: [first, removed])
+    let state = try #require(h.store.conversations["thread-example"])
+    state.etag = "old"
+    let path = "/api/v1/threads/thread-example"
+    await h.transport.set(
+      path,
+      [
+        .response(try detailResponse(messages: [first], etag: "window-1")),
+        .response(HTTPResponse(data: Data(), status: 304)),
+        .response(try detailResponse(messages: [sampleMessage("later")], etag: "window-2")),
+      ])
+    await h.store.refreshDetail("thread-example")
+    #expect(h.store.conversations["thread-example"] === state)
+    #expect(state.messages.map(\.id) == ["first"])
+    #expect(state.etag == "window-1" && state.freshness == .fresh)
+    await h.store.refreshDetail("thread-example")
+    #expect(state.messages.map(\.id) == ["first"])
+    await h.store.refreshDetail("thread-example")
+    #expect(state.messages.map(\.id) == ["later"])
+    #expect(state.etag == "window-2" && state.freshness == .fresh)
+    let requests = await h.transport.requests.filter { $0.url?.path == path }
+    #expect(
+      requests.map { $0.value(forHTTPHeaderField: "If-None-Match") } == [
+        "old", "window-1", "window-1",
+      ])
+    await h.store.stop()
+  }
   @Test func invalidated304DoesNotConfirmFreshness() async throws {
     let h = Harness()
     try h.seed()

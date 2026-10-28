@@ -29,6 +29,7 @@ struct CronChannelHeader: View {
         Text("\(job?.expression ?? "Unknown") · \(stateLabel) · Next \(nextTime)")
           .webFont(.system).foregroundStyle(WebColor.textSoft.color)
       }
+      if let control { CronRunHistory(store: store, sourceID: sourceID, job: control) }
       if let error = control?.error ?? state?.error {
         Text(error).webFont(.system).foregroundStyle(DesignColor.danger.color)
           .accessibilityIdentifier("cron-error")
@@ -46,6 +47,7 @@ struct CronChannelHeader: View {
       expanded = false
       store.openCronJob(sourceID: sourceID, jobID: jobID, threadID: threadID)
       await store.refreshAutomations(sourceID: sourceID)
+      await store.loadCronRuns(sourceID: sourceID)
     }
     .onDisappear { store.closeCronJob(sourceID: sourceID) }
     .sheet(

@@ -103,11 +103,18 @@ struct ComposerBar: View {
         controller.insertBlock(reply)
       }
     }
+    .onChange(of: store.cronReplyNavigation, initial: true) { _, request in
+      applyCronReplyFocus(request)
+    }
     .onChange(of: controller.focusRequest) { focused = true }
     .onChange(of: covered, initial: true) { _, isCovered in
       controller.coveredBySettings = isCovered
       // Resign without touching the text, quote or staged files.
-      if isCovered { focused = false }
+      if isCovered {
+        focused = false
+      } else {
+        applyCronReplyFocus(store.cronReplyNavigation)
+      }
     }
     .task(id: SkillLoadKey(source: controller.sourceID, live: store.connection == .live)) {
       // Load once the console is live; an offline attempt is retried when it reconnects.
@@ -130,6 +137,12 @@ struct ComposerBar: View {
       jumpControl?.sharesDockMaterial = shares
     }
     .onDisappear { jumpControl?.dockFrame = nil }
+  }
+
+  private func applyCronReplyFocus(_ request: CronReplyNavigation?) {
+    guard let request, request.threadID == controller.threadID, !covered else { return }
+    focused = true
+    store.consumeCronReplyFocus(request.id)
   }
 
   // MARK: Leading
