@@ -106,7 +106,7 @@ struct CronReplyContextView: View {
   }
   private var rawJSON: some View {
     let source = String(context.rawJson.prefix(65_536))
-    let display = String(decoding: source.utf8.prefix(16_384), as: UTF8.self)
+    let display = CronReplyJSONDisplay(source)
     return VStack(alignment: .leading, spacing: 6) {
       HStack {
         Text("JSON").webFont(.activityLabel).foregroundStyle(WebColor.textMuted.color)
@@ -118,7 +118,7 @@ struct CronReplyContextView: View {
       ScrollView([.horizontal, .vertical]) {
         VStack(alignment: .leading, spacing: 3) {
           // Separate lines keep the end reachable by accessibility as well as touch scrolling.
-          ForEach(Array(display.components(separatedBy: "\n").enumerated()), id: \.offset) {
+          ForEach(Array(display.lines.enumerated()), id: \.offset) {
             _, line in
             Text(verbatim: line).webFont(.code).foregroundStyle(WebColor.text.color)
               .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
@@ -127,9 +127,11 @@ struct CronReplyContextView: View {
       }
       .frame(maxHeight: 240)
       .accessibilityLabel("Raw JSON").accessibilityIdentifier("cron-context-json")
-      if source.utf8.count > 16_384 {
-        Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.")
-          .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
+      if display.limited {
+        Text(
+          "Display limited to 16,384 UTF-8 bytes and 1,000 lines. Copy includes all supplied text."
+        )
+        .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
       }
     }.padding(10)
       .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: WebRadius.small))
@@ -160,5 +162,17 @@ struct CronReplyContextView: View {
       )
     }
     return notes
+  }
+}
+
+/// Bound view creation as well as bytes for newline-dense untrusted JSON.
+struct CronReplyJSONDisplay {
+  let lines: [String]
+  let limited: Bool
+  init(_ source: String) {
+    let bytes = String(decoding: source.utf8.prefix(16_384), as: UTF8.self)
+    let allLines = bytes.components(separatedBy: "\n")
+    lines = Array(allLines.prefix(1_000))
+    limited = source.utf8.count > 16_384 || allLines.count > 1_000
   }
 }
