@@ -127,6 +127,7 @@ public actor FileCronReplyPersistence: CronReplyPersistence {
     loads[namespace] = task
     await task.value
   }
+  func isAvailable(_ namespace: ConsoleNamespace) -> Bool { !deleted.contains(namespace.profileID) }
   public func reference(_ key: CronReplyKey, namespace: ConsoleNamespace) -> CronReplyReference? {
     references[namespace]?.first { $0.key == key }
   }

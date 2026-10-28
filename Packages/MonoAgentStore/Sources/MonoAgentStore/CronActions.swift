@@ -15,6 +15,7 @@ public struct CronConfirmation: Sendable {
 @MainActor @Observable public final class CronJobState {
   public let jobID: String
   public let threadID: String
+  public let runs = CronRunsState()
   public internal(set) var busy = false
   public internal(set) var error: String?
   public internal(set) var notice: String?
@@ -46,6 +47,9 @@ extension ConsoleStore {
   func resetCronJob(sourceID: String) {
     guard let job = automations[sourceID]?.job else { return }
     job.lifetime = UUID()
+    job.runs.pageTask?.cancel()
+    for task in job.runs.detailTasks.values { task.cancel() }
+    for state in cronReplies.values { state.task?.cancel() }
     job.confirmation = nil
     job.config = nil
     job.configOpen = false

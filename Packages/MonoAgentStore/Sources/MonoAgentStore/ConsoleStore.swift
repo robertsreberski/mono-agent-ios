@@ -91,6 +91,8 @@ public final class ConsoleStore {
   @ObservationIgnored var catalogFlights: Set<String> = []
   @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
+  public internal(set) var cronReplyNavigation: CronReplyNavigation?
+  public internal(set) var cronReplies: [CronReplyKey: CronReplyState] = [:]
   public let cronReplyRecovery: CronReplyRecoveryStore
   public internal(set) var automations: [String: AutomationState] = [:]
   @ObservationIgnored var agentRestarts: [String: AgentRestartState] = [:]
