@@ -39,7 +39,33 @@ extension ConsoleStore {
       Self.cronRunIsTerminal(status), ["summary", "detail"].contains(snapshotKind)
     else { return }
     key = .init(sourceID: sourceID, jobID: job.jobID, runID: runID)
-    guard !cronReplyRecovery.isActive(key, namespace: namespace) else { return }
+    guard !cronReplyRecovery.isActive(key, namespace: namespace), cronReplies[key]?.task == nil
+    else { return }
+    if !cronReplyRecovery.isHydrated(namespace) {
+      let state = cronReplies[key] ?? CronReplyState()
+      cronReplies[key] = state
+      state.phase = .importing
+      let epoch = epoch
+      let selected = selection
+      let lifetime = job.lifetime
+      let scope = cronScope(sourceID)
+      let revision = owner.revision
+      state.task = Task { [weak self, cronReplyRecovery, namespace] in
+        await cronReplyRecovery.hydrate(namespace)
+        state.task = nil
+        guard let self, self.epoch == epoch, self.selection == selected,
+          job.lifetime == lifetime, owner.revision == revision, self.cronScope(sourceID) == scope,
+          self.cronConversationCurrent(sourceID: sourceID, job: job, conversation: conversation),
+          !Task.isCancelled
+        else {
+          state.phase =
+            cronReplyRecovery.reference(key, namespace: namespace) == nil ? .idle : .retry
+          return
+        }
+        self.replyToCronRun(sourceID: sourceID, runID: runID, snapshotKind: snapshotKind)
+      }
+      return
+    }
     let recovered = cronReplyRecovery.reference(key, namespace: namespace) != nil
     guard
       let reference = cronReplyRecovery.begin(key, snapshotKind: snapshotKind, namespace: namespace)

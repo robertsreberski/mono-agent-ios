@@ -48,7 +48,16 @@ import Testing
       "messages": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode([message])),
     ])
     if case .object(var fields) = value, !change.isEmpty {
-      if change == "messages" {
+      if change == "threadSource", case .object(var thread) = fields["thread"] {
+        thread["sourceId"] = .string("other-source")
+        fields["thread"] = .object(thread)
+      } else if change == "messageThread", case .array(var messages) = fields["messages"],
+        case .object(var message) = messages[0]
+      {
+        message["threadId"] = .string("other-thread")
+        messages[0] = .object(message)
+        fields["messages"] = .array(messages)
+      } else if change == "messages" {
         fields[change] = .array([])
       } else {
         fields[change] = .string("wrong")
@@ -186,7 +195,34 @@ import Testing
     #expect(await h.transport.count(endpoint, method: "POST") == 2)
     #expect(h.store.journal.pending.isEmpty && h.store.journalStorage == .durable)
   }
-  @Test(arguments: ["operationId", "sourceId", "jobId", "runId", "messages"])
+  @Test(arguments: ["cron_reply_agent_offline", "cron_reply_unsupported"])
+  func recoveredPreflightFailureCannotForgetEarlierUncertainty(_ code: String) async throws {
+    let h = try await live()
+    let endpoint = path + "/run-1/reply-threads"
+    await h.transport.set(endpoint, [.failure])
+    h.store.replyToCronRun(sourceID: source, runID: key.runID, snapshotKind: "summary")
+    await h.store.cronReplySnapshot(key)?.task?.value
+    let reference = try #require(
+      h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace))
+    await h.transport.set(
+      endpoint,
+      [
+        .response(
+          HTTPResponse(
+            data: Data(
+              "{\"error\":{\"code\":\"\(code)\",\"message\":\"Sample preflight unavailable\"}}".utf8
+            ), status: 409))
+      ])
+    h.store.replyToCronRun(sourceID: source, runID: key.runID, snapshotKind: "detail")
+    await h.store.cronReplySnapshot(key)?.task?.value
+    #expect(h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace) == reference)
+    #expect(h.store.cronReplyPhase(key) == .retry)
+    let body = await AgentSettingsTests().body(h, endpoint)
+    #expect(body?["snapshotKind"] == .string("summary"))
+  }
+  @Test(arguments: [
+    "operationId", "sourceId", "jobId", "runId", "messages", "threadSource", "messageThread",
+  ])
   func malformedReceiptNeverNavigatesAndRetainsIdentity(_ field: String) async throws {
     let h = try await live()
     let endpoint = path + "/run-1/reply-threads"

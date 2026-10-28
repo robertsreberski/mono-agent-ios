@@ -233,6 +233,24 @@ network effects until an explicit `start()`. Foreground alone only resumes a sta
 connected store; offline hydration never opens SSE. Interrupted initial hydration resumes
 before bootstrap/stream setup when the connected scene becomes active.
 
+## Cron runs and reply recovery
+
+`loadCronRuns` owns an independent per-job cursor; repeated cursors stop paging. Explicit
+`loadCronRunActivity` replaces equal-version projections and removes a hidden run on its 404.
+Reads capture the selected conversation, scope, revision and lifetime. `replyToCronRun` admits
+only a held terminal run and validates the complete receipt identity before publishing an
+import/navigation request. Deleted conversations and late owners cannot navigate.
+
+Composition injects one process-lifetime `CronReplyRecoveryStore` into replacement Stores.
+It remembers the operation and snapshot before POST, excludes concurrent imports per run,
+and reuses both on an explicit uncertain retry. Hydration/foreground never replay imports.
+Unresolved memory has no capacity eviction. Optional `cron-replies-v1.json` retains only the
+newest 32 identity references, within 128 KiB, using atomic, backup-excluded protected writes.
+Only successfully persisted references have relaunch recovery; older/unpersisted identities
+may be lost at termination. Corruption, refused/full storage and a pending optional load do
+not gate chat hydration or touch the submission journal. Forgotten identities cannot reload
+from stale disk in the same registry. Profile deletion fences pending reads/writes.
+
 ## Connection registry
 
 `ConnectionRegistry` remains MainActor/Observable; profile I/O uses `ProfileRepository`.

@@ -223,8 +223,8 @@ public final class ConsoleStore {
   public func hydrate() async {
     guard !hydrated else { return }
     let generation = epoch
-    await cronReplyRecovery.hydrate(namespace)
-    guard epoch == generation else { return }
+    // Optional cron persistence must not delay cache/authored/journal hydration or chat sends.
+    Task { [cronReplyRecovery, namespace] in await cronReplyRecovery.hydrate(namespace) }
     do {
       let cache = try await repository.loadCache(namespace)
       guard epoch == generation else { return }

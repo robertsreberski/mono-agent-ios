@@ -8,6 +8,31 @@ import Testing
   func key(_ number: Int = 1) -> CronReplyKey {
     .init(sourceID: "agent-example", jobID: "sample-digest", runID: "run-\(number)")
   }
+  @Test func pendingOptionalLoadDoesNotGateChatJournalHydration() async throws {
+    let disk = PausedCronPersistence()
+    let registry = CronReplyRecoveryStore(persistence: disk)
+    let h = Harness(cronReplyRecovery: registry)
+    await h.store.hydrate()
+    await eventually { await disk.isPaused() }
+    #expect(h.store.hydrated && h.store.journalStorage == .durable)
+    #expect(h.store.authoredStorage == .durable && h.store.pendingSubmissions.isEmpty)
+    await h.transport.set(submissionPath, [.paused])
+    let input = h.store.prepareSubmission(.init(submissionId: "", text: "Fictional chat reply"))
+    let send = Task {
+      try await h.store.submit(
+        sourceID: "agent-example", threadID: "thread-example", input: input,
+        attemptID: input.submissionId)
+    }
+    await eventually { await h.transport.pauseCount() == 1 }
+    let reference = try #require(h.store.pendingSubmissions.first)
+    await h.transport.release(try admission(reference))
+    let receipt = try await send.value
+    #expect(receipt.submissionId == reference.submissionID)
+    #expect(await disk.isPaused())
+    #expect(h.store.journalStorage == .durable && h.store.pendingSubmissions.isEmpty)
+    await disk.release()
+    await registry.hydrate(h.store.namespace)
+  }
   @Test func refusedStorageDoesNotEvictMemoryOrChangeRetrySnapshot() async throws {
     let h = try await AutomationsTests().live()
     let disk = RefusedCronPersistence()
@@ -99,4 +124,18 @@ actor RefusedCronPersistence: CronReplyPersistence {
   }
   func delete(profileID: UUID) throws { throw ConsoleStorageError.unavailable }
   func largestWrite() -> Int { maximum }
+}
+
+actor PausedCronPersistence: CronReplyPersistence {
+  private var waiter: CheckedContinuation<[CronReplyReference], Never>?
+  func load(_ namespace: ConsoleNamespace) async -> [CronReplyReference] {
+    await withCheckedContinuation { waiter = $0 }
+  }
+  func isPaused() -> Bool { waiter != nil }
+  func release() {
+    waiter?.resume(returning: [])
+    waiter = nil
+  }
+  func save(_ references: [CronReplyReference], namespace: ConsoleNamespace, revision: UInt64) {}
+  func delete(profileID: UUID) {}
 }
