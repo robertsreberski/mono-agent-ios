@@ -118,6 +118,7 @@ extension ConsoleStore {
         else { throw APIError(status: 502, code: "mismatched_cron_reply_receipt") }
         let publish = current()
         self.cronOutcome(sourceID)
+        let outcomeRevision = owner.revision
         // A known deletion always wins, even an equal/newer receipt must not navigate.
         guard self.tombstones[receipt.thread.id] == nil else {
           cronReplyRecovery.forget(reference, namespace: namespace)
@@ -127,11 +128,15 @@ extension ConsoleStore {
           }
           return
         }
+        // A validated receipt settles identity even when its initiating view has left.
+        cronReplyRecovery.forget(reference, namespace: namespace)
+        state.phase = .idle
+        state.message = nil
         guard publish else { return }
         let now = await self.clock.wallNow()
         // The clock is injectable and may suspend: recheck lifetime after that suspension.
         guard self.epoch == epoch, self.selection == selected, job.lifetime == lifetime,
-          self.cronScope(sourceID) == scope, owner.revision == revision &+ 1,
+          self.cronScope(sourceID) == scope, owner.revision == outcomeRevision,
           self.tombstones[receipt.thread.id] == nil,
           self.cronConversationCurrent(sourceID: sourceID, job: job, conversation: conversation)
         else { return }
@@ -145,9 +150,6 @@ extension ConsoleStore {
           self.buckets[bucket]?.threads.insert(receipt.thread, at: 0)
         }
         self.noteSummary(receipt.thread)
-        cronReplyRecovery.forget(reference, namespace: namespace)
-        state.phase = .idle
-        state.message = nil
         // Route owner handles navigation and composer focus; no caller-supplied IDs are used.
         self.cronReplyNavigation = .init(
           id: UUID(), sourceID: sourceID, threadID: receipt.thread.id)
@@ -156,6 +158,9 @@ extension ConsoleStore {
         let publish = current()
         self.cronOutcome(sourceID)
         let apiError = error as? APIError
+        if let operationID = apiError?.cronReplyPendingOperationID {
+          cronReplyRecovery.replace(reference, operationID: operationID, namespace: namespace)
+        }
         let preflight = ["cron_reply_agent_offline", "cron_reply_unsupported"].contains(
           apiError?.code ?? "")
         let definitive =
@@ -171,7 +176,9 @@ extension ConsoleStore {
         state.message =
           definitive
           ? apiError?.safeDetails ?? "Reply could not be imported."
-          : "Reply outcome is unknown. Retry Reply reuses the same operation and snapshot."
+          : apiError?.code == "cron_reply_pending"
+            ? "Another Reply for this result is still being delivered. Use Retry Reply to continue it — no duplicate conversation will be created."
+            : "Reply outcome is unknown. Retry Reply reuses the same operation and snapshot."
       }
     }
   }

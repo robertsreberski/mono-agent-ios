@@ -160,6 +160,19 @@ public actor FileCronReplyPersistence: CronReplyPersistence {
     references[namespace]?.removeAll { $0.operationID == reference.operationID }
     persist(namespace)
   }
+  /// Replace a collided local identity without releasing the physical single-flight.
+  func replace(_ reference: CronReplyReference, operationID: UUID, namespace: ConsoleNamespace) {
+    guard !deleted.contains(namespace.profileID),
+      self.reference(reference.key, namespace: namespace) == reference
+    else { return }
+    if reference.operationID != operationID { forgotten.insert(reference.operationID) }
+    forgotten.remove(operationID)
+    references[namespace]?.removeAll { $0.key == reference.key }
+    references[namespace, default: []].insert(
+      .init(key: reference.key, operationID: operationID, snapshotKind: reference.snapshotKind),
+      at: 0)
+    persist(namespace)
+  }
   private func persist(_ namespace: ConsoleNamespace) {
     guard !deleted.contains(namespace.profileID), let persistence else { return }
     revision &+= 1

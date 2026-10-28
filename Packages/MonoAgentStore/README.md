@@ -285,3 +285,8 @@ in-flight access adoption; no late response can roll capabilities back. Matching
 results still return, including completed confirmed effects overlapped by a renewal. Expired confirmed requests
 set retryRequiresConsent and never renew/replay automatically. The bridge must obtain fresh
 native consent for an explicit retry. None of this state participates in persistence.
+
+A `409 cron_reply_pending` adopts the allow-listed server operation UUID while preserving
+its snapshot kind and the physical single-flight. A validated, non-tombstoned receipt
+retires recovery even when navigation/publication is no longer current; receipt snapshots
+cannot replace newer held conversation history.

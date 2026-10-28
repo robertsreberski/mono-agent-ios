@@ -74,20 +74,26 @@ import Testing
         "cron-replies-v1.json")
     #expect(
       try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    // Queue an actual registry write immediately before deletion, without settling it.
+    _ = registry.begin(key(41), snapshotKind: "summary", namespace: h.store.namespace)
     await registry.delete(profileID: h.profile.id)
+    await registry.settlePersistence(h.store.namespace)
     try await disk.save([try #require(newest)], namespace: h.store.namespace, revision: 999)
     #expect(!FileManager.default.fileExists(atPath: url.path))
     #expect(registry.begin(key(), snapshotKind: "summary", namespace: h.store.namespace) == nil)
   }
-  @Test func forgottenIdentityCannotRehydrateFromRefusedStaleDisk() async throws {
+  @Test func forgottenIdentityCannotRehydrateFromPendingStaleLoad() async throws {
     let h = try await AutomationsTests().live()
     let old = CronReplyReference(key: key(), snapshotKind: "summary")
-    let disk = RefusedCronPersistence(entries: [old])
+    let disk = PausedCronPersistence()
     let registry = CronReplyRecoveryStore(persistence: disk)
-    await registry.hydrate(h.store.namespace)
+    let hydration = Task { await registry.hydrate(h.store.namespace) }
+    await eventually { await disk.isPaused() }
     registry.forget(old, namespace: h.store.namespace)
     await registry.settlePersistence(h.store.namespace)
-    await registry.hydrate(h.store.namespace)
+    await disk.release([old])
+    await hydration.value
+    #expect(registry.isHydrated(h.store.namespace))
     #expect(registry.reference(key(), namespace: h.store.namespace) == nil)
     let new = registry.begin(key(), snapshotKind: "detail", namespace: h.store.namespace)
     #expect(new?.operationID != old.operationID && new?.snapshotKind == "detail")
@@ -132,8 +138,8 @@ actor PausedCronPersistence: CronReplyPersistence {
     await withCheckedContinuation { waiter = $0 }
   }
   func isPaused() -> Bool { waiter != nil }
-  func release() {
-    waiter?.resume(returning: [])
+  func release(_ entries: [CronReplyReference] = []) {
+    waiter?.resume(returning: entries)
     waiter = nil
   }
   func save(_ references: [CronReplyReference], namespace: ConsoleNamespace, revision: UInt64) {}

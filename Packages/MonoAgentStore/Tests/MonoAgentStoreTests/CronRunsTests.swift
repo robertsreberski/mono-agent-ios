@@ -33,6 +33,7 @@ import Testing
     var thread = try sampleThread("thread-cron")
     thread.sourceId = source
     h.store.hold(.init(thread: thread, messages: [try message()], savedAt: Date()))
+    await h.store.cronReplyRecovery.hydrate(h.store.namespace)
     return h
   }
   func receipt(_ h: Harness, operation: String, change: String = "") throws -> HTTPResponse {
@@ -260,6 +261,8 @@ import Testing
     await task?.value
     #expect(h.store.cronReplyNavigation == nil && h.store.conversations["thread-imported"] == nil)
     #expect(!h.store.cronReplyRecovery.isActive(key, namespace: h.store.namespace))
+    #expect(h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace) == nil)
+    #expect(h.store.cronReplyPhase(key) != .retry)
     #expect(!h.store.automationIsAuthoritative(source))
   }
   @Test(arguments: ["selection", "background", "generation", "revision", "capability"])
@@ -267,6 +270,9 @@ import Testing
     let h = try await live()
     h.store.replyToCronRun(sourceID: source, runID: "run-1", snapshotKind: "summary")
     let task = h.store.cronReplySnapshot(key)?.task
+    // Prove admission already reserved an operation; the dispatch task has not run yet.
+    #expect(h.store.cronReplyRecovery.isActive(key, namespace: h.store.namespace))
+    #expect(h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace) != nil)
     switch change {
     case "selection": h.store.selectedThreadID = "other"
     case "background": await h.store.scenePhaseChanged(.background)
@@ -279,4 +285,129 @@ import Testing
     #expect(!h.store.cronReplyRecovery.isActive(key, namespace: h.store.namespace))
     #expect(h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace) == nil)
   }
+  @Test func pendingCollisionAdoptsServerIdentityAndRetryConverges() async throws {
+    let h = try await live()
+    let endpoint = path + "/run-1/reply-threads"
+    let serverID = UUID()
+    await h.transport.set(endpoint, [.paused, .paused])
+    h.store.replyToCronRun(sourceID: source, runID: key.runID, snapshotKind: "summary")
+    let state = try #require(h.store.cronReplySnapshot(key))
+    let first = state.task
+    await eventually { await h.transport.pauseCount() == 1 }
+    let local = try #require(h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace))
+    await h.transport.release(
+      HTTPResponse(
+        data: Data(
+          """
+          {"error":{"code":"cron_reply_pending","message":"Pending",
+          "details":{"operationId":"\(serverID.uuidString)"}}}
+          """.utf8), status: 409))
+    await first?.value
+    let adopted = try #require(
+      h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace))
+    #expect(adopted.operationID == serverID && adopted.operationID != local.operationID)
+    #expect(adopted.snapshotKind == "summary" && state.phase == .retry)
+    #expect(state.message?.contains("Another Reply for this result") == true)
+    h.store.replyToCronRun(sourceID: source, runID: key.runID, snapshotKind: "detail")
+    let retry = state.task
+    await eventually { await h.transport.pauseCount() == 1 }
+    let body = await AgentSettingsTests().body(h, endpoint)
+    #expect(body?["operationId"] == .string(serverID.uuidString))
+    #expect(body?["snapshotKind"] == .string("summary"))
+    await h.transport.release(try receipt(h, operation: serverID.uuidString))
+    await retry?.value
+    #expect(h.store.cronReplyNavigation?.threadID == "thread-imported")
+    #expect(h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace) == nil)
+    #expect(state.phase == .idle)
+  }
+
+  @Test(arguments: ["thread", "message", "history"])
+  func holdCannotReplaceNewerConversation(_ change: String) async throws {
+    let h = try await live()
+    var thread = try sampleThread("thread-imported")
+    thread.sourceId = source
+    var original = try sampleMessage("message-imported", seq: 1)
+    original.threadId = thread.id
+    let stale = CachedConversation(thread: thread, messages: [original], savedAt: Date())
+    var messages = [original]
+    if change == "thread" { thread.revision += 1 }
+    if change == "message" { messages[0].seq = 2 }
+    if change == "history" {
+      var later = try sampleMessage("message-later", seq: 2)
+      later.threadId = thread.id
+      messages.append(later)
+    }
+    let current = CachedConversation(thread: thread, messages: messages, savedAt: Date())
+    h.store.hold(current)
+    let held = try #require(h.store.conversations[thread.id])
+    h.store.hold(stale)
+    #expect(h.store.conversations[thread.id] === held)
+    #expect(held.thread == thread && held.messages == messages)
+  }
+
+  @Test(arguments: ["direction", "older", "lifetime", "revision", "join"])
+  func pageRequestWaitsThenReadmitsMismatchedFlight(_ change: String) async throws {
+    let h = try await live()
+    let job = try #require(h.store.automationState(source).job)
+    job.runs.nextCursor = "older"
+    job.runs.loaded = true
+    await h.transport.set(
+      path,
+      [
+        .paused,
+        .response(
+          try response(
+            JSONValue.object([
+              "runs": .array([]), "nextCursor": .null,
+            ]))),
+      ])
+    let old = Task { await h.store.loadCronRuns(sourceID: source, older: change != "older") }
+    await eventually { await h.transport.pauseCount() == 1 }
+    if change == "lifetime" { h.store.resetCronJob(sourceID: source) }
+    if change == "revision" { h.store.invalidateAutomation(source) }
+    var entered = false
+    let next = Task {
+      entered = true
+      await h.store.loadCronRuns(sourceID: source, older: change != "direction")
+    }
+    await eventually { entered }
+    await h.transport.release(
+      try response(
+        JSONValue.object([
+          "runs": .array([]), "nextCursor": .string("next"),
+        ])))
+    await old.value
+    await next.value
+    let requests = await h.transport.requests.filter { $0.url?.path == path }
+    #expect(requests.count == (change == "join" ? 1 : 2))
+    let query = requests.last?.url.flatMap {
+      URLComponents(url: $0, resolvingAgainstBaseURL: false)
+    }?.queryItems
+    #expect(query?.contains { $0.name == "before" } == (change != "direction"))
+    #expect(!job.runs.loading && job.runs.pageTask == nil)
+  }
+
+  @Test func detailRequestReadmitsAfterCancelledLifetime() async throws {
+    let h = try await live()
+    let endpoint = path + "/run-1"
+    await h.transport.set(
+      endpoint, [.paused, .response(try response(["message": message(text: "Current activity")]))])
+    let old = Task { await h.store.loadCronRunActivity(sourceID: source, runID: key.runID) }
+    await eventually { await h.transport.pauseCount() == 1 }
+    h.store.resetCronJob(sourceID: source)
+    var entered = false
+    let next = Task {
+      entered = true
+      await h.store.loadCronRunActivity(sourceID: source, runID: key.runID)
+    }
+    await eventually { entered }
+    await h.transport.release(try response(["message": message(text: "Stale activity")]))
+    await old.value
+    await next.value
+    #expect(await h.transport.count(endpoint) == 2)
+    #expect(
+      h.store.selectedConversation?.messages.first?.parts
+        == (try message(text: "Current activity")).parts)
+  }
+
 }

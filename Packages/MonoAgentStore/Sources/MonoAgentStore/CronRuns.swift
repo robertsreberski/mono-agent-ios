@@ -3,6 +3,15 @@ import Foundation
 import MonoAgentKit
 import Observation
 
+struct CronRunReadIdentity: Equatable {
+  let lifetime: UUID
+  let epoch: UInt64
+  let selection: UInt64
+  let revision: UInt64
+  let scope: String
+  let conversation: ObjectIdentifier
+}
+
 @MainActor @Observable public final class CronRunsState {
   public internal(set) var runs: [WebCronRunSummary] = []
   public internal(set) var nextCursor: String?
@@ -11,6 +20,9 @@ import Observation
   public internal(set) var error: String?
   public internal(set) var details: [String: WebMessage] = [:]
   public internal(set) var loadingDetails: Set<String> = []
+  @ObservationIgnored var pageIdentity: CronRunReadIdentity?
+  @ObservationIgnored var pageOlder = false
+  @ObservationIgnored var detailIdentities: [String: CronRunReadIdentity] = [:]
   @ObservationIgnored var pageTask: Task<Void, Never>?
   @ObservationIgnored var detailTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var cursors: Set<String> = []
@@ -33,8 +45,11 @@ extension ConsoleStore {
       cronConversationCurrent(sourceID: sourceID, job: job, conversation: conversation)
     else { return }
     let state = job.runs
+    let identity = cronRunReadIdentity(sourceID, owner: owner, job: job, conversation: conversation)
     if let flight = state.pageTask {
+      let joins = !flight.isCancelled && state.pageIdentity == identity && state.pageOlder == older
       await flight.value
+      if !joins && !Task.isCancelled { await loadCronRuns(sourceID: sourceID, older: older) }
       return
     }
     guard !older || state.nextCursor != nil else { return }
@@ -45,12 +60,15 @@ extension ConsoleStore {
     let revision = owner.revision
     let selected = selection
     state.loading = true
+    state.pageIdentity = identity
+    state.pageOlder = older
     state.error = nil
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
         state.loading = false
         state.pageTask = nil
+        state.pageIdentity = nil
       }
       @MainActor func current() -> Bool {
         self.epoch == epoch && self.selection == selected && owner.revision == revision
@@ -93,8 +111,13 @@ extension ConsoleStore {
       cronRunStatus(job: job, conversation: conversation, runID: runID) != nil
     else { return }
     let state = job.runs
+    let identity = cronRunReadIdentity(sourceID, owner: owner, job: job, conversation: conversation)
     if let task = state.detailTasks[runID] {
+      let joins = !task.isCancelled && state.detailIdentities[runID] == identity
       await task.value
+      if !joins && !Task.isCancelled {
+        await loadCronRunActivity(sourceID: sourceID, runID: runID)
+      }
       return
     }
     let epoch = epoch
@@ -102,6 +125,7 @@ extension ConsoleStore {
     let lifetime = job.lifetime
     let revision = owner.revision
     let selected = selection
+    state.detailIdentities[runID] = identity
     state.loadingDetails.insert(runID)
     state.error = nil
     let task = Task { [weak self] in
@@ -109,6 +133,7 @@ extension ConsoleStore {
       defer {
         state.loadingDetails.remove(runID)
         state.detailTasks[runID] = nil
+        state.detailIdentities[runID] = nil
       }
       @MainActor func current() -> Bool {
         self.epoch == epoch && self.selection == selected && owner.revision == revision
@@ -147,6 +172,14 @@ extension ConsoleStore {
     }
     state.detailTasks[runID] = task
     await task.value
+  }
+  private func cronRunReadIdentity(
+    _ sourceID: String, owner: AutomationState, job: CronJobState,
+    conversation: ConversationState
+  ) -> CronRunReadIdentity {
+    .init(
+      lifetime: job.lifetime, epoch: epoch, selection: selection, revision: owner.revision,
+      scope: cronScope(sourceID), conversation: ObjectIdentifier(conversation))
   }
   static func cronRunID(_ message: WebMessage) -> String? {
     for part in message.parts {

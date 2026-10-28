@@ -414,6 +414,17 @@ public final class ConsoleStore {
   var journalRevision: UInt64 = 0
   func hold(_ entry: CachedConversation, fromDevice: Bool = false) {
     guard !tombstones.keys.contains(entry.thread.id) else { return }
+    if let held = conversations[entry.thread.id] {
+      guard held.thread.revision <= entry.thread.revision else { return }
+      // Receipts and disk snapshots are not allowed to roll back live message history.
+      let incoming = Dictionary(entry.messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+      guard
+        !held.messages.contains(where: { message in
+          guard let replacement = incoming[message.id] else { return true }
+          return (message.seq ?? 0) > (replacement.seq ?? 0)
+        })
+      else { return }
+    }
     let state = conversations[entry.thread.id] ?? ConversationState(entry)
     state.record = entry
     state.runningConfirmed = !fromDevice

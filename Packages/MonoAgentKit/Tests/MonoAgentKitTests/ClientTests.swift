@@ -230,3 +230,34 @@ private actor SensitiveErrorTransport: HTTPTransport {
     body: ApiPatchThread(title: "Title"))
   #expect(patch.timeoutInterval == 15)
 }
+
+@Test func pendingCronReplyRetainsOnlyValidatedAllowlistedOperationID() async throws {
+  let id = UUID()
+  for (status, code, detail, expected) in [
+    (409, "cron_reply_pending", id.uuidString, id),
+    (503, "cron_reply_pending", id.uuidString, nil),
+    (409, "other_conflict", id.uuidString, nil),
+    (409, "cron_reply_pending", "not-a-uuid", nil),
+  ] {
+    let transport = ScriptedTransport([
+      .response(
+        .init(
+          data: Data(
+            """
+            {"error":{"code":"\(code)","message":"fictional private prose",
+            "details":{"operationId":"\(detail)","pendingSince":"private","other":"private"}}}
+            """.utf8), status: status))
+    ])
+    let api = APIClient(endpoint: Scenario.endpoint, transport: transport)
+    do {
+      _ = try await api.createCronReply(
+        id: "agent", jobId: "job", runId: "run",
+        body: .init(operationId: UUID().uuidString, snapshotKind: "summary"))
+      Issue.record("Expected pending error")
+    } catch let error as APIError {
+      #expect(error.cronReplyPendingOperationID == expected)
+      #expect(!String(reflecting: error).contains("private"))
+    }
+    #expect(await transport.requests.count == 1)
+  }
+}

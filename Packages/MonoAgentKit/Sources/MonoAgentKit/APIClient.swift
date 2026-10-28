@@ -22,12 +22,19 @@ public struct APIError: Error, LocalizedError, Sendable, Equatable {
   public let safeDetails: String
   public let retryClass: RetryClass
   public let retryAfter: String?
-  public init(status: Int, code: String, retryAfter: String? = nil) {
+  /// The sole retained server detail: a validated identity for a pending cron import.
+  public let cronReplyPendingOperationID: UUID?
+  public init(
+    status: Int, code: String, retryAfter: String? = nil,
+    cronReplyPendingOperationID: UUID? = nil
+  ) {
     self.status = status
     self.code =
       code.range(of: "^[a-z][a-z0-9_]{0,79}$", options: .regularExpression) == nil
       ? "server_error" : code
     self.retryAfter = retryAfter
+    self.cronReplyPendingOperationID =
+      status == 409 && code == "cron_reply_pending" ? cronReplyPendingOperationID : nil
     safeDetails =
       status == 421 && code == "untrusted_host"
       ? "Console hostname is not allowed; configure MONO_AGENT_WEB_ALLOWED_HOSTS on the console host."
@@ -45,7 +52,25 @@ public struct APIError: Error, LocalizedError, Sendable, Equatable {
     let body = try? JSONDecoder().decode(ApiErrorBody.self, from: response.data)
     var code = "http_error"
     if case .coded(let value, _) = body?.error { code = value }
-    return .init(status: response.status, code: code, retryAfter: response.headers["retry-after"])
+    // Do not expand the pinned wire DTO or retain arbitrary error details/prose.
+    struct PendingEnvelope: Decodable {
+      struct ErrorBody: Decodable {
+        struct Details: Decodable { let operationId: UUID? }
+        let details: Details?
+      }
+      let error: ErrorBody
+    }
+    let operationID: UUID?
+    if response.status == 409 && code == "cron_reply_pending" {
+      operationID =
+        (try? JSONDecoder().decode(PendingEnvelope.self, from: response.data))?
+        .error.details?.operationId
+    } else {
+      operationID = nil
+    }
+    return .init(
+      status: response.status, code: code, retryAfter: response.headers["retry-after"],
+      cronReplyPendingOperationID: operationID)
   }
 }
 public struct RouteDescriptor: Sendable {
