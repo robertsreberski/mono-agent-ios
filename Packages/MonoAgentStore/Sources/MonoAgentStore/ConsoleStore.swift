@@ -91,6 +91,7 @@ public final class ConsoleStore {
   @ObservationIgnored var catalogFlights: Set<String> = []
   @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
+  public let cronReplyRecovery: CronReplyRecoveryStore
   public internal(set) var automations: [String: AutomationState] = [:]
   @ObservationIgnored var agentRestarts: [String: AgentRestartState] = [:]
   @ObservationIgnored var providers: [String: ProviderState] = [:]
@@ -177,8 +178,9 @@ public final class ConsoleStore {
     profile: SavedConsole, api: any ConsoleAPI, events: any ConsoleEventSource,
     repository: any ConsoleRepository, clock: any StreamClock = SystemStreamClock(),
     uploads: any UploadReservations = NoUploadReservations(),
-    replyFiles: ReplyFileCache? = nil
+    replyFiles: ReplyFileCache? = nil, cronReplyRecovery: CronReplyRecoveryStore? = nil
   ) {
+    self.cronReplyRecovery = cronReplyRecovery ?? CronReplyRecoveryStore()
     self.profile = profile
     namespace = ConsoleNamespace(profile: profile)
     self.replyFiles = replyFiles ?? .live(namespace: profile.id.uuidString + namespace.identity)
@@ -219,6 +221,8 @@ public final class ConsoleStore {
   public func hydrate() async {
     guard !hydrated else { return }
     let generation = epoch
+    await cronReplyRecovery.hydrate(namespace)
+    guard epoch == generation else { return }
     do {
       let cache = try await repository.loadCache(namespace)
       guard epoch == generation else { return }

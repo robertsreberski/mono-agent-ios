@@ -14,6 +14,7 @@ import SwiftUI
 final class AppModel {
   let registry: ConnectionRegistry
   private(set) var store: ConsoleStore?
+  @ObservationIgnored private let cronReplyRecovery: CronReplyRecoveryStore
   @ObservationIgnored private let consoleRepository: any ConsoleRepository
   @ObservationIgnored private var networkAdapter: ConsoleNetworkAdapter?
   @ObservationIgnored private var compositionGeneration: UInt64 = 0
@@ -122,9 +123,13 @@ final class AppModel {
     #endif
     consoleRepository = FileConsoleRepository(
       directory: directory.appendingPathComponent("Consoles"))
+    cronReplyRecovery = CronReplyRecoveryStore(
+      persistence: FileCronReplyPersistence(directory: directory.appendingPathComponent("Consoles"))
+    )
     registry = ConnectionRegistry(
       repository: FileProfileRepository(directory: directory),
-      probe: ConnectionProbe(transport: transport), consoleRepository: consoleRepository
+      probe: ConnectionProbe(transport: transport), consoleRepository: consoleRepository,
+      cronReplyRecovery: cronReplyRecovery
     )
   }
 
@@ -153,11 +158,12 @@ final class AppModel {
         consoleRepository
         ?? FileConsoleRepository(
           directory: directory.appendingPathComponent("Consoles"))
+      cronReplyRecovery = CronReplyRecoveryStore()
       registry = ConnectionRegistry(
         repository: FileProfileRepository(directory: directory),
         probe: ConnectionProbe(
           transport: ScriptedTransport(Self.steps(scenario, theme: fixtureTheme))),
-        consoleRepository: self.consoleRepository
+        consoleRepository: self.consoleRepository, cronReplyRecovery: cronReplyRecovery
       )
     }
 
@@ -280,7 +286,8 @@ final class AppModel {
       events = EventStream(endpoint: profile.endpoint)
     #endif
     let next = ConsoleStore(
-      profile: profile, api: api, events: events, repository: consoleRepository)
+      profile: profile, api: api, events: events, repository: consoleRepository,
+      cronReplyRecovery: cronReplyRecovery)
     next.setProviderPrivacyCovered(providerPrivacyCovered)
     store = next
     #if DEBUG
