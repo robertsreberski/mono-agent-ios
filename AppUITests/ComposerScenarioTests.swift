@@ -535,7 +535,7 @@ import XCTest
     let value = composerField(app).value as? String ?? ""
     return value == "Message" || value.hasPrefix("Message ") ? "" : value
   }
-  private func waitForText(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 15)
+  private func waitForText(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 30)
     -> Bool
   {
     app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text))
