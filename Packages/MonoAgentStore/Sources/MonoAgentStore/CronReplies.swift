@@ -16,6 +16,21 @@ public enum CronReplyPhase: String, Sendable { case idle, importing, retry, erro
 }
 
 extension ConsoleStore {
+  /// An import receipt is a snapshot, not an authoritative transcript window read.
+  func holdCronReply(_ entry: CachedConversation) {
+    if let held = conversations[entry.thread.id] {
+      guard held.thread.revision <= entry.thread.revision else { return }
+      // Receipts are not allowed to roll back live message history.
+      let incoming = Dictionary(entry.messages.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+      guard
+        !held.messages.contains(where: { message in
+          guard let replacement = incoming[message.id] else { return true }
+          return (message.seq ?? 0) > (replacement.seq ?? 0)
+        })
+      else { return }
+    }
+    hold(entry)
+  }
   public func consumeCronReplyFocus(_ id: UUID) {
     if cronReplyNavigation?.id == id { cronReplyNavigation = nil }
   }
@@ -140,7 +155,7 @@ extension ConsoleStore {
           self.tombstones[receipt.thread.id] == nil,
           self.cronConversationCurrent(sourceID: sourceID, job: job, conversation: conversation)
         else { return }
-        self.hold(.init(thread: receipt.thread, messages: receipt.messages, savedAt: now))
+        self.holdCronReply(.init(thread: receipt.thread, messages: receipt.messages, savedAt: now))
         self.patchSummary(receipt.thread)
         let bucket = BucketKey(sourceID: sourceID)
         if self.buckets[bucket] == nil {

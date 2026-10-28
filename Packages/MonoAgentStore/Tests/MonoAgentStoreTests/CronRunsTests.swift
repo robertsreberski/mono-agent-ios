@@ -322,7 +322,7 @@ import Testing
   }
 
   @Test(arguments: ["thread", "message", "history"])
-  func holdCannotReplaceNewerConversation(_ change: String) async throws {
+  func receiptCannotReplaceNewerConversation(_ change: String) async throws {
     let h = try await live()
     var thread = try sampleThread("thread-imported")
     thread.sourceId = source
@@ -340,7 +340,7 @@ import Testing
     let current = CachedConversation(thread: thread, messages: messages, savedAt: Date())
     h.store.hold(current)
     let held = try #require(h.store.conversations[thread.id])
-    h.store.hold(stale)
+    h.store.holdCronReply(stale)
     #expect(h.store.conversations[thread.id] === held)
     #expect(held.thread == thread && held.messages == messages)
   }

@@ -148,7 +148,7 @@ extension ConsoleStore {
         guard epoch == generation, detailRequests[id] == request, !tombstones.keys.contains(id),
           !wasSelected || selection == selected
         else { return }
-        hold(record)
+        guard hold(record) else { return }
         patchSummary(record.thread)
         conversations[id]?.etag = validator
         conversations[id]?.freshness = began == (observations[id] ?? 0) ? .fresh : .stale
