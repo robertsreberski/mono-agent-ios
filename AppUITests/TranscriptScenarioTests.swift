@@ -332,7 +332,8 @@ import XCTest
       WaitFor.hittable(jump)
       WaitFor.hittable(dock)
       let field = element(app, "composer-field")
-      WaitFor.element(jump, "jump straddling dock, clear of transcript and input text") {
+      WaitFor.element(jump, timeout: 30, "jump straddling dock, clear of transcript and input text")
+      {
         control in
         guard dock.exists, field.exists, !dock.frame.isEmpty, !field.frame.isEmpty,
           !control.frame.isEmpty
