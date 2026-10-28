@@ -301,7 +301,7 @@ import Testing
         data: Data(
           """
           {"error":{"code":"cron_reply_pending","message":"Pending",
-          "details":{"operationId":"\(serverLiteral)"}}}
+          "details":{"operationId":"\(serverLiteral)","pendingSince":"2030-01-02T12:00:00Z"}}}
           """.utf8), status: 409))
     await first?.value
     let adopted = try #require(
@@ -309,6 +309,8 @@ import Testing
     #expect(adopted.operationID == serverID && adopted.operationID != local.operationID)
     #expect(adopted.snapshotKind == "summary" && state.phase == .retry)
     #expect(state.message?.contains("Another Reply for this result") == true)
+    let since = try #require(ISO8601DateFormatter().date(from: "2030-01-02T12:00:00Z"))
+    #expect(state.message?.hasSuffix(" (since " + since.formatted() + ")") == true)
     h.store.replyToCronRun(sourceID: source, runID: key.runID, snapshotKind: "detail")
     let retry = state.task
     await eventually { await h.transport.pauseCount() == 1 }

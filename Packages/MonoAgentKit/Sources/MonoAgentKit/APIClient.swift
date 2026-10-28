@@ -22,11 +22,12 @@ public struct APIError: Error, LocalizedError, Sendable, Equatable {
   public let safeDetails: String
   public let retryClass: RetryClass
   public let retryAfter: String?
-  /// The sole retained server detail: a validated identity for a pending cron import.
+  /// Validated allowlisted details for a pending cron import.
   public let cronReplyPendingOperationID: UUID?
+  public let cronReplyPendingSince: Date?
   public init(
     status: Int, code: String, retryAfter: String? = nil,
-    cronReplyPendingOperationID: UUID? = nil
+    cronReplyPendingOperationID: UUID? = nil, cronReplyPendingSince: Date? = nil
   ) {
     self.status = status
     self.code =
@@ -35,6 +36,8 @@ public struct APIError: Error, LocalizedError, Sendable, Equatable {
     self.retryAfter = retryAfter
     self.cronReplyPendingOperationID =
       status == 409 && code == "cron_reply_pending" ? cronReplyPendingOperationID : nil
+    self.cronReplyPendingSince =
+      status == 409 && code == "cron_reply_pending" ? cronReplyPendingSince : nil
     safeDetails =
       status == 421 && code == "untrusted_host"
       ? "Console hostname is not allowed; configure MONO_AGENT_WEB_ALLOWED_HOSTS on the console host."
@@ -55,22 +58,46 @@ public struct APIError: Error, LocalizedError, Sendable, Equatable {
     // Do not expand the pinned wire DTO or retain arbitrary error details/prose.
     struct PendingEnvelope: Decodable {
       struct ErrorBody: Decodable {
-        struct Details: Decodable { let operationId: UUID? }
+        struct Details: Decodable {
+          let operationId: UUID?
+          let pendingSince: Date?
+          enum CodingKeys: String, CodingKey { case operationId, pendingSince }
+          init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            operationId = (try? values.decode(String.self, forKey: .operationId))
+              .flatMap(UUID.init(uuidString:))
+            let stamp = try? values.decode(String.self, forKey: .pendingSince)
+            if let stamp, stamp.utf8.count <= 64,
+              stamp.range(
+                of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"#,
+                options: .regularExpression) != nil
+            {
+              let formatter = ISO8601DateFormatter()
+              formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+              let fractional = formatter.date(from: stamp)
+              formatter.formatOptions = [.withInternetDateTime]
+              pendingSince = fractional ?? formatter.date(from: stamp)
+            } else {
+              pendingSince = nil
+            }
+          }
+        }
         let details: Details?
       }
       let error: ErrorBody
     }
-    let operationID: UUID?
+    let details: PendingEnvelope.ErrorBody.Details?
     if response.status == 409 && code == "cron_reply_pending" {
-      operationID =
+      details =
         (try? JSONDecoder().decode(PendingEnvelope.self, from: response.data))?
-        .error.details?.operationId
+        .error.details
     } else {
-      operationID = nil
+      details = nil
     }
     return .init(
       status: response.status, code: code, retryAfter: response.headers["retry-after"],
-      cronReplyPendingOperationID: operationID)
+      cronReplyPendingOperationID: details?.operationId,
+      cronReplyPendingSince: details?.pendingSince)
   }
 }
 public struct RouteDescriptor: Sendable {

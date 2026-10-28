@@ -29,7 +29,8 @@ see `Contracts/console-api.lock.json`. There is no npm release at this pin.
   validator was supplied. Mutations never retry automatically. Cron 428 is a typed
   `WebCronMutationResult.confirmationRequired`; submission 409 decodes its receipt.
   For `409 cron_reply_pending` only, `APIError.cronReplyPendingOperationID` retains a
-  UUID-validated operation identity; other server error details/prose are discarded.
+  UUID-validated operation identity; `cronReplyPendingSince` retains an ISO-validated date
+  for pending wording. Other server error details/prose are discarded.
 - `SSEParser`, `EventDecoder`, `WebEvent` (12 typed cases), and `ApiEvent` (envelope).
   Incremental bytes handle split UTF-8, CR/LF/CRLF, comments and multiline data. Unknown
   names/versions are skipped one frame at a time with diagnostics. Envelope and payload

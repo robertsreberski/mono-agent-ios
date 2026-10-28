@@ -194,6 +194,7 @@ extension ConsoleStore {
           ? apiError?.safeDetails ?? "Reply could not be imported."
           : apiError?.code == "cron_reply_pending"
             ? "Another Reply for this result is still being delivered. Use Retry Reply to continue it — no duplicate conversation will be created."
+              + (apiError?.cronReplyPendingSince.map { " (since " + $0.formatted() + ")" } ?? "")
             : "Reply outcome is unknown. Retry Reply reuses the same operation and snapshot."
       }
     }
