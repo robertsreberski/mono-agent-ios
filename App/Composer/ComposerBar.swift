@@ -103,6 +103,12 @@ struct ComposerBar: View {
         controller.insertBlock(reply)
       }
     }
+    .onChange(of: store.cronReplyNavigation, initial: true) { _, request in
+      if let request, request.threadID == controller.threadID, !covered {
+        focused = true
+        store.consumeCronReplyFocus(request.id)
+      }
+    }
     .onChange(of: controller.focusRequest) { focused = true }
     .onChange(of: covered, initial: true) { _, isCovered in
       controller.coveredBySettings = isCovered

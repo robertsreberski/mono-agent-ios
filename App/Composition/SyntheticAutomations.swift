@@ -63,7 +63,10 @@
           overview: try overview(scenario), savedAt: Date())
       ]
       cache.conversations.append(
-        .init(thread: try thread(), messages: [try message()], savedAt: Date()))
+        .init(
+          thread: try thread(),
+          messages: [try scenario.isCronRuns ? CronRunsFixture.message() : message()],
+          savedAt: Date()))
       try await repository.saveCache(cache, namespace: store.namespace)
     }
   }
@@ -71,9 +74,16 @@
   actor AutomationsScript {
     let scenario: StoreScenario
     private var enabled = true
+    private var replyCount = 0
+    private var replyWaiter: CheckedContinuation<Void, Never>?
+    private var canonicalOperation: String?
+    func releaseReply() {
+      replyWaiter?.resume()
+      replyWaiter = nil
+    }
     private var keys: [String: String] = [:]
     init(_ scenario: StoreScenario) { self.scenario = scenario }
-    func response(_ request: URLRequest, theme: String) throws -> HTTPResponse {
+    func response(_ request: URLRequest, theme: String) async throws -> HTTPResponse {
       let method = request.httpMethod ?? "GET"
       let path = request.url?.path ?? ""
       let base = "/api/v1/agents/" + AgentSettingsFixture.atlas + "/cron"
@@ -122,18 +132,87 @@
           JSONValue.object([
             "kind": .string("completed"), "value": .object(["run": json]), "replayed": .bool(false),
           ]))
+      case ("GET", base + "/jobs/sample-digest/runs"):
+        let before = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+          .first { $0.name == "before" }?.value
+        let run = try JSONDecoder().decode(
+          JSONValue.self, from: JSONEncoder().encode(CronRunsFixture.run(before == nil ? 4 : 3)))
+        return try encoded(
+          JSONValue.object([
+            "runs": .array([run]), "nextCursor": before == nil ? .string("older-sample") : .null,
+          ]))
+      case ("GET", base + "/jobs/sample-digest/runs/run-sample"),
+        ("GET", base + "/jobs/sample-digest/runs/run-sample-older"):
+        var message = try CronRunsFixture.message(detail: true)
+        if path.hasSuffix("-older") {
+          message.id = "message-older-run"
+          if case .telemetry(var telemetry) = message.parts[0],
+            case .object(var fields) = telemetry.data
+          {
+            fields["runId"] = .string("run-sample-older")
+            fields["sequence"] = .number(3)
+            telemetry.data = .object(fields)
+            message.parts[0] = .telemetry(telemetry)
+          }
+        }
+        return try encoded(["message": message])
+      case ("POST", base + "/jobs/sample-digest/runs/run-sample/reply-threads"):
+        guard let data = request.httpBody,
+          let body = try? JSONDecoder().decode(ApiCronReply.self, from: data),
+          UUID(uuidString: body.operationId) != nil,
+          ["summary", "detail"].contains(body.snapshotKind)
+        else { throw URLError(.badServerResponse) }
+        if let operation = canonicalOperation, operation != body.operationId {
+          throw URLError(.badServerResponse)
+        }
+        canonicalOperation = body.operationId
+        replyCount += 1
+        if scenario == .cronReplyRetry && replyCount == 1 {
+          return HTTPResponse(
+            data: Data(
+              #"{"error":{"code":"cron_reply_outcome_unknown","message":"Sample response was lost."}}"#
+                .utf8), status: 503)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--cron-hold-reply") {
+          await withCheckedContinuation { replyWaiter = $0 }
+        }
+        let thread = try JSONDecoder().decode(
+          JSONValue.self, from: JSONEncoder().encode(CronRunsFixture.importedThread()))
+        let message = try JSONDecoder().decode(
+          JSONValue.self, from: JSONEncoder().encode(CronRunsFixture.importedMessage()))
+        return try encoded(
+          JSONValue.object([
+            "operationId": .string(body.operationId),
+            "sourceId": .string(AgentSettingsFixture.atlas),
+            "jobId": .string(AutomationsFixture.jobID),
+            "runId": .string("run-sample"), "duplicate": .bool(replyCount > 1),
+            "thread": thread, "messages": .array([message]),
+          ]))
+      case ("GET", "/api/v1/threads/" + CronRunsFixture.importedID):
+        let thread = try JSONDecoder().decode(
+          JSONValue.self, from: JSONEncoder().encode(CronRunsFixture.importedThread()))
+        let message = try JSONDecoder().decode(
+          JSONValue.self, from: JSONEncoder().encode(CronRunsFixture.importedMessage()))
+        return try encoded(
+          JSONValue.object([
+            "thread": thread, "messages": .array([message]), "messagesNextCursor": .null,
+          ]))
       case ("GET", "/api/v1/threads/" + AutomationsFixture.threadID):
         let thread = try JSONDecoder().decode(
           JSONValue.self, from: JSONEncoder().encode(AutomationsFixture.thread()))
         let message = try JSONDecoder().decode(
-          JSONValue.self, from: JSONEncoder().encode(AutomationsFixture.message()))
+          JSONValue.self,
+          from: JSONEncoder().encode(
+            scenario.isCronRuns ? CronRunsFixture.message() : AutomationsFixture.message()))
         return try encoded(
           JSONValue.object([
             "thread": thread, "messages": .array([message]), "messagesNextCursor": .null,
           ]))
       case ("GET", "/api/v1/threads/" + AutomationsFixture.threadID + "/messages"):
         let message = try JSONDecoder().decode(
-          JSONValue.self, from: JSONEncoder().encode(AutomationsFixture.message()))
+          JSONValue.self,
+          from: JSONEncoder().encode(
+            scenario.isCronRuns ? CronRunsFixture.message() : AutomationsFixture.message()))
         return try encoded(JSONValue.object(["messages": .array([message]), "nextCursor": .null]))
       default:
         if method == "GET",

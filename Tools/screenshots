@@ -47,6 +47,7 @@ parser.add_argument("--scenario-only", action="store_true", help="Connection, da
 parser.add_argument("--activity-only", action="store_true", help="Job, subagent and context captures")
 parser.add_argument("--mcp-only", action="store_true", help="Focused MCP UI scenarios and captures")
 parser.add_argument("--agent-settings-only", action="store_true", help="Agent settings and notifications explainer captures, including their AX3/opaque reviews")
+parser.add_argument("--cron-runs-only", action="store_true", help="Cron history, activity and reply recovery captures")
 parser.add_argument("--automations-only", action="store_true", help="Automation list, cron controls and redacted configuration captures")
 parser.add_argument("--agent-restart-only", action="store_true", help="Agent restart confirmation, progress and outcome captures")
 parser.add_argument("--providers-only", action="store_true", help="Provider authentication, checks and subscription usage captures")
@@ -54,7 +55,7 @@ parser.add_argument("--batch-size", type=int, default=0, help="Bound XCUI runs b
 args = parser.parse_args()
 if args.batch_size < 0:
     parser.error("--batch-size must be nonnegative")
-if sum((args.transcript_only, args.composer_only, args.replies_only, args.mcp_only, args.scenario_only, args.activity_only, args.accessibility_only, args.agent_settings_only, args.providers_only, args.agent_restart_only, args.automations_only)) > 1:
+if sum((args.transcript_only, args.composer_only, args.replies_only, args.mcp_only, args.scenario_only, args.activity_only, args.accessibility_only, args.agent_settings_only, args.providers_only, args.agent_restart_only, args.automations_only, args.cron_runs_only)) > 1:
     parser.error("Choose at most one focused capture")
 def capture_suite(entry):
     scenario, variant = entry["scenario"], entry.get("variant")
@@ -63,6 +64,8 @@ def capture_suite(entry):
         or (scenario == "connection-empty" and variant in {"editorax3", "editoropaque"})):
         return "accessibility"
     # Feature AX/opaque reviews stay in their feature suite.
+    if scenario in {"cron-run-detail", "cron-reply-retry"}:
+        return "cron_runs"
     if scenario.startswith(("automations", "cron-")):
         return "automations"
     if scenario.startswith("agent-restart"):
@@ -85,7 +88,7 @@ def capture_suite(entry):
         return "composer"
     return "scenario"
 
-focused_suite = next((name for name in ("transcript", "composer", "replies", "mcp", "scenario", "activity", "accessibility", "agent_settings", "providers", "agent_restart", "automations")
+focused_suite = next((name for name in ("transcript", "composer", "replies", "mcp", "scenario", "activity", "accessibility", "agent_settings", "providers", "agent_restart", "automations", "cron_runs")
                       if getattr(args, name + "_only")), None)
 if focused_suite:
     EXPECTED = {key(entry): entry for entry in MATRIX if capture_suite(entry) == focused_suite}
@@ -159,6 +162,7 @@ def test_batches():
         "providers": ["ProviderScenarioTests"],
         "agent_restart": ["AgentRestartScenarioTests"],
         "automations": ["AutomationsScenarioTests"],
+        "cron_runs": ["CronRunScenarioTests"],
     }
     selected = suites.get(focused_suite)
     unit = focused_suite in (None, "transcript")

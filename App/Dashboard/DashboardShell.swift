@@ -134,6 +134,12 @@ struct DashboardShell: View {
       .environment(\.openWebConsole, openWebConsole)
       .overlay(alignment: .bottomLeading) {
         // Fixtures never leave the app; tests read the URL "Open web console" would open.
+        if let script = model.cronScript,
+          ProcessInfo.processInfo.arguments.contains("--cron-hold-reply")
+        {
+          Button("Complete sample import") { Task { await script.releaseReply() } }
+          .accessibilityIdentifier("fixture-complete-cron-reply")
+        }
         if let url = model.fixtureExternalURL {
           Text(url.absoluteString).font(.system(size: 2)).opacity(0.02)
           .accessibilityIdentifier("fixture-external-url")
@@ -154,6 +160,12 @@ struct DashboardShell: View {
     .onChange(of: route) { _, value in
       storedRoute = value?.encoded ?? ""
       if case .project = value { projectDestination = value }
+    }
+    .onChange(of: store.cronReplyNavigation) { _, request in
+      guard let request else { return }
+      route = .conversation(
+        profile: store.profile.id, sourceID: request.sourceID,
+        threadID: request.threadID, archived: false)
     }
     .task(id: model.isReady) { applyLaunchRoute() }
   }

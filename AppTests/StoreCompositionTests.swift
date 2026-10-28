@@ -113,7 +113,8 @@ import Testing
       #expect(store.hydrated)
       switch scenario {
       case .automations, .automationsFiltered, .automationsEmpty, .automationsOffline,
-        .automationsDegraded, .cronConversation, .cronConfirm, .cronConfig:
+        .automationsDegraded, .cronConversation, .cronConfirm, .cronConfig, .cronRunDetail,
+        .cronReplyRetry:
         let snapshot = store.automationState(DashboardFixture.atlas)
         #expect(snapshot.overview != nil)
         #expect(model.launchAutomations)

@@ -54,6 +54,7 @@ final class AppModel {
     /// A DEBUG design-catalog scenario replaces the console shell; storage stays isolated.
     let catalog: DesignCatalogScenario?
     @ObservationIgnored private(set) var composerScript: ComposerScript?
+    private(set) var cronScript: AutomationsScript?
     private(set) var mcpScript: McpUiScript?
     /// Composer fixture scenarios add a synthetic attachment source to the attach menu.
     var offersSampleAttachments: Bool { storeScenario?.isComposer == true }
@@ -272,10 +273,12 @@ final class AppModel {
             : nil
         }
         mcpScript = mcp
+        let cron = storeScenario.flatMap { $0.isAutomations ? AutomationsScript($0) : nil }
+        cronScript = cron
         api = APIClient(
           endpoint: profile.endpoint,
           transport: ScenarioConsoleTransport(
-            storeScenario, theme: fixtureTheme, script: script, mcp: mcp))
+            storeScenario, theme: fixtureTheme, script: script, mcp: mcp, automations: cron))
         events = ScenarioEventSource(storeScenario, script: script)
       } else {
         api = APIClient(endpoint: profile.endpoint)

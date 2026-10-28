@@ -105,6 +105,7 @@ class ToolingTests(unittest.TestCase):
                     "func testPage() {}\nfunc testPicker() {}\nfunc testNotifications() {}\n")
                 (root / "AppUITests/ProviderScenarioTests.swift").write_text(
                     "func testDense() {}\nfunc testSecret() {}\nfunc testChecks() {}\n")
+                (root / "AppUITests/CronRunScenarioTests.swift").write_text("func testList() {}\nfunc testReply() {}\nfunc testContext() {}\n")
                 (root / "AppUITests/AutomationsScenarioTests.swift").write_text("func testList() {}\nfunc testHeader() {}\nfunc testConfig() {}\n")
                 (root / "AppUITests/AgentRestartScenarioTests.swift").write_text(
                     "func testIdle() {}\nfunc testConfirm() {}\nfunc testSuccess() {}\n")
@@ -439,13 +440,34 @@ class ToolingTests(unittest.TestCase):
             self.assertIn("-only-testing:MonoAgentUITests/AutomationsScenarioTests", command)
 
     def test_automations_focus_is_batched_and_exclusive(self):
-        matrix = [e for e in MATRIX if e["scenario"].startswith(("automations", "cron-"))]
+        matrix = [e for e in MATRIX if e["scenario"].startswith(("automations", "cron-")) and e["scenario"] not in {"cron-run-detail", "cron-reply-retry"}]
         self.export(family="iPad", focus="--automations-only", matrix=matrix, batch_size=2)
         selectors = [arg for c in self.calls if c[0] == "xcodebuild" for arg in c if arg.startswith("-only-testing:")]
         self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/AutomationsScenarioTests/" + n
                                      for n in ("testList", "testHeader", "testConfig")])
         with self.assertRaises(SystemExit):
             self.export(family="iPhone", focus="--automations-only --providers-only")
+
+    def test_cron_runs_focus_exact_matrix_and_surfaces_on_both_families(self):
+        matrix = [e for e in MATRIX if e["scenario"] in {"cron-run-detail", "cron-reply-retry"}]
+        expected = {(s, a, v) for s, variants in (("cron-run-detail", (None, "list", "card")),
+                     ("cron-reply-retry", (None, "importing", "context")))
+                    for a in ("light", "dark") for v in variants}
+        self.assertEqual({(e["scenario"], e["appearance"], e.get("variant")) for e in matrix}, expected)
+        for family in ("iPhone", "iPad"):
+            index = self.export(family=family, focus="--cron-runs-only", matrix=matrix)
+            self.assertEqual(len(index), 12)
+            self.assertTrue(all(e["surface"] == "conversation" and e["textSize"] == "standard"
+                                and e["transparency"] == "system" for e in index))
+            command = next(c for c in self.calls if c[0] == "xcodebuild")
+            self.assertIn("-only-testing:MonoAgentUITests/CronRunScenarioTests", command)
+            self.assertEqual(sum(a.startswith("-only-testing:") for a in command), 1)
+        self.export(family="iPad", focus="--cron-runs-only", matrix=matrix, batch_size=2)
+        selectors = [a for c in self.calls if c[0] == "xcodebuild" for a in c if a.startswith("-only-testing:")]
+        self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/CronRunScenarioTests/" + n
+                                   for n in ("testList", "testReply", "testContext")])
+        with self.assertRaises(SystemExit):
+            self.export(family="iPhone", focus="--cron-runs-only --automations-only")
 
     RESTART_BASE = ("agent-restart", "agent-restart-confirm", "agent-restart-progress",
                     "agent-restart-success", "agent-restart-failure")
