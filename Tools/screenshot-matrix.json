@@ -2280,6 +2280,30 @@
       "transparency": "system",
       "theme": "evergreen",
       "variant": "context"
+    },
+    {
+      "scenario": "cron-reply-retry",
+      "appearance": "light",
+      "textSize": "accessibility XL (AX3)",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "contextax3"
+    },
+    {
+      "scenario": "cron-reply-retry",
+      "appearance": "light",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "details"
+    },
+    {
+      "scenario": "cron-reply-retry",
+      "appearance": "dark",
+      "textSize": "standard",
+      "transparency": "system",
+      "theme": "evergreen",
+      "variant": "details"
     }
   ]
 }

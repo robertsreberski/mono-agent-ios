@@ -3,6 +3,7 @@ import MonoAgentDesign
 import MonoAgentKit
 import MonoAgentStore
 import SwiftUI
+import UIKit
 
 /// Untrusted imported data: plain bounded labels, Markdown body, then failure/truncation/details.
 struct CronReplyContextView: View {
@@ -85,8 +86,7 @@ struct CronReplyContextView: View {
               fact(
                 "Source truncation", context.snapshot.sourceTruncationKnown ? "known" : "unknown")
               Text("Raw JSON").webFont(.messageAction).fontWeight(.bold)
-              CodeDocumentView(source: String(context.rawJson.prefix(65_536)), language: "JSON")
-                .frame(maxHeight: 280).accessibilityIdentifier("cron-context-json")
+              rawJSON
             }.padding(9).background(
               WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: 8))
           } label: {
@@ -103,6 +103,37 @@ struct CronReplyContextView: View {
       )
       .accessibilityIdentifier("cron-reply-context")
     }
+  }
+  private var rawJSON: some View {
+    let source = String(context.rawJson.prefix(65_536))
+    let display = String(decoding: source.utf8.prefix(16_384), as: UTF8.self)
+    return VStack(alignment: .leading, spacing: 6) {
+      HStack {
+        Text("JSON").webFont(.activityLabel).foregroundStyle(WebColor.textMuted.color)
+        Spacer()
+        MessageActionButton("Copy", systemImage: "doc.on.doc") {
+          UIPasteboard.general.string = source
+        }.accessibilityLabel("Copy JSON")
+      }
+      ScrollView([.horizontal, .vertical]) {
+        VStack(alignment: .leading, spacing: 3) {
+          // Separate lines keep the end reachable by accessibility as well as touch scrolling.
+          ForEach(Array(display.components(separatedBy: "\n").enumerated()), id: \.offset) {
+            _, line in
+            Text(verbatim: line).webFont(.code).foregroundStyle(WebColor.text.color)
+              .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
+          }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(maxHeight: 240)
+      .accessibilityLabel("Raw JSON").accessibilityIdentifier("cron-context-json")
+      if source.utf8.count > 16_384 {
+        Text("Display limited to 16,384 UTF-8 bytes. Copy includes all supplied text.")
+          .webFont(.messageAction).foregroundStyle(WebColor.textMuted.color)
+      }
+    }.padding(10)
+      .background(WebColor.surfaceSubtle.color, in: RoundedRectangle(cornerRadius: WebRadius.small))
+      .overlay(RoundedRectangle(cornerRadius: WebRadius.small).stroke(WebColor.line.color))
   }
   private func fact(_ label: String, _ value: String) -> some View {
     ViewThatFits(in: .horizontal) {

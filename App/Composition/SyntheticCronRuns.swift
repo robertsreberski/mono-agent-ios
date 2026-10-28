@@ -24,9 +24,15 @@
       return message
     }
     static func context() throws -> WebCronReplyContextPart {
-      try AgentSettingsFixture.decode(
+      var context: WebCronReplyContextPart = try AgentSettingsFixture.decode(
         ####"{"type":"cron-reply-context","schema":"mono-agent.web.cron-reply-context.v1","untrusted":true,"source":{"sourceId":"agent-atlas","jobId":"sample-digest","runId":"run-sample"},"run":{"sequence":4,"trigger":"scheduled","status":"failed","scheduledAt":"2030-01-02T09:00:00Z","orderedAt":"2030-01-02T09:00:00Z","startedAt":"2030-01-02T09:00:03Z","completedAt":"2030-01-02T09:01:00Z","queueDepth":0},"snapshot":{"capturedAt":"2030-01-02T12:00:00Z","kind":"summary","sourceTruncationKnown":true,"sourceFieldsTruncated":["text"],"maxBytes":4096,"originalErrorBytes":80,"retainedErrorBytes":42,"originalResultBytes":640,"retainedResultBytes":120,"truncatedFields":["failure.message","result.text"]},"result":{"text":"### Sample digest\n\nThe fictional service did not respond.\n\n- Partial output retained\n- No follow-up was sent"},"failure":{"code":"sample_unavailable","message":"The fictional service was unavailable."},"prefix":"Imported cron result","rawJson":"{\"jobId\":\"sample-digest\",\"status\":\"failed\"}","rawText":"Fictional imported result"}"####
       )
+      context.rawJson =
+        "{\n"
+        + (1...40).map {
+          "  \"sampleKey\($0)\": \"Fictional retained result\","
+        }.joined(separator: "\n") + "\n  \"lastRetainedKey\": \"End of fictional JSON\"\n}"
+      return context
     }
     static func importedThread() throws -> WebThread {
       var thread = try AutomationsFixture.thread()

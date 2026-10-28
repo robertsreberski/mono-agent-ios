@@ -15,6 +15,26 @@ import XCTest
   func testReplyImportingDark() { reply("dark", variant: "importing") }
   func testReplyContextLight() { reply("light", variant: "context") }
   func testReplyContextDark() { reply("dark", variant: "context") }
+  func testReplyContextAx3() { reply("light", variant: "contextax3") }
+  func testImportFocusAfterSettingsCoverLifts() throws {
+    try XCTSkipUnless(
+      UIDevice.current.userInterfaceIdiom == .pad, "retained settings cover requires iPad")
+    let app = launch("cron-reply-retry", "light", hold: true)
+    reveal(app, "cron-reply-run-sample")
+    tap(app, "cron-reply-run-sample")
+    WaitFor.label(element(app, "cron-reply-run-sample"), contains: "Retry Reply", timeout: 30)
+    tap(app, "cron-reply-run-sample")
+    WaitFor.label(element(app, "cron-reply-run-sample"), contains: "Importing", timeout: 30)
+    tap(app, "agent-settings-button")
+    WaitFor.hittable(element(app, "agent-settings-close"), timeout: 30)
+    WaitFor.absent(element(app, "composer-field"), timeout: 30)
+    tap(app, "fixture-complete-cron-reply")
+    WaitFor.absent(element(app, "agent-settings-screen"), timeout: 30)
+    WaitFor.hittable(element(app, "cron-reply-context"), timeout: 30)
+    app.typeText("Fictional uncovered follow-up")
+    WaitFor.value(
+      element(app, "composer-field"), contains: "Fictional uncovered follow-up", timeout: 30)
+  }
   func testRunPaginationAndActivityAndSessionCopy() {
     let app = launch("cron-run-detail", "light")
     reveal(app, "cron-run-history")
@@ -52,7 +72,8 @@ import XCTest
     capture(app, "cron-run-detail", appearance, variant: "card")
   }
   private func reply(_ appearance: String, variant: String?) {
-    let app = launch("cron-reply-retry", appearance, hold: variant == "importing")
+    let app = launch(
+      "cron-reply-retry", appearance, hold: variant == "importing", ax3: variant == "contextax3")
     reveal(app, "cron-reply-run-sample")
     tap(app, "cron-reply-run-sample")
     WaitFor.label(element(app, "cron-reply-run-sample"), contains: "Retry Reply", timeout: 30)
@@ -69,16 +90,38 @@ import XCTest
       // No tap: typing goes to the composer only if import requested focus.
       app.typeText("Fictional follow-up")
       WaitFor.value(element(app, "composer-field"), contains: "Fictional follow-up", timeout: 30)
-      if variant == "context" {
+      if variant == "context" || variant == "contextax3" {
         element(app, "conversation-transcript").swipeDown()
         WaitFor.hittable(element(app, "cron-context-failure"), timeout: 30)
         capture(app, "cron-reply-retry", appearance, variant: variant)
+        reveal(app, "cron-context-details")
+        tap(app, "cron-context-details")
+        WaitFor.value(element(app, "cron-context-details"), contains: "Expanded", timeout: 30)
+        reveal(app, "cron-context-json")
+        let panel = element(app, "cron-context-json")
+        let last = app.staticTexts.containing(
+          NSPredicate(format: "label CONTAINS %@", "lastRetainedKey")
+        ).firstMatch
+        // It starts below the cap, not merely present somewhere in the accessibility tree.
+        XCTAssertFalse(last.isHittable)
+        for _ in 0..<12 {
+          if last.exists && last.isHittable && panel.frame.intersects(last.frame) { break }
+          panel.swipeUp()
+        }
+        WaitFor.hittable(last, timeout: 30)
+        XCTAssertTrue(
+          panel.frame.intersects(last.frame), "last JSON key reached inside the capped panel")
+        if variant == "context" {
+          capture(app, "cron-reply-retry", appearance, variant: "details")
+        }
       }
     } else {
       capture(app, "cron-reply-retry", appearance)
     }
   }
-  private func launch(_ scenario: String, _ appearance: String, hold: Bool = false)
+  private func launch(
+    _ scenario: String, _ appearance: String, hold: Bool = false, ax3: Bool = false
+  )
     -> XCUIApplication
   {
     let app = XCUIApplication()
@@ -87,6 +130,11 @@ import XCTest
       "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
     ]
     if hold { app.launchArguments.append("--cron-hold-reply") }
+    if ax3 {
+      app.launchArguments += [
+        "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL",
+      ]
+    }
     app.launch()
     WaitFor.value(element(app, "cron-header"), contains: "Collapsed", timeout: 30)
     return app

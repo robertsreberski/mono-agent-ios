@@ -451,13 +451,15 @@ class ToolingTests(unittest.TestCase):
     def test_cron_runs_focus_exact_matrix_and_surfaces_on_both_families(self):
         matrix = [e for e in MATRIX if e["scenario"] in {"cron-run-detail", "cron-reply-retry"}]
         expected = {(s, a, v) for s, variants in (("cron-run-detail", (None, "list", "card")),
-                     ("cron-reply-retry", (None, "importing", "context")))
+                     ("cron-reply-retry", (None, "importing", "context", "details")))
                     for a in ("light", "dark") for v in variants}
+        expected.add(("cron-reply-retry", "light", "contextax3"))
         self.assertEqual({(e["scenario"], e["appearance"], e.get("variant")) for e in matrix}, expected)
         for family in ("iPhone", "iPad"):
             index = self.export(family=family, focus="--cron-runs-only", matrix=matrix)
-            self.assertEqual(len(index), 12)
-            self.assertTrue(all(e["surface"] == "conversation" and e["textSize"] == "standard"
+            self.assertEqual(len(index), 15)
+            self.assertTrue(all(e["surface"] == "conversation" and e["textSize"] ==
+                                ("accessibility XL (AX3)" if e.get("variant") == "contextax3" else "standard")
                                 and e["transparency"] == "system" for e in index))
             command = next(c for c in self.calls if c[0] == "xcodebuild")
             self.assertIn("-only-testing:MonoAgentUITests/CronRunScenarioTests", command)
