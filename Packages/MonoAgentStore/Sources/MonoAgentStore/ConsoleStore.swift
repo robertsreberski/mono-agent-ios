@@ -32,7 +32,15 @@ public final class ConsoleStore {
   public internal(set) var tags: [WebTag] = []
   public internal(set) var projects: [WebProject] = []
   public internal(set) var selectedBucket: BucketKey?
-  public internal(set) var selectedThreadID: String?
+  public internal(set) var selectedThreadID: String? {
+    didSet {
+      if oldValue != selectedThreadID, let request = cronReplyNavigation,
+        selectedThreadID != request.threadID
+      {
+        cronReplyNavigation = nil
+      }
+    }
+  }
   public private(set) var unreadCounts: [String: Int] = [:]
   public private(set) var cachedThreads: [WebThread] = []
   public internal(set) var conversations: [String: ConversationState] = [:] {

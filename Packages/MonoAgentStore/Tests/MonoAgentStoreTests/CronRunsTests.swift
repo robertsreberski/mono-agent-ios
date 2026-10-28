@@ -329,6 +329,22 @@ import Testing
     #expect(state.phase == .idle)
   }
 
+  @Test func coveredReplyFocusExpiresWhenSelectionLeavesImportedThread() async throws {
+    let h = Harness()
+    let request = CronReplyNavigation(id: UUID(), sourceID: source, threadID: "thread-imported")
+    h.store.cronReplyNavigation = request
+    await h.store.select(sourceID: source, threadID: request.threadID)
+    #expect(h.store.cronReplyNavigation == request)
+    // A covered composer does not consume focus. Reselecting its context preserves it.
+    await h.store.select(sourceID: source, threadID: request.threadID)
+    #expect(h.store.cronReplyNavigation == request)
+    await h.store.select(sourceID: source, threadID: "thread-other")
+    #expect(h.store.cronReplyNavigation == nil)
+    await h.store.select(sourceID: source, threadID: request.threadID)
+    #expect(h.store.cronReplyNavigation == nil)
+    await h.store.stop()
+  }
+
   @Test(arguments: ["thread", "message", "history"])
   func receiptCannotReplaceNewerConversation(_ change: String) async throws {
     let h = try await live()
