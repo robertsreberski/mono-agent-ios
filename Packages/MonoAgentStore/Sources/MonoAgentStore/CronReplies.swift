@@ -124,7 +124,8 @@ extension ConsoleStore {
         let receipt = try await self.api.createCronReply(
           id: sourceID, jobId: key.jobID, runId: runID,
           body: .init(
-            operationId: reference.operationID.uuidString, snapshotKind: reference.snapshotKind))
+            operationId: reference.operationID.uuidString.lowercased(),
+            snapshotKind: reference.snapshotKind))
         guard UUID(uuidString: receipt.operationId) == reference.operationID,
           receipt.sourceId == sourceID, receipt.jobId == key.jobID, receipt.runId == runID,
           receipt.thread.sourceId == sourceID, !receipt.thread.id.isEmpty,

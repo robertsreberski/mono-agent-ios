@@ -185,7 +185,7 @@ import Testing
     let secondTask = state.task
     await eventually { await h.transport.pauseCount() == 1 }
     let body = await AgentSettingsTests().body(h, endpoint)
-    #expect(body?["operationId"] == .string(original.operationID.uuidString))
+    #expect(body?["operationId"] == .string(original.operationID.uuidString.lowercased()))
     #expect(body?["snapshotKind"] == .string("summary"))
     await h.transport.release(try receipt(h, operation: original.operationID.uuidString))
     await secondTask?.value
@@ -288,7 +288,8 @@ import Testing
   @Test func pendingCollisionAdoptsServerIdentityAndRetryConverges() async throws {
     let h = try await live()
     let endpoint = path + "/run-1/reply-threads"
-    let serverID = UUID()
+    let serverLiteral = "a032b14a-bf26-4a48-91b6-8b052d571a39"
+    let serverID = try #require(UUID(uuidString: serverLiteral))
     await h.transport.set(endpoint, [.paused, .paused])
     h.store.replyToCronRun(sourceID: source, runID: key.runID, snapshotKind: "summary")
     let state = try #require(h.store.cronReplySnapshot(key))
@@ -300,7 +301,7 @@ import Testing
         data: Data(
           """
           {"error":{"code":"cron_reply_pending","message":"Pending",
-          "details":{"operationId":"\(serverID.uuidString)"}}}
+          "details":{"operationId":"\(serverLiteral)"}}}
           """.utf8), status: 409))
     await first?.value
     let adopted = try #require(
@@ -312,9 +313,16 @@ import Testing
     let retry = state.task
     await eventually { await h.transport.pauseCount() == 1 }
     let body = await AgentSettingsTests().body(h, endpoint)
-    #expect(body?["operationId"] == .string(serverID.uuidString))
+    #expect(body?["operationId"] == .string(serverLiteral))
     #expect(body?["snapshotKind"] == .string("summary"))
-    await h.transport.release(try receipt(h, operation: serverID.uuidString))
+    let request = try #require(await h.transport.requests.last { $0.url?.path == endpoint })
+    // JSON object key order is unspecified; both complete encodings must have identical values.
+    let expectedBodies = [
+      "{\"operationId\":\"\(serverLiteral)\",\"snapshotKind\":\"summary\"}",
+      "{\"snapshotKind\":\"summary\",\"operationId\":\"\(serverLiteral)\"}",
+    ].map { Data($0.utf8) }
+    #expect(expectedBodies.contains(try #require(request.httpBody)))
+    await h.transport.release(try receipt(h, operation: serverLiteral))
     await retry?.value
     #expect(h.store.cronReplyNavigation?.threadID == "thread-imported")
     #expect(h.store.cronReplyRecovery.reference(key, namespace: h.store.namespace) == nil)
