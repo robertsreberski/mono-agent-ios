@@ -31,6 +31,7 @@ Screens must not instantiate API clients or submit directly.
 - Commands: `start`, `hydrate`, `select(sourceID:archived:threadID:)`, `loadOlder`,
   `refreshBucket(_:older:)`, `markVisible`, `reconcile`, `repairMessage`,
   `repairToolOutput`, `cancel(threadID:)`, `scenePhaseChanged`, `clearErrorMessage`, and `stop`.
+- Automations: `automationSnapshot(sourceID)` is a non-mutating observed read; `refreshAutomations` creates/refreshes owners. Only authoritative live overviews admit cron actions. Selected job owners survive suspension/scope reconciliation, but confirmations/config and command lifetimes do not. Every POST outcome invalidates authority before a selected-source refresh. Disk overview projections omit run text/error and scrub capability links on write and load.
 - Activity: `refreshJob(threadID:jobID:)` refreshes a held job with monotonic lifecycle merging; `refreshUsage(threadID:)` publishes ephemeral `ConversationState.usage` and its summary revision. Both refuse offline/background/stopped calls and discard late results. `JobPresentation`, `JobShelf` and `UsagePresentation` are pure presentation decisions. The pinned API has no per-job stop or full-log route; output references are not URLs.
 - Search: `searchThreads(sourceID:query:) -> ThreadSearchResult` is the web console's
   server-side `chats`-scope search. Trimmed queries shorter than `minimumSearchQuery` (2)

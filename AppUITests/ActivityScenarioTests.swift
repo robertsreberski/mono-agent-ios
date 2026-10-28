@@ -143,10 +143,12 @@ import XCTest
     XCTAssertTrue(element(app, "scenario-ready").waitForExistence(timeout: 20))
     return app
   }
+  /// Composite predicates issue several accessibility queries per evaluation; hosted iPad
+  /// runners take 2–4 s per query, so a 10 s budget allowed only one or two evaluations.
   private func activityWait(_ predicate: @escaping () -> Bool) -> Bool {
     let expectation = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in predicate() }, object: nil)
-    return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
+    return XCTWaiter.wait(for: [expectation], timeout: 30) == .completed
   }
   private func activityCapture(
     _ app: XCUIApplication, _ scenario: String, _ appearance: String, _ variant: String

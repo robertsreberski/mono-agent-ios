@@ -43,6 +43,8 @@ final class AppModel {
   let launchThreadID: String?
   /// DEBUG `--open-settings <index|section>`: agent settings opened once after readiness.
   let launchSettings: AgentSettingsTarget?
+  let launchAutomations: Bool
+  let launchCronJob: String?
   @ObservationIgnored private var started = false
   #if DEBUG
     @ObservationIgnored private let scenario: Scenario?
@@ -79,7 +81,19 @@ final class AppModel {
       appearance = configuration.appearance
       fixtureTheme = configuration.fixtureTheme
       referenceDate = configuration.storeScenario?.isDashboard == true ? DashboardFixture.now : nil
-      launchQuery = configuration.storeScenario?.launchQuery
+      launchAutomations =
+        configuration.storeScenario != nil
+        && (configuration.automationsQuery != nil
+          || configuration.storeScenario?.isAutomations == true)
+      launchCronJob =
+        configuration.storeScenario == nil
+        ? nil
+        : configuration.cronJob
+          ?? (configuration.storeScenario?.rawValue.hasPrefix("cron-") == true
+            ? AutomationsFixture.jobID : nil)
+      launchQuery =
+        configuration.storeScenario == nil
+        ? nil : configuration.automationsQuery ?? configuration.storeScenario?.launchQuery
       launchThreadID = configuration.storeScenario?.launchThreadID
       launchSettings = configuration.storeScenario == nil ? nil : configuration.settings
       if let scenario {
@@ -98,6 +112,8 @@ final class AppModel {
       // Release ignores all fixture/reset/appearance arguments.
       appearance = nil
       referenceDate = nil
+      launchAutomations = false
+      launchCronJob = nil
       launchQuery = nil
       launchThreadID = nil
       launchSettings = nil
@@ -123,6 +139,9 @@ final class AppModel {
       self.appearance = appearance
       self.fixtureTheme = fixtureTheme
       referenceDate = storeScenario?.isDashboard == true ? DashboardFixture.now : nil
+      launchAutomations = storeScenario?.isAutomations == true
+      launchCronJob =
+        storeScenario?.rawValue.hasPrefix("cron-") == true ? AutomationsFixture.jobID : nil
       launchQuery = storeScenario?.launchQuery
       launchThreadID = storeScenario?.launchThreadID
       launchSettings = nil
@@ -306,6 +325,9 @@ final class AppModel {
     let fixtureTheme: String
     /// `--open-settings <index|new-conversations|providers|agent>`.
     let settings: AgentSettingsTarget?
+    /// Synthetic-only launch destinations; Release and real profiles ignore these.
+    let automationsQuery: String?
+    let cronJob: String?
 
     init(arguments: [String]) throws {
       func value(_ flag: String) throws -> String? {
@@ -315,6 +337,8 @@ final class AppModel {
         }
         return arguments[index + 1]
       }
+      automationsQuery = try value("--open-automations")
+      cronJob = try value("--open-cron-job")
       let requestedScenario = try value("--scenario")
       storeScenario = requestedScenario.flatMap(StoreScenario.init(rawValue:))
       if let name = requestedScenario {

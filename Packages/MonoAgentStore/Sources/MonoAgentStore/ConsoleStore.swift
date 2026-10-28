@@ -91,6 +91,7 @@ public final class ConsoleStore {
   @ObservationIgnored var catalogFlights: Set<String> = []
   @ObservationIgnored var catalogOwners: [String: UUID] = [:]
 
+  public internal(set) var automations: [String: AutomationState] = [:]
   @ObservationIgnored var agentRestarts: [String: AgentRestartState] = [:]
   @ObservationIgnored var providers: [String: ProviderState] = [:]
   /// Set synchronously by composition before any asynchronous scene work.
@@ -122,6 +123,7 @@ public final class ConsoleStore {
   @ObservationIgnored var bootstrapClock: UInt64 = 0
   @ObservationIgnored var epoch: UInt64 = 0
   @ObservationIgnored var selection: UInt64 = 0
+  @ObservationIgnored var automationSelectionIntent = UUID()
   @ObservationIgnored var visible = false
   @ObservationIgnored var backgrounded = false
   @ObservationIgnored var started = false
@@ -222,6 +224,11 @@ public final class ConsoleStore {
       guard epoch == generation else { return }
       cacheRevision = cache.revision
       tombstones = cache.tombstones
+      for entry in cache.automationOverviews ?? [] {
+        let state = automationState(entry.sourceID)
+        state.overview = entry.overview
+        state.savedAt = entry.savedAt
+      }
       bootstrap = cache.bootstrap
       if let bootstrap {
         tags = bootstrap.tags
@@ -265,6 +272,7 @@ public final class ConsoleStore {
     if !completedSubmissions.isEmpty { try? await persistJournal() }
   }
   public func select(sourceID: String, archived: Bool = false, threadID: String? = nil) async {
+    automationSelectionIntent = UUID()
     // Reappearing may refresh detail, but is not a context abandonment.
     let bucket = BucketKey(sourceID: sourceID, archived: archived)
     let changingSelection = selectedBucket != bucket || selectedThreadID != threadID
@@ -279,6 +287,13 @@ public final class ConsoleStore {
       visible = false
       selectedBucket = bucket
       selectedThreadID = threadID
+      for state in automations.values {
+        if state.sourceID == sourceID, state.job?.threadID == threadID {
+          resetCronJob(sourceID: state.sourceID)
+        } else {
+          closeCronJob(sourceID: state.sourceID)
+        }
+      }
     }
     let generation = epoch
     let selected = selection
@@ -303,6 +318,7 @@ public final class ConsoleStore {
     }
     guard epoch == generation, selection == selected, started, !backgrounded else { return }
     scheduleSubscription()
+    if automationState(sourceID).freshness != .fresh { requestAutomations(sourceID: sourceID) }
     if let threadID { await refreshDetail(threadID) }
     guard epoch == generation, selection == selected else { return }
     if let key = selectedBucket, buckets[key]?.freshness != .fresh { await refreshBucket(key) }
@@ -519,6 +535,11 @@ public final class ConsoleStore {
     record.buckets = Array(buckets.values)
     record.conversations = conversations.values.map(\.record)
     record.tombstones = tombstones
+    record.automationOverviews = automations.values.compactMap { state in
+      guard let overview = state.overview, let savedAt = state.savedAt else { return nil }
+      return CachedAutomationOverview(
+        sourceID: state.sourceID, overview: overview, savedAt: savedAt)
+    }
     do {
       var result = try await repository.saveCache(record, namespace: namespace)
       if case .superseded = result {
@@ -527,7 +548,9 @@ public final class ConsoleStore {
         record = CacheMerge.rebase(record, onto: disk, authoritativeAt: authoritativeRows)
         cacheRevision = max(cacheRevision, record.revision)
         bootstrap = record.bootstrap
+        adoptAutomationCache(record.automationOverviews ?? [])
         reconcileAgentRestarts()
+        reconcileAutomations()
         result = try await repository.saveCache(record, namespace: namespace)
       }
       guard cacheRevision == record.revision else { return }

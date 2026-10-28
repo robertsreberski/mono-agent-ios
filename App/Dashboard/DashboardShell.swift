@@ -192,6 +192,9 @@ struct DashboardShell: View {
         )
         .id(route)
       }
+    case .automation(_, let source, let job):
+      AutomationConversationScreen(
+        model: model, store: store, sourceID: source, jobID: job, navigate: { self.route = $0 })
     case .project(_, let source, let id):
       ProjectScreen(store: store, sourceID: source, projectID: id, navigate: navigateFromProject)
     case .console, nil:
@@ -269,6 +272,10 @@ struct DashboardShell: View {
       openSettings(section.section)
     }
     guard route == nil else { return }
+    if let job = model.launchCronJob, let source = store.dashboardAgentID {
+      route = .automation(profile: store.profile.id, sourceID: source, jobID: job)
+      return
+    }
     if let threadID = model.launchThreadID,
       let thread = store.buckets.values.lazy.flatMap(\.threads).first(where: { $0.id == threadID })
     {

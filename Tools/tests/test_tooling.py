@@ -105,6 +105,7 @@ class ToolingTests(unittest.TestCase):
                     "func testPage() {}\nfunc testPicker() {}\nfunc testNotifications() {}\n")
                 (root / "AppUITests/ProviderScenarioTests.swift").write_text(
                     "func testDense() {}\nfunc testSecret() {}\nfunc testChecks() {}\n")
+                (root / "AppUITests/AutomationsScenarioTests.swift").write_text("func testList() {}\nfunc testHeader() {}\nfunc testConfig() {}\n")
                 (root / "AppUITests/AgentRestartScenarioTests.swift").write_text(
                     "func testIdle() {}\nfunc testConfirm() {}\nfunc testSuccess() {}\n")
             calls = []
@@ -237,7 +238,7 @@ class ToolingTests(unittest.TestCase):
         keys = [(entry["scenario"], entry["appearance"], entry.get("variant")) for entry in MATRIX]
         self.assertEqual(len(keys), len(set(keys)))
         connection = {(s, a) for s, a, v in keys
-                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-", "agent-settings", "notifications-", "provider-", "agent-restart"))
+                      if not s.startswith(("design-catalog", "dashboard-", "conversation-", "composer-", "peer-question", "fidelity-", "skill-browser", "project-", "tag-", "wake-", "organize-", "agent-settings", "notifications-", "provider-", "agent-restart", "automations", "cron-"))
                       and v is None}
         self.assertEqual(connection, {(s, a) for s in ("connection-empty", "connection-failed", "console-online") for a in ("light", "dark")})
         for theme in ("evergreen", "ocean", "plum", "terracotta"):
@@ -420,6 +421,31 @@ class ToolingTests(unittest.TestCase):
                                      "-only-testing:MonoAgentUITests/ProviderScenarioTests/testChecks"])
         with self.assertRaises(SystemExit):
             self.export(family="iPhone", focus="--providers-only --agent-settings-only")
+
+    def test_automations_focus_exports_exact_feature_matrix_on_both_families(self):
+        base = {"automations", "automations-filtered", "automations-empty", "automations-offline",
+                "automations-degraded", "cron-conversation", "cron-confirm", "cron-config"}
+        matrix = [e for e in MATRIX if e["scenario"] in base]
+        expected = {(s, a, None) for s in base for a in ("light", "dark")}
+        expected |= {("cron-conversation", a, v) for a in ("light", "dark") for v in ("ax3", "opaque")}
+        expected |= {("cron-config", a, v) for a in ("light", "dark") for v in ("medium", "large")}
+        self.assertEqual({(e["scenario"], e["appearance"], e.get("variant")) for e in matrix}, expected)
+        for family in ("iPhone", "iPad"):
+            index = self.export(family=family, focus="--automations-only", matrix=matrix)
+            self.assertEqual(len(index), 24)
+            for e in index:
+                self.assertEqual(e["surface"], "automations" if e["scenario"].startswith("automations") else "conversation")
+            command = next(c for c in self.calls if c[0] == "xcodebuild")
+            self.assertIn("-only-testing:MonoAgentUITests/AutomationsScenarioTests", command)
+
+    def test_automations_focus_is_batched_and_exclusive(self):
+        matrix = [e for e in MATRIX if e["scenario"].startswith(("automations", "cron-"))]
+        self.export(family="iPad", focus="--automations-only", matrix=matrix, batch_size=2)
+        selectors = [arg for c in self.calls if c[0] == "xcodebuild" for arg in c if arg.startswith("-only-testing:")]
+        self.assertEqual(selectors, ["-only-testing:MonoAgentUITests/AutomationsScenarioTests/" + n
+                                     for n in ("testList", "testHeader", "testConfig")])
+        with self.assertRaises(SystemExit):
+            self.export(family="iPhone", focus="--automations-only --providers-only")
 
     RESTART_BASE = ("agent-restart", "agent-restart-confirm", "agent-restart-progress",
                     "agent-restart-success", "agent-restart-failure")

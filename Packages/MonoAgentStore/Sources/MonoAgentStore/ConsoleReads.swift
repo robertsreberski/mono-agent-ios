@@ -28,6 +28,7 @@ extension ConsoleStore {
         reconcileRunDefaultsDrafts()
         reconcileProviderOwners()
         reconcileAgentRestarts()
+        reconcileAutomations()
         if observation == began, selection == selected {
           tags = value.tags
           projects = value.projects

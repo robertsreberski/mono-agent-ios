@@ -88,6 +88,7 @@ public actor FileConsoleRepository: ConsoleRepository {
     var merged = record
     let old = try loadCache(namespace)
     merged.bootstrap = record.bootstrap ?? old.bootstrap
+    merged.automationOverviews = record.automationOverviews ?? old.automationOverviews
     let ids = Set(record.conversations.map { $0.thread.id })
     merged.conversations += old.conversations.filter {
       !ids.contains($0.thread.id) && record.tombstones[$0.thread.id] == nil
@@ -157,6 +158,9 @@ public actor FileConsoleRepository: ConsoleRepository {
     record.buckets = try input.buckets.map(CacheSanitizer.sanitize)
     record.tombstones = CacheMerge.prune(record.tombstones, now: now())
     let cutoff = now().addingTimeInterval(-ConsoleBounds.maxAge)
+    record.automationOverviews = try (record.automationOverviews ?? [])
+      .filter { $0.savedAt >= cutoff }.sorted { $0.savedAt > $1.savedAt }.prefix(24)
+      .map(CacheSanitizer.automation)
     record.conversations = try record.conversations.filter {
       $0.savedAt >= cutoff && record.tombstones[$0.thread.id] == nil
     }
@@ -207,6 +211,11 @@ public actor FileConsoleRepository: ConsoleRepository {
         bootstrap.activeThreads = fleet
       }
       record.bootstrap = bootstrap
+    }
+    while try encoder.encode(record).count > ConsoleBounds.cacheBytes,
+      record.automationOverviews?.isEmpty == false
+    {
+      record.automationOverviews?.removeLast()
     }
     // Summary metadata alone can exceed the budget: fail visibly rather than lose authored state.
     while try JSONEncoder().encode(record).count > ConsoleBounds.cacheBytes,

@@ -83,6 +83,15 @@
     case agentRestartFailure = "agent-restart-failure"
     case agentRestartUncertain = "agent-restart-uncertain"
     case agentRestartNotConfirmed = "agent-restart-not-confirmed"
+    case automations
+    case automationsFiltered = "automations-filtered"
+    case automationsEmpty = "automations-empty"
+    case automationsOffline = "automations-offline"
+    case automationsDegraded = "automations-degraded"
+    case cronConversation = "cron-conversation"
+    case cronConfirm = "cron-confirm"
+    case cronConfig = "cron-config"
+    var isAutomations: Bool { rawValue.hasPrefix("automations") || rawValue.hasPrefix("cron-") }
     var isAgentRestart: Bool { rawValue.hasPrefix("agent-restart") }
     var isProviders: Bool { rawValue.hasPrefix("provider-") }
 
@@ -140,7 +149,10 @@
     var isOffline: Bool { self == .offline || self == .dashboardOffline }
 
     /// Fixture launch state the dashboard applies once the Store is ready.
-    var launchQuery: String? { self == .dashboardSearch ? DashboardFixture.searchQuery : nil }
+    var launchQuery: String? {
+      if self == .automationsFiltered { return "Europe/Paris" }
+      return self == .dashboardSearch ? DashboardFixture.searchQuery : nil
+    }
     var launchThreadID: String? {
       isTranscript || (isComposer && self != .composerEmpty) ? DashboardFixture.openThreadID : nil
     }
@@ -149,6 +161,11 @@
     @MainActor func prepare(
       _ store: ConsoleStore, repository: any ConsoleRepository, theme: String = "evergreen"
     ) async throws {
+      if isAutomations {
+        try await AutomationsFixture.prepare(
+          self, store: store, repository: repository, theme: theme)
+        return
+      }
       if isFidelity {
         try await ScreenFixture.prepare(store, repository: repository, theme: theme)
         return
@@ -211,11 +228,13 @@
     let organize: OrganizeScript?
     let settings: AgentSettingsScript?
     let providers: ProviderScript?
+    let automations: AutomationsScript?
     let restart: AgentRestartScript?
     init(
       _ scenario: StoreScenario?, theme: String = "evergreen", script: ComposerScript? = nil,
       mcp: McpUiScript? = nil
     ) {
+      automations = scenario.flatMap { $0.isAutomations ? AutomationsScript($0) : nil }
       self.scenario = scenario
       self.theme = theme
       self.script = script
@@ -238,6 +257,7 @@
     }
     func send(_ request: URLRequest) async throws -> HTTPResponse {
       guard scenario?.isOffline != true else { throw URLError(.notConnectedToInternet) }
+      if let automations { return try await automations.response(request, theme: theme) }
       if let script { return try await script.response(request, theme: theme) }
       if let organize { return try await organize.response(request, theme: theme) }
       if let response = try await restart?.response(request) { return response }

@@ -22,6 +22,7 @@ struct ConversationScreen: View {
   /// A new conversation created by this screen's composer (C8); the route stays unchanged.
   @State private var createdThreadID: String?
   @State private var screenWidth: CGFloat = 402
+  @State private var runAnchor: String?
   @State private var renaming = false
   @State private var renamedTitle = ""
   @State private var projectEditor: ProjectEditorRequest?
@@ -51,7 +52,16 @@ struct ConversationScreen: View {
     #endif
     VStack(spacing: 0) {
       if let threadID, let state = store.conversations[threadID] {
-        ConversationTranscript(state: state, store: store, jumpControl: jumpControl) {
+        ConversationTranscript(
+          state: state, store: store, jumpControl: jumpControl, runAnchor: $runAnchor
+        ) {
+          if state.thread.trigger?.kind == "cron", let jobID = state.thread.trigger?.jobId {
+            CronChannelHeader(
+              store: store, sourceID: sourceID, jobID: jobID, threadID: threadID,
+              lastRunAnchor: { runAnchor = $0 }
+            )
+            .id(sourceID + jobID)
+          }
           if let error = store.errorMessage {
             ConnectionBanner(.problem, title: "Conversation change", message: error)
           }
